@@ -705,14 +705,10 @@ class TopologyIterator:
         return len(self._vertices)
 
     def get_constructed_molecules(self):
-        # If it fails to build, skip.
-        try:
-            constructed = stk.ConstructedMolecule(
-                self._underlying_topology(self._building_blocks)
-            )
-            yield constructed
-        except ValueError:
-            pass
+        constructed = stk.ConstructedMolecule(
+            self._underlying_topology(self._building_blocks)
+        )
+        yield constructed
 
         vertex_connections = {}
         for edge in self._edges:
@@ -821,35 +817,6 @@ class TopologyIterator:
                 except ValueError:
                     pass
 
-        return
-        for step in range(20):
-            two_edges = rng.choice(self._edges, 2, replace=False)
-            old_e1 = two_edges[0]
-            old_e2 = two_edges[1]
-            print(old_e1, old_e2)
-            new_e1_v1 = self._vertices[old_e1.get_vertex1_id()]
-            new_e1_v2 = self._vertices[old_e2.get_vertex2_id()]
-            new_e2_v1 = self._vertices[old_e2.get_vertex1_id()]
-            new_e2_v2 = self._vertices[old_e1.get_vertex2_id()]
-            new_edge1 = stk.Edge(
-                id=two_edges[0].get_id(),
-                vertex1=new_e1_v1,
-                vertex2=new_e1_v2,
-            )
-            new_edge2 = stk.Edge(
-                id=two_edges[1].get_id(),
-                vertex1=new_e2_v1,
-                vertex2=new_e2_v2,
-            )
-            print(new_edge1, new_edge2)
-            new_edges = [i for i in self._edges]
-            new_edges[old_e1.get_id()] = new_edge1
-            new_edges[old_e2.get_id()] = new_edge2
-            print(new_edges)
-            new_topology = deepcopy(self._underlying_topology)
-            new_topology._edge_prototypes = new_edges
-            yield new_topology(self._building_blocks)
-
 
 def main():
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
@@ -877,6 +844,7 @@ def main():
             "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
             "diverging": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
             "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "multipliers": (1, 2, 3),
         },
         "lf_ls9": {
             "forcefield": forcefield_lf_ls9,
@@ -884,6 +852,7 @@ def main():
             "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
             "diverging": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
             "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "multipliers": (1, 2, 3),
         },
         "la_st5": {
             "forcefield": forcefield_la_st5,
@@ -891,6 +860,7 @@ def main():
             "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
             "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "multipliers": (1, 2, 4),
         },
         "la_st52": {
             "forcefield": forcefield_la_st52,
@@ -898,6 +868,7 @@ def main():
             "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
             "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "multipliers": (1, 2, 4),
         },
     }
 
@@ -924,7 +895,7 @@ def main():
             elif i == 2:
                 tetra_bb = building_block.clone()
 
-        for multiplier in (1, 2, 3):
+        for multiplier in pairs[pair]["multipliers"]:
             # Define a connectivity based on a multiplier.
             iterator = TopologyIterator(
                 multiplier=multiplier,
@@ -937,6 +908,13 @@ def main():
                 # Initialise positions based on that connectivity.
                 name = f"{pair}_{multiplier}_{idx}"
                 acage.write(str(structure_dir / f"{name}_unopt.mol"))
+
+                num_components = len(
+                    stko.Network.init_from_molecule(acage).get_connected_components()
+                )
+
+                if num_components != 1:
+                    continue
 
                 # Optimise and save.
                 logging.info(f"building {name}")
@@ -958,48 +936,48 @@ def main():
                     forcefield=forcefield,
                     iterator=iterator,
                 )
-            logging.info("figure out how to use multiplier!")
 
         fig, ax = plt.subplots(figsize=(8, 5))
-        energies = {}
-        num_components = {}
-        multiplier = {}
-        mmap = {1: "o", 2: "s", 3: "D"}
-        cmap = {1: "tab:blue", 2: "tab:orange"}
-        for entry in cgexplore.utilities.AtomliteDatabase(database_path).get_entries():
-            if pair != entry.properties["pair"]:
+        mmap = {"1": "o", "2": "s", "3": "X", "4": "D"}
+        cmap = {"1": "tab:blue", "2": "tab:orange", "3": "tab:green", "4": "tab:red"}
+        for multi in mmap:
+            energies = {}
+            for entry in cgexplore.utilities.AtomliteDatabase(
+                database_path
+            ).get_entries():
+                if pair != entry.properties["pair"]:
+                    continue
+                if entry.properties["multiplier"] != multi:
+                    continue
+                energy = entry.properties["energy_per_bb"]
+                if entry.properties["num_components"] > 1:
+                    continue
+                energies[entry.key] = energy
+
+            if len(energies) == 0:
                 continue
-            energy = entry.properties["energy_per_bb"]
-            energies[entry.key] = energy
-            if entry.properties["num_components"] < 3:
-                num_components[entry.key] = cmap[entry.properties["num_components"]]
-            else:
-                num_components[entry.key] = "k"
 
-            multiplier[entry.key] = mmap[entry.properties["multiplier"]]
-
-        min_energy = min(energies, key=energies.get)
-        ax.plot(
-            [energies[i] for i in energies],
-            c="k",
-            # marker="o",
-            # markeredgecolor="k",
-            # markersize=8,
-            # mfc=num_components.values(),
-        )
-        ax.scatter(
-            [i for i in range(len(energies.values()))],
-            [energies[i] for i in energies],
-            c=[num_components[i] for i in energies],
-            marker=[multiplier[i] for i in energies],
-            ec="k",
-            s=80,
-            zorder=2,
-        )
+            sorted_energies = sorted(energies, key=energies.get)
+            min_energy = min(energies, key=energies.get)
+            ax.plot(
+                [energies[i] for i in sorted_energies],
+                cmap[multi],
+                label=f"{min_energy}: {round(energies[min_energy],2)}",
+            )
+            ax.scatter(
+                [i for i in range(len(energies.values()))],
+                [energies[i] for i in sorted_energies],
+                c=cmap[multi],
+                marker=mmap[multi],
+                ec="k",
+                s=30,
+                zorder=2,
+            )
         ax.tick_params(axis="both", which="major", labelsize=16)
         ax.set_ylabel(eb_str(), fontsize=16)
         # ax.set_ylabel("count", fontsize=16)
-        ax.set_title(f"{min_energy}: {round(energies[min_energy],2)}", fontsize=16)
+        # ax.set_title(f"{min_energy}: {round(energies[min_energy],2)}", fontsize=16)
+        ax.legend(fontsize=16)
         fig.tight_layout()
         fig.savefig(
             figure_dir / f"min_1_{pair}.png",
