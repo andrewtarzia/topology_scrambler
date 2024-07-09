@@ -318,10 +318,10 @@ present_beads = (
 )
 constant_definer_dict = {
     # Bonds.
-    "mb": ("bond", 1.5, 1e5),  ####
-    "ab": ("bond", 1.0, 1e5),  ####
-    "gb": ("bond", 1.0, 1e5),  ####
-    "fb": ("bond", 1.0, 1e5),  ####
+    "mb": ("bond", 1.0, 1e5),
+    "ab": ("bond", 1.0, 1e5),
+    "gb": ("bond", 1.0, 1e5),
+    "fb": ("bond", 1.0, 1e5),
     # Angles.
     "bmb": ("pyramid", 90, 1e2),
     "mba": ("angle", 180, 1e2),
@@ -342,17 +342,17 @@ constant_definer_dict = {
 }
 
 definer_dict_lf_ls1 = deepcopy(constant_definer_dict)
-definer_dict_lf_ls1["ac"] = ("bond", 2, 1e5)  ####
+definer_dict_lf_ls1["ac"] = ("bond", 1.5, 1e5)
 definer_dict_lf_ls1["bac"] = ("angle", 150, 1e2)
-definer_dict_lf_ls1["bacab"] = ("tors", "0134", 180, 50, 1)  ####
-definer_dict_lf_ls1["dd"] = ("bond", 2, 1e5)  ####
-definer_dict_lf_ls1["ed"] = ("bond", 2, 1e5)  ####
-definer_dict_lf_ls1["eg"] = ("bond", 1, 1e5)  ####
-definer_dict_lf_ls1["bge"] = ("angle", 180, 1e2)  #### binder
-definer_dict_lf_ls1["dde"] = ("angle", 130, 1e2)  ####
-definer_dict_lf_ls1["deg"] = ("angle", 130, 1e2)  ####
-definer_dict_lf_ls1["edde"] = ("tors", "0123", 180, 50, 1)  ####
-# definer_dict_lf_ls1["geddeg"] = ("tors", "0145", 180, 0, 1)  ####
+definer_dict_lf_ls1["bacab"] = ("tors", "0134", 180, 50, 1)
+definer_dict_lf_ls1["dd"] = ("bond", 3, 1e5)
+definer_dict_lf_ls1["ed"] = ("bond", 2, 1e5)
+definer_dict_lf_ls1["eg"] = ("bond", 0.5, 1e5)
+definer_dict_lf_ls1["bge"] = ("angle", 180, 1e2)
+definer_dict_lf_ls1["dde"] = ("angle", 130, 1e2)
+definer_dict_lf_ls1["deg"] = ("angle", 120, 1e2)
+definer_dict_lf_ls1["edde"] = ("tors", "0123", 180, 50, 1)
+# definer_dict_lf_ls1["geddeg"] = ("tors", "0145", 180, 0, 1)
 forcefield_lf_ls1 = get_forcefield(
     identifier="lfls1",
     prefix="min_opt",
@@ -363,17 +363,17 @@ forcefield_lf_ls1 = get_forcefield(
 
 
 definer_dict_lf_ls9 = deepcopy(constant_definer_dict)
-definer_dict_lf_ls9["ac"] = ("bond", 2, 1e5)  ####
+definer_dict_lf_ls9["ac"] = ("bond", 1.5, 1e5)
 definer_dict_lf_ls9["bac"] = ("angle", 165, 1e2)
-definer_dict_lf_ls9["bacab"] = ("tors", "0134", 180, 50, 1)  ####
-definer_dict_lf_ls9["dd"] = ("bond", 2, 1e5)  ####
-definer_dict_lf_ls9["ed"] = ("bond", 2, 1e5)  ####
-definer_dict_lf_ls9["eg"] = ("bond", 1, 1e5)  ####
-definer_dict_lf_ls9["bge"] = ("angle", 180, 1e2)  #### binder
-definer_dict_lf_ls9["dde"] = ("angle", 130, 1e2)  ####
-definer_dict_lf_ls9["deg"] = ("angle", 130, 1e2)  ####
-definer_dict_lf_ls9["edde"] = ("tors", "0123", 180, 50, 1)  ####
-# definer_dict_lf_ls9["geddeg"] = ("tors", "0145", 180, 0, 1)  ####
+definer_dict_lf_ls9["bacab"] = ("tors", "0134", 180, 50, 1)
+definer_dict_lf_ls9["dd"] = ("bond", 3, 1e5)
+definer_dict_lf_ls9["ed"] = ("bond", 2, 1e5)
+definer_dict_lf_ls9["eg"] = ("bond", 0.5, 1e5)
+definer_dict_lf_ls9["bge"] = ("angle", 180, 1e2)
+definer_dict_lf_ls9["dde"] = ("angle", 130, 1e2)
+definer_dict_lf_ls9["deg"] = ("angle", 120, 1e2)
+definer_dict_lf_ls9["edde"] = ("tors", "0123", 180, 50, 1)
+# definer_dict_lf_ls9["geddeg"] = ("tors", "0145", 180, 0, 1)
 forcefield_lf_ls9 = get_forcefield(
     identifier="lfls9",
     prefix="min_opt",
@@ -383,22 +383,22 @@ forcefield_lf_ls9 = get_forcefield(
 )
 
 definer_dict_la_st5 = deepcopy(constant_definer_dict)
-definer_dict_la_st5["cc"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st5["ac"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st5["af"] = ("bond", 1, 1e5)  ####
-definer_dict_la_st5["bfa"] = ("angle", 180, 1e2)  #### binder
-definer_dict_la_st5["cca"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st5["caf"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st5["acca"] = ("tors", "0123", 180, 50, 1)  ####
-# definer_dict_la_st5["faccaf"] = ("tors", "0145", 150, 50, 1)  ####
-definer_dict_la_st5["dd"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st5["ed"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st5["eg"] = ("bond", 1, 1e5)  ####
-definer_dict_la_st5["bge"] = ("angle", 180, 1e2)  #### binder
-definer_dict_la_st5["dde"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st5["deg"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st5["edde"] = ("tors", "0123", 180, 50, 1)  ####
-# definer_dict_la_st5["geddeg"] = ("tors", "0145", 180, 0, 1)  ####
+definer_dict_la_st5["cc"] = ("bond", 1, 1e5)
+definer_dict_la_st5["ac"] = ("bond", 1, 1e5)
+definer_dict_la_st5["af"] = ("bond", 0.5, 1e5)
+definer_dict_la_st5["bfa"] = ("angle", 180, 1e2)
+definer_dict_la_st5["cca"] = ("angle", 100, 1e2)
+definer_dict_la_st5["caf"] = ("angle", 180, 1e2)
+definer_dict_la_st5["acca"] = ("tors", "0123", 180, 50, 1)
+# definer_dict_la_st5["faccaf"] = ("tors", "0145", 150, 50, 1)
+definer_dict_la_st5["dd"] = ("bond", 2, 1e5)
+definer_dict_la_st5["ed"] = ("bond", 2, 1e5)
+definer_dict_la_st5["eg"] = ("bond", 0.5, 1e5)
+definer_dict_la_st5["bge"] = ("angle", 180, 1e2)
+definer_dict_la_st5["dde"] = ("angle", 170, 1e2)
+definer_dict_la_st5["deg"] = ("angle", 120, 1e2)
+definer_dict_la_st5["edde"] = ("tors", "0123", 180, 50, 1)
+# definer_dict_la_st5["geddeg"] = ("tors", "0145", 180, 0, 1)
 forcefield_la_st5 = get_forcefield(
     identifier="last5",
     prefix="min_opt",
@@ -408,22 +408,22 @@ forcefield_la_st5 = get_forcefield(
 )
 
 definer_dict_la_st52 = deepcopy(constant_definer_dict)
-definer_dict_la_st52["cc"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st52["ac"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st52["af"] = ("bond", 1, 1e5)  ####
-definer_dict_la_st52["bfa"] = ("angle", 180, 1e2)  #### binder
-definer_dict_la_st52["cca"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st52["caf"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st52["acca"] = ("tors", "0123", 180, 50, 1)  ####
-# definer_dict_la_st52["faccaf"] = ("tors", "0145", 150, 50, 1)  ####
-definer_dict_la_st52["dd"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st52["ed"] = ("bond", 2, 1e5)  ####
-definer_dict_la_st52["eg"] = ("bond", 1, 1e5)  ####
-definer_dict_la_st52["bge"] = ("angle", 180, 1e2)  #### binder
-definer_dict_la_st52["dde"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st52["deg"] = ("angle", 130, 1e2)  ####
-definer_dict_la_st52["edde"] = ("tors", "0123", 180, 50, 1)  ####
-definer_dict_la_st52["geddeg"] = ("tors", "0145", 180, 0, 1)  ####
+definer_dict_la_st52["cc"] = ("bond", 1, 1e5)
+definer_dict_la_st52["ac"] = ("bond", 1, 1e5)
+definer_dict_la_st52["af"] = ("bond", 0.5, 1e5)
+definer_dict_la_st52["bfa"] = ("angle", 180, 1e2)
+definer_dict_la_st52["cca"] = ("angle", 120, 1e2)
+definer_dict_la_st52["caf"] = ("angle", 180, 1e2)
+definer_dict_la_st52["acca"] = ("tors", "0123", 180, 50, 1)
+# definer_dict_la_st52["faccaf"] = ("tors", "0145", 150, 50, 1)
+definer_dict_la_st52["dd"] = ("bond", 2, 1e5)
+definer_dict_la_st52["ed"] = ("bond", 2, 1e5)
+definer_dict_la_st52["eg"] = ("bond", 0.5, 1e5)
+definer_dict_la_st52["bge"] = ("angle", 180, 1e2)
+definer_dict_la_st52["dde"] = ("angle", 170, 1e2)
+definer_dict_la_st52["deg"] = ("angle", 120, 1e2)
+definer_dict_la_st52["edde"] = ("tors", "0123", 180, 50, 1)
+# definer_dict_la_st52["geddeg"] = ("tors", "0145", 180, 0, 1)
 forcefield_la_st52 = get_forcefield(
     identifier="last52",
     prefix="min_opt",
