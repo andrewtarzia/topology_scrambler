@@ -3,16 +3,211 @@
 import cgexplore
 import logging
 
-import openmm
 
 import stk
 import numpy as np
 from copy import deepcopy
+import os
+from openmm import openmm
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
+
+
+def optimise_cage(
+    molecule,
+    name,
+    output_dir,
+    forcefield,
+    platform,
+    database_path,
+):
+    fina_mol_file = os.path.join(output_dir, f"{name}_final.mol")
+
+    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    # Do not rerun if database entry exists.
+    if database.has_molecule(key=name):
+        final_molecule = database.get_molecule(key=name)
+        final_molecule.write(fina_mol_file)
+        return cgexplore.molecular.Conformer(
+            molecule=final_molecule,
+            energy_decomposition=database.get_property(
+                key=name,
+                property_key="energy_decomposition",
+                property_type=dict,
+            ),
+        )
+
+    # Do not rerun if final mol exists.
+    if os.path.exists(fina_mol_file):
+        ensemble = cgexplore.molecular.Ensemble(
+            base_molecule=molecule,
+            base_mol_path=os.path.join(output_dir, f"{name}_base.mol"),
+            conformer_xyz=os.path.join(output_dir, f"{name}_ensemble.xyz"),
+            data_json=os.path.join(output_dir, f"{name}_ensemble.json"),
+            overwrite=False,
+        )
+        conformer = ensemble.get_lowest_e_conformer()
+        database.add_molecule(molecule=conformer.molecule, key=name)
+        database.add_properties(
+            key=name,
+            property_dict={
+                "energy_decomposition": conformer.energy_decomposition,
+                "source": conformer.source,
+                "optimised": True,
+            },
+        )
+        return ensemble.get_lowest_e_conformer()
+
+    assigned_system = forcefield.assign_terms(molecule, name, output_dir)
+
+    ensemble = cgexplore.molecular.Ensemble(
+        base_molecule=molecule,
+        base_mol_path=os.path.join(output_dir, f"{name}_base.mol"),
+        conformer_xyz=os.path.join(output_dir, f"{name}_ensemble.xyz"),
+        data_json=os.path.join(output_dir, f"{name}_ensemble.json"),
+        overwrite=True,
+    )
+    temp_molecule = cgexplore.utilities.run_constrained_optimisation(
+        assigned_system=assigned_system,
+        name=name,
+        output_dir=output_dir,
+        bond_ff_scale=10,
+        angle_ff_scale=10,
+        max_iterations=20,
+        platform=platform,
+    )
+
+    logging.info(f"optimisation of {name}")
+    conformer = cgexplore.utilities.run_optimisation(
+        assigned_system=cgexplore.forcefields.AssignedSystem(
+            molecule=temp_molecule,
+            forcefield_terms=assigned_system.forcefield_terms,
+            system_xml=assigned_system.system_xml,
+            topology_xml=assigned_system.topology_xml,
+            bead_set=assigned_system.bead_set,
+            vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+        ),
+        name=name,
+        file_suffix="opt1",
+        output_dir=output_dir,
+        # max_iterations=50,
+        platform=platform,
+    )
+    ensemble.add_conformer(conformer=conformer, source="opt1")
+
+    # Run optimisations of series of conformers with shifted out
+    # building blocks.
+    logging.info(f"optimisation of shifted structures of {name}")
+    for test_molecule in cgexplore.utilities.yield_shifted_models(
+        temp_molecule, forcefield, kicks=(1, 2, 3, 4)
+    ):
+        conformer = cgexplore.utilities.run_optimisation(
+            assigned_system=cgexplore.forcefields.AssignedSystem(
+                molecule=test_molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+            ),
+            name=name,
+            file_suffix="sopt",
+            output_dir=output_dir,
+            # max_iterations=50,
+            platform=platform,
+        )
+        ensemble.add_conformer(conformer=conformer, source="shifted")
+
+    logging.info(f"soft MD run of {name}")
+    num_steps = 20000
+    traj_freq = 500
+    soft_md_trajectory = cgexplore.utilities.run_soft_md_cycle(
+        name=name,
+        assigned_system=cgexplore.forcefields.AssignedSystem(
+            molecule=ensemble.get_lowest_e_conformer().molecule,
+            forcefield_terms=assigned_system.forcefield_terms,
+            system_xml=assigned_system.system_xml,
+            topology_xml=assigned_system.topology_xml,
+            bead_set=assigned_system.bead_set,
+            vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+        ),
+        output_dir=output_dir,
+        suffix="smd",
+        bond_ff_scale=10,
+        angle_ff_scale=10,
+        temperature=300 * openmm.unit.kelvin,
+        num_steps=num_steps,
+        time_step=0.5 * openmm.unit.femtoseconds,
+        friction=1.0 / openmm.unit.picosecond,
+        reporting_freq=traj_freq,
+        traj_freq=traj_freq,
+        platform=platform,
+    )
+    if soft_md_trajectory is None:
+        logging.info(f"!!!!! {name} MD exploded !!!!!")
+        # md_exploded = True
+        raise ValueError("OpenMM Exception")
+
+    soft_md_data = soft_md_trajectory.get_data()
+    logging.info(f"collected trajectory {len(soft_md_data)} confs long")
+    # Check that the trajectory is as long as it should be.
+    if len(soft_md_data) != num_steps / traj_freq:
+        logging.info(f"!!!!! {name} MD failed !!!!!")
+        # md_failed = True
+        raise ValueError()
+
+    # Go through each conformer from soft MD.
+    # Optimise them all.
+    for md_conformer in soft_md_trajectory.yield_conformers():
+        conformer = cgexplore.utilities.run_optimisation(
+            assigned_system=cgexplore.forcefields.AssignedSystem(
+                molecule=md_conformer.molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+            ),
+            name=name,
+            file_suffix="smd_mdc",
+            output_dir=output_dir,
+            # max_iterations=50,
+            platform=platform,
+        )
+        ensemble.add_conformer(conformer=conformer, source="smd")
+    ensemble.write_conformers_to_file()
+
+    min_energy_conformer = ensemble.get_lowest_e_conformer()
+    min_energy_conformerid = min_energy_conformer.conformer_id
+    min_energy = min_energy_conformer.energy_decomposition["total energy"][0]
+    logging.info(
+        f"Min. energy conformer: {min_energy_conformerid} from "
+        f"{min_energy_conformer.source}"
+        f" with energy: {min_energy} kJ.mol-1"
+    )
+
+    # Add to atomlite database.
+    database.add_molecule(molecule=min_energy_conformer.molecule, key=name)
+    database.add_properties(
+        key=name,
+        property_dict={
+            "energy_decomposition": min_energy_conformer.energy_decomposition,
+            "source": min_energy_conformer.source,
+            "optimised": True,
+        },
+    )
+    min_energy_conformer.molecule.write(fina_mol_file)
+    return min_energy_conformer
+
+
+def eb_str(no_unit=False):
+    if no_unit:
+        return r"$E_{\mathrm{b}}$"
+
+    return r"$E_{\mathrm{b}}$ [kJmol$^{-1}$]"
 
 
 def element_from_type(
@@ -316,6 +511,7 @@ present_beads = (
     binder_bead,
     tetra_bead,
 )
+cgexplore.molecular.BeadLibrary(present_beads)
 constant_definer_dict = {
     # Bonds.
     "mb": ("bond", 1.0, 1e5),
