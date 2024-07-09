@@ -496,6 +496,149 @@ class UnalignedM4L8(stk.cage.Cage):
     )
 
 
+class UnalignedM6L12(stk.cage.Cage):
+    _x = np.sqrt(2)
+    _vertex_prototypes = (
+        stk.cage.UnaligningVertex(0, np.array([_x, 0, 0])),
+        stk.cage.UnaligningVertex(1, np.array([0, _x, 0])),
+        stk.cage.UnaligningVertex(2, np.array([-_x, 0, 0])),
+        stk.cage.UnaligningVertex(3, np.array([0, -_x, 0])),
+        stk.cage.UnaligningVertex(4, np.array([0, 0, _x])),
+        stk.cage.UnaligningVertex(5, np.array([0, 0, -_x])),
+        stk.cage.UnaligningVertex(6, np.array([1, 1, 0]), False),
+        stk.cage.UnaligningVertex(7, np.array([1, -1, 0]), False),
+        stk.cage.UnaligningVertex(8, np.array([1, 0, 1]), False),
+        stk.cage.UnaligningVertex(9, np.array([1, 0, -1]), False),
+        stk.cage.UnaligningVertex(10, np.array([-1, 1, 0]), False),
+        stk.cage.UnaligningVertex(11, np.array([-1, -1, 0]), False),
+        stk.cage.UnaligningVertex(12, np.array([-1, 0, 1]), False),
+        stk.cage.UnaligningVertex(13, np.array([-1, 0, -1]), False),
+        stk.cage.UnaligningVertex(14, np.array([0, 1, 1]), False),
+        stk.cage.UnaligningVertex(15, np.array([0, 1, -1]), False),
+        stk.cage.UnaligningVertex(16, np.array([0, -1, 1]), False),
+        stk.cage.UnaligningVertex(17, np.array([0, -1, -1]), False),
+    )
+
+    _edge_prototypes = (
+        stk.Edge(0, _vertex_prototypes[0], _vertex_prototypes[6]),
+        stk.Edge(1, _vertex_prototypes[0], _vertex_prototypes[7]),
+        stk.Edge(2, _vertex_prototypes[0], _vertex_prototypes[8]),
+        stk.Edge(3, _vertex_prototypes[0], _vertex_prototypes[9]),
+        stk.Edge(4, _vertex_prototypes[1], _vertex_prototypes[6]),
+        stk.Edge(5, _vertex_prototypes[1], _vertex_prototypes[10]),
+        stk.Edge(6, _vertex_prototypes[1], _vertex_prototypes[14]),
+        stk.Edge(7, _vertex_prototypes[1], _vertex_prototypes[15]),
+        stk.Edge(8, _vertex_prototypes[2], _vertex_prototypes[10]),
+        stk.Edge(9, _vertex_prototypes[2], _vertex_prototypes[11]),
+        stk.Edge(10, _vertex_prototypes[2], _vertex_prototypes[12]),
+        stk.Edge(11, _vertex_prototypes[2], _vertex_prototypes[13]),
+        stk.Edge(12, _vertex_prototypes[3], _vertex_prototypes[7]),
+        stk.Edge(13, _vertex_prototypes[3], _vertex_prototypes[11]),
+        stk.Edge(14, _vertex_prototypes[3], _vertex_prototypes[16]),
+        stk.Edge(15, _vertex_prototypes[3], _vertex_prototypes[17]),
+        stk.Edge(16, _vertex_prototypes[4], _vertex_prototypes[8]),
+        stk.Edge(17, _vertex_prototypes[4], _vertex_prototypes[12]),
+        stk.Edge(18, _vertex_prototypes[4], _vertex_prototypes[14]),
+        stk.Edge(19, _vertex_prototypes[4], _vertex_prototypes[16]),
+        stk.Edge(20, _vertex_prototypes[5], _vertex_prototypes[9]),
+        stk.Edge(21, _vertex_prototypes[5], _vertex_prototypes[13]),
+        stk.Edge(22, _vertex_prototypes[5], _vertex_prototypes[15]),
+        stk.Edge(23, _vertex_prototypes[5], _vertex_prototypes[17]),
+    )
+
+
+class UnalignedM12L24(stk.cage.Cage):
+    _vertex_prototypes = (
+        stk.cage.UnaligningVertex(0, np.array([1, 0, 0])),
+        stk.cage.UnaligningVertex(1, np.array([-1, 0, 0])),
+        stk.cage.UnaligningVertex(2, np.array([0, 1, 0])),
+        stk.cage.UnaligningVertex(3, np.array([0, -1, 0])),
+        stk.cage.UnaligningVertex(4, np.array([0.5, 0.5, 0.707])),
+        stk.cage.UnaligningVertex(5, np.array([0.5, -0.5, 0.707])),
+        stk.cage.UnaligningVertex(6, np.array([-0.5, 0.5, 0.707])),
+        stk.cage.UnaligningVertex(7, np.array([-0.5, -0.5, 0.707])),
+        stk.cage.UnaligningVertex(8, np.array([0.5, 0.5, -0.707])),
+        stk.cage.UnaligningVertex(9, np.array([0.5, -0.5, -0.707])),
+        stk.cage.UnaligningVertex(10, np.array([-0.5, 0.5, -0.707])),
+        stk.cage.UnaligningVertex(11, np.array([-0.5, -0.5, -0.707])),
+        stk.cage.UnaligningVertex(12, np.array([0.9, 0.31, 0.31]), False),
+        stk.cage.UnaligningVertex(13, np.array([0.9, 0.31, -0.31]), False),
+        stk.cage.UnaligningVertex(14, np.array([0.9, -0.31, 0.31]), False),
+        stk.cage.UnaligningVertex(15, np.array([0.9, -0.31, -0.31]), False),
+        stk.cage.UnaligningVertex(16, np.array([-0.9, 0.31, 0.31]), False),
+        stk.cage.UnaligningVertex(17, np.array([-0.9, 0.31, -0.31]), False),
+        stk.cage.UnaligningVertex(18, np.array([-0.9, -0.31, 0.31]), False),
+        stk.cage.UnaligningVertex(19, np.array([-0.9, -0.31, -0.31]), False),
+        stk.cage.UnaligningVertex(20, np.array([0.31, 0.9, 0.31]), False),
+        stk.cage.UnaligningVertex(21, np.array([0.31, 0.9, -0.31]), False),
+        stk.cage.UnaligningVertex(22, np.array([-0.31, 0.9, 0.31]), False),
+        stk.cage.UnaligningVertex(23, np.array([-0.31, 0.9, -0.31]), False),
+        stk.cage.UnaligningVertex(24, np.array([0.31, -0.9, 0.31]), False),
+        stk.cage.UnaligningVertex(25, np.array([0.31, -0.9, -0.31]), False),
+        stk.cage.UnaligningVertex(26, np.array([-0.31, -0.9, 0.31]), False),
+        stk.cage.UnaligningVertex(27, np.array([-0.31, -0.9, -0.31]), False),
+        stk.cage.UnaligningVertex(28, np.array([0.58, 0, 0.82]), False),
+        stk.cage.UnaligningVertex(29, np.array([-0.58, 0, 0.82]), False),
+        stk.cage.UnaligningVertex(30, np.array([0, 0.58, 0.82]), False),
+        stk.cage.UnaligningVertex(31, np.array([0, -0.58, 0.82]), False),
+        stk.cage.UnaligningVertex(32, np.array([0.58, 0, -0.82]), False),
+        stk.cage.UnaligningVertex(33, np.array([-0.58, 0, -0.82]), False),
+        stk.cage.UnaligningVertex(34, np.array([0, 0.58, -0.82]), False),
+        stk.cage.UnaligningVertex(35, np.array([0, -0.58, -0.82]), False),
+    )
+
+    _edge_prototypes = (
+        stk.Edge(0, _vertex_prototypes[0], _vertex_prototypes[12]),
+        stk.Edge(1, _vertex_prototypes[0], _vertex_prototypes[13]),
+        stk.Edge(2, _vertex_prototypes[0], _vertex_prototypes[14]),
+        stk.Edge(3, _vertex_prototypes[0], _vertex_prototypes[15]),
+        stk.Edge(4, _vertex_prototypes[1], _vertex_prototypes[16]),
+        stk.Edge(5, _vertex_prototypes[1], _vertex_prototypes[17]),
+        stk.Edge(6, _vertex_prototypes[1], _vertex_prototypes[18]),
+        stk.Edge(7, _vertex_prototypes[1], _vertex_prototypes[19]),
+        stk.Edge(8, _vertex_prototypes[2], _vertex_prototypes[20]),
+        stk.Edge(9, _vertex_prototypes[2], _vertex_prototypes[21]),
+        stk.Edge(10, _vertex_prototypes[2], _vertex_prototypes[22]),
+        stk.Edge(11, _vertex_prototypes[2], _vertex_prototypes[23]),
+        stk.Edge(12, _vertex_prototypes[3], _vertex_prototypes[24]),
+        stk.Edge(13, _vertex_prototypes[3], _vertex_prototypes[25]),
+        stk.Edge(14, _vertex_prototypes[3], _vertex_prototypes[26]),
+        stk.Edge(15, _vertex_prototypes[3], _vertex_prototypes[27]),
+        stk.Edge(16, _vertex_prototypes[4], _vertex_prototypes[28]),
+        stk.Edge(17, _vertex_prototypes[4], _vertex_prototypes[30]),
+        stk.Edge(18, _vertex_prototypes[4], _vertex_prototypes[12]),
+        stk.Edge(19, _vertex_prototypes[4], _vertex_prototypes[20]),
+        stk.Edge(20, _vertex_prototypes[5], _vertex_prototypes[14]),
+        stk.Edge(21, _vertex_prototypes[5], _vertex_prototypes[24]),
+        stk.Edge(22, _vertex_prototypes[5], _vertex_prototypes[28]),
+        stk.Edge(23, _vertex_prototypes[5], _vertex_prototypes[31]),
+        stk.Edge(24, _vertex_prototypes[6], _vertex_prototypes[16]),
+        stk.Edge(25, _vertex_prototypes[6], _vertex_prototypes[29]),
+        stk.Edge(26, _vertex_prototypes[6], _vertex_prototypes[30]),
+        stk.Edge(27, _vertex_prototypes[6], _vertex_prototypes[22]),
+        stk.Edge(28, _vertex_prototypes[7], _vertex_prototypes[18]),
+        stk.Edge(29, _vertex_prototypes[7], _vertex_prototypes[26]),
+        stk.Edge(30, _vertex_prototypes[7], _vertex_prototypes[31]),
+        stk.Edge(31, _vertex_prototypes[7], _vertex_prototypes[29]),
+        stk.Edge(32, _vertex_prototypes[8], _vertex_prototypes[13]),
+        stk.Edge(33, _vertex_prototypes[8], _vertex_prototypes[32]),
+        stk.Edge(34, _vertex_prototypes[8], _vertex_prototypes[34]),
+        stk.Edge(35, _vertex_prototypes[8], _vertex_prototypes[21]),
+        stk.Edge(36, _vertex_prototypes[9], _vertex_prototypes[15]),
+        stk.Edge(37, _vertex_prototypes[9], _vertex_prototypes[32]),
+        stk.Edge(38, _vertex_prototypes[9], _vertex_prototypes[35]),
+        stk.Edge(39, _vertex_prototypes[9], _vertex_prototypes[25]),
+        stk.Edge(40, _vertex_prototypes[10], _vertex_prototypes[17]),
+        stk.Edge(41, _vertex_prototypes[10], _vertex_prototypes[23]),
+        stk.Edge(42, _vertex_prototypes[10], _vertex_prototypes[34]),
+        stk.Edge(43, _vertex_prototypes[10], _vertex_prototypes[33]),
+        stk.Edge(44, _vertex_prototypes[11], _vertex_prototypes[19]),
+        stk.Edge(45, _vertex_prototypes[11], _vertex_prototypes[33]),
+        stk.Edge(46, _vertex_prototypes[11], _vertex_prototypes[27]),
+        stk.Edge(47, _vertex_prototypes[11], _vertex_prototypes[35]),
+    )
+
+
 class TopologyIterator:
     def __init__(
         self,
@@ -518,7 +661,7 @@ class TopologyIterator:
                 self._building_blocks = {
                     tetra_bb: (0, 1, 2),
                     converging_bb: (3, 4, 5),
-                    diverging_bb: (5, 6, 7),
+                    diverging_bb: (6, 7, 8),
                 }
                 self._underlying_topology = UnalignedM3L6
 
@@ -529,6 +672,31 @@ class TopologyIterator:
                     diverging_bb: (8, 9, 10, 11),
                 }
                 self._underlying_topology = UnalignedM4L8
+
+        if stoichiometry == (4, 2, 3):
+            if multiplier == 1:
+                self._building_blocks = {
+                    tetra_bb: (0, 1, 2),
+                    converging_bb: (3, 4, 5, 6),
+                    diverging_bb: (7, 8),
+                }
+                self._underlying_topology = UnalignedM3L6
+
+            elif multiplier == 2:
+                self._building_blocks = {
+                    tetra_bb: (0, 1, 2, 3, 4, 5),
+                    converging_bb: (6, 7, 8, 9, 10, 11, 12, 13),
+                    diverging_bb: (14, 15, 16, 17),
+                }
+                self._underlying_topology = UnalignedM6L12
+
+            elif multiplier == 4:
+                self._building_blocks = {
+                    tetra_bb: range(0, 12),
+                    converging_bb: range(12, 28),
+                    diverging_bb: range(28, 36),
+                }
+                self._underlying_topology = UnalignedM12L24
 
         self._edges = self._underlying_topology._edge_prototypes
         self._vertices = self._underlying_topology._vertex_prototypes
