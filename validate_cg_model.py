@@ -184,7 +184,6 @@ def main():
     }
 
     for lig in ligands:
-        break
         forcefield = ligands[lig]["forcefield"]
         ditopic = ligands[lig]["ditopic"]
         tetra = ligands[lig]["tetra"]
@@ -280,7 +279,7 @@ def main():
         if entry.properties["num_components"] > 1:
             continue
         energies[multi].append((bite_angle, energy))
-        bacs[bite_angle].append((multi, energy))
+        bacs[bite_angle].append((multi, energy, entry.key))
 
     for multi in energies:
         min_energy = min(energies[multi], key=lambda p: p[1])
@@ -311,18 +310,21 @@ def main():
             alpha=0.4,
         )
 
-    bac_line = []
-    for bac_angle in sorted(bacs):
-        min_energy = min(bacs[bac_angle], key=lambda p: p[1])
-        bac_line.append((bac_angle, min_energy[1]))
-        ax.scatter(
-            bac_angle,
-            min_energy[1],
-            c=cmap[min_energy[0]],
-            marker="o",
-            s=60,
-            ec="k",
-        )
+    with (figure_dir / "val_opt.txt").open("w") as f:
+        bac_line = []
+        for bac_angle in sorted(bacs):
+            min_energy = min(bacs[bac_angle], key=lambda p: p[1])
+            opt_file = structure_dir / f"{min_energy[2]}_optc.mol"
+            f.write(f"{opt_file} ")
+            bac_line.append((bac_angle, min_energy[1]))
+            ax.scatter(
+                bac_angle,
+                min_energy[1],
+                c=cmap[min_energy[0]],
+                marker="o",
+                s=60,
+                ec="k",
+            )
     ax.plot(
         [i[0] for i in bac_line],
         [i[1] for i in bac_line],
@@ -331,7 +333,7 @@ def main():
     )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_ylabel("bac angle [deg]", fontsize=16)
+    ax.set_xlabel("bac angle [deg]", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.axhline(y=0.3, c="k", ls="--")
