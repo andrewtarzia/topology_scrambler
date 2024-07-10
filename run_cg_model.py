@@ -25,7 +25,7 @@ from min_utilities import (
 )
 import cgexplore
 from topologies import TopologyIterator
-from openmm import openmm
+from openmm import openmm, OpenMMException
 
 logging.basicConfig(
     level=logging.INFO,
@@ -216,6 +216,7 @@ def main():
                 diverging_bb=diverging_bb,
             )
             logging.info(f"doing: pair {pair}, multi {multiplier}")
+            count = 0
             for constructed in iterator.get_constructed_molecules():
                 idx = constructed.idx
                 acage = constructed.constructed_molecule
@@ -232,73 +233,91 @@ def main():
 
                 # Optimise and save.
                 logging.info(f"building {name}")
+                count += 1
 
-                conformer = optimise_cage(
-                    molecule=acage,
-                    name=name,
-                    output_dir=calculation_dir,
-                    forcefield=forcefield,
-                    platform=None,
-                    database_path=database_path,
-                )
-                if conformer is not None:
-                    conformer.molecule.write(str(structure_dir / f"{name}_optc.mol"))
+                try:
+                    conformer = optimise_cage(
+                        molecule=acage,
+                        name=name,
+                        output_dir=calculation_dir,
+                        forcefield=forcefield,
+                        platform=None,
+                        database_path=database_path,
+                    )
+                    if conformer is not None:
+                        conformer.molecule.write(
+                            str(structure_dir / f"{name}_optc.mol")
+                        )
 
-                analyse_cage(
-                    database_path=database_path,
-                    name=name,
-                    forcefield=forcefield,
-                    iterator=iterator,
-                )
+                    analyse_cage(
+                        database_path=database_path,
+                        name=name,
+                        forcefield=forcefield,
+                        iterator=iterator,
+                    )
 
-        fig, ax = plt.subplots(figsize=(8, 5))
-        mmap = {"1": "o", "2": "s", "3": "X", "4": "D"}
-        cmap = {"1": "tab:blue", "2": "tab:orange", "3": "tab:green", "4": "tab:red"}
-        for multi in mmap:
+                except OpenMMException:
+                    pass
+            logging.info(f"for: pair {pair}, multi {multiplier}, built {count}!")
+
+            fig, ax = plt.subplots(figsize=(8, 5))
             energies = {}
+
+            cmap = {
+                "1": "tab:blue",
+                "2": "tab:orange",
+                "3": "tab:green",
+                "4": "tab:red",
+            }
             for entry in cgexplore.utilities.AtomliteDatabase(
                 database_path
             ).get_entries():
                 if pair != entry.properties["pair"]:
                     continue
-                if entry.properties["multiplier"] != multi:
-                    continue
+                multi = entry.properties["multiplier"]
                 energy = entry.properties["energy_per_bb"]
+
+                if multi not in energies:
+                    energies[multi] = []
+
                 if entry.properties["num_components"] > 1:
                     continue
-                energies[entry.key] = energy
+                energies[multi].append((energy, entry.key))
 
-            if len(energies) == 0:
-                continue
+            with (figure_dir / f"min_{pair}.txt").open("w") as f:
+                for multi in energies:
+                    if len(energies[multi]) == 0:
+                        continue
 
-            sorted_energies = sorted(energies, key=energies.get)
-            min_energy = min(energies, key=energies.get)
-            ax.plot(
-                [energies[i] for i in sorted_energies],
-                cmap[multi],
-                label=f"{min_energy}: {round(energies[min_energy],2)}",
+                    sorted_energies = sorted(energies[multi], key=lambda p: p[0])
+                    min_energy = sorted_energies[0]
+
+                    ax.plot(
+                        [i[0] for i in sorted_energies],
+                        marker="o",
+                        c=cmap[multi],
+                        markersize=4,
+                        # s=40,
+                        # alpha=0.3,
+                        # ec="none",
+                        label=f"{multi}: {round(min_energy[0],2)} @ {min_energy[1]}",
+                    )
+
+                    opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
+                    f.write(f"{opt_file} ")
+
+            ax.tick_params(axis="both", which="major", labelsize=16)
+            ax.set_ylabel(eb_str(), fontsize=16)
+            ax.set_yscale("log")
+            ax.axhline(y=0.3, c="k", ls="--")
+            ax.legend(ncols=2, fontsize=16)
+            fig.tight_layout()
+            fig.savefig(
+                figure_dir / f"min_1_{pair}.png",
+                dpi=360,
+                bbox_inches="tight",
             )
-            ax.scatter(
-                [i for i in range(len(energies.values()))],
-                [energies[i] for i in sorted_energies],
-                c=cmap[multi],
-                marker=mmap[multi],
-                ec="k",
-                s=30,
-                zorder=2,
-            )
-        ax.tick_params(axis="both", which="major", labelsize=16)
-        ax.set_ylabel(eb_str(), fontsize=16)
-        # ax.set_ylabel("count", fontsize=16)
-        # ax.set_title(f"{min_energy}: {round(energies[min_energy],2)}", fontsize=16)
-        ax.legend(fontsize=16)
-        fig.tight_layout()
-        fig.savefig(
-            figure_dir / f"min_1_{pair}.png",
-            dpi=360,
-            bbox_inches="tight",
-        )
-        plt.close()
+            plt.close()
 
 
 if __name__ == "__main__":
