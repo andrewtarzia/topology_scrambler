@@ -80,7 +80,6 @@ def optimise_cage(
         platform=platform,
     )
 
-    logging.info(f"optimisation of {name}")
     conformer = cgexplore.utilities.run_optimisation(
         assigned_system=cgexplore.forcefields.AssignedSystem(
             molecule=temp_molecule,
@@ -100,7 +99,6 @@ def optimise_cage(
 
     # Run optimisations of series of conformers with shifted out
     # building blocks.
-    logging.info(f"optimisation of shifted structures of {name}")
     for test_molecule in cgexplore.utilities.yield_shifted_models(
         temp_molecule, forcefield, kicks=(1, 2, 3, 4)
     ):
@@ -121,7 +119,6 @@ def optimise_cage(
         )
         ensemble.add_conformer(conformer=conformer, source="shifted")
 
-    logging.info(f"soft MD run of {name}")
     num_steps = 20000
     traj_freq = 500
     soft_md_trajectory = cgexplore.utilities.run_soft_md_cycle(
@@ -152,7 +149,6 @@ def optimise_cage(
         raise ValueError("OpenMM Exception")
 
     soft_md_data = soft_md_trajectory.get_data()
-    logging.info(f"collected trajectory {len(soft_md_data)} confs long")
     # Check that the trajectory is as long as it should be.
     if len(soft_md_data) != num_steps / traj_freq:
         logging.info(f"!!!!! {name} MD failed !!!!!")
