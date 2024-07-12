@@ -308,13 +308,14 @@ class TopologyIterator:
         return len(self._init_vertex_prototypes)
 
     def get_constructed_molecules(self):
-        try:
-            constructed = stk.ConstructedMolecule(
-                self._underlying_topology(self._building_blocks)
-            )
-            yield Constructed(constructed_molecule=constructed, idx=0)
-        except ValueError:
-            pass
+        if not self._skip_initial:
+            try:
+                constructed = stk.ConstructedMolecule(
+                    self._underlying_topology(self._building_blocks)
+                )
+                yield Constructed(constructed_molecule=constructed, idx=0)
+            except ValueError:
+                pass
 
         vertex_connections = {}
         for edge in self._init_edge_prototypes:
