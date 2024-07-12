@@ -5,7 +5,7 @@ import pathlib
 import matplotlib.pyplot as plt
 from rdkit import RDLogger
 import stko
-
+import argparse
 from min_utilities import (
     binder_bead,
     abead_d,
@@ -129,7 +129,20 @@ def analyse_cage(database_path, name, forcefield, iterator):
         )
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="set to iterate through structure functions",
+    )
+
+    return parser.parse_args()
+
+
 def main():
+    args = _parse_args()
+
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     calculation_dir = wd / "min_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -207,58 +220,61 @@ def main():
                 tetra_bb = building_block.clone()
 
         for multiplier in pairs[pair]["multipliers"]:
-            # Define a connectivity based on a multiplier.
-            iterator = TopologyIterator(
-                multiplier=multiplier,
-                stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
-                tetra_bb=tetra_bb,
-                converging_bb=converging_bb,
-                diverging_bb=diverging_bb,
-            )
-            logging.info(f"doing: pair {pair}, multi {multiplier}")
-            count = 0
-            for constructed in iterator.get_constructed_molecules():
-                idx = constructed.idx
-                acage = constructed.constructed_molecule
-                # Initialise positions based on that connectivity.
-                name = f"{pair}_{multiplier}_{idx}"
-                acage.write(str(structure_dir / f"{name}_unopt.mol"))
-
-                num_components = len(
-                    stko.Network.init_from_molecule(acage).get_connected_components()
+            if args.run:
+                # Define a connectivity based on a multiplier.
+                iterator = TopologyIterator(
+                    multiplier=multiplier,
+                    stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
+                    tetra_bb=tetra_bb,
+                    converging_bb=converging_bb,
+                    diverging_bb=diverging_bb,
                 )
+                logging.info(f"doing: pair {pair}, multi {multiplier}")
+                count = 0
+                for constructed in iterator.get_constructed_molecules():
+                    idx = constructed.idx
+                    acage = constructed.constructed_molecule
+                    # Initialise positions based on that connectivity.
+                    name = f"{pair}_{multiplier}_{idx}"
+                    acage.write(str(structure_dir / f"{name}_unopt.mol"))
 
-                if num_components != 1:
-                    continue
-
-                # Optimise and save.
-                logging.info(f"building {name}")
-                count += 1
-
-                try:
-                    conformer = optimise_cage(
-                        molecule=acage,
-                        name=name,
-                        output_dir=calculation_dir,
-                        forcefield=forcefield,
-                        platform=None,
-                        database_path=database_path,
+                    num_components = len(
+                        stko.Network.init_from_molecule(
+                            acage
+                        ).get_connected_components()
                     )
-                    if conformer is not None:
-                        conformer.molecule.write(
-                            str(structure_dir / f"{name}_optc.mol")
+
+                    if num_components != 1:
+                        continue
+
+                    # Optimise and save.
+                    logging.info(f"building {name}")
+                    count += 1
+
+                    try:
+                        conformer = optimise_cage(
+                            molecule=acage,
+                            name=name,
+                            output_dir=calculation_dir,
+                            forcefield=forcefield,
+                            platform=None,
+                            database_path=database_path,
+                        )
+                        if conformer is not None:
+                            conformer.molecule.write(
+                                str(structure_dir / f"{name}_optc.mol")
+                            )
+
+                        analyse_cage(
+                            database_path=database_path,
+                            name=name,
+                            forcefield=forcefield,
+                            iterator=iterator,
                         )
 
-                    analyse_cage(
-                        database_path=database_path,
-                        name=name,
-                        forcefield=forcefield,
-                        iterator=iterator,
-                    )
-
-                except OpenMMException:
-                    pass
-            logging.info(f"for: pair {pair}, multi {multiplier}, built {count}!")
+                    except OpenMMException:
+                        pass
+                logging.info(f"for: pair {pair}, multi {multiplier}, built {count}!")
 
             fig, ax = plt.subplots(figsize=(8, 5))
             energies = {}
