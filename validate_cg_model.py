@@ -206,8 +206,8 @@ def make_plot(
             [i[1] for i in energies[multi]],
             marker="o",
             c=cmap[multi],
-            s=40,
-            alpha=0.3,
+            s=20,
+            alpha=0.1,
             ec="none",
             label=f"{multi}: {round(min_energy[1],2)} @ {min_energy[0]}",
         )
