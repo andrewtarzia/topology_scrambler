@@ -303,6 +303,7 @@ class TopologyIterator:
         )
         self._num_scrambles = 200
         self._num_coordinates = 5
+        self._skip_initial = True
 
     def get_num_building_blocks(self):
         return len(self._init_vertex_prototypes)
@@ -467,6 +468,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = UnalignedM1L2
                 self._scale_multiplier = 2
+                self._num_scrambles = 10
 
             if multiplier == 2:
                 self._building_blocks = {
@@ -475,6 +477,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.M2L4Lantern
                 self._scale_multiplier = 2
+                self._num_scrambles = 40
 
             if multiplier == 3:
                 self._building_blocks = {
@@ -483,6 +486,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.M3L6
                 self._scale_multiplier = 2
+                self._num_scrambles = 60
 
             if multiplier == 4:
                 self._building_blocks = {
@@ -491,6 +495,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = CGM4L8
                 self._scale_multiplier = 2
+                self._num_scrambles = 60
 
             if multiplier == 6:
                 self._building_blocks = {
@@ -499,6 +504,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.M6L12Cube
                 self._scale_multiplier = 5
+                self._num_scrambles = 200
 
             if multiplier == 8:
                 self._building_blocks = {
@@ -507,6 +513,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.EightPlusSixteen
                 self._scale_multiplier = 5
+                self._num_scrambles = 150
 
             if multiplier == 10:
                 self._building_blocks = {
@@ -515,6 +522,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.TenPlusTwenty
                 self._scale_multiplier = 5
+                self._num_scrambles = 150
 
             if multiplier == 12:
                 self._building_blocks = {
@@ -523,6 +531,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = CGM12L24
                 self._scale_multiplier = 5
+                self._num_scrambles = 150
 
         self._init_vertex_prototypes = deepcopy(
             self._underlying_topology._vertex_prototypes
@@ -537,7 +546,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 aligner_edge=i.get_aligner_edge(),
                 use_neighbor_placement=i.use_neighbor_placement,
             )
-            for i in self._self._underlying_topology._vertex_prototypes
+            for i in self._underlying_topology._vertex_prototypes
         )
         self._edges = tuple(
             stk.Edge(
@@ -545,7 +554,7 @@ class HomolepticTopologyIterator(TopologyIterator):
                 vertex1=self._vertices[i.get_vertex1_id()],
                 vertex2=self._vertices[i.get_vertex2_id()],
             )
-            for i in self._self._underlying_topology._edge_prototypes
+            for i in self._underlying_topology._edge_prototypes
         )
-        self._num_scrambles = 10
-        self._num_coordinates = 2
+        self._num_coordinates = 5
+        self._skip_initial = True
