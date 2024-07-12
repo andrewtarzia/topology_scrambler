@@ -155,104 +155,22 @@ def get_validation_forcefield(
     )
 
 
-def main():
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "val_calculations"
-    calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "val_structures"
-    structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "val_ligands"
-    ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "val_data"
-    data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures"
-    figure_dir.mkdir(exist_ok=True)
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="set to iterate through structure functions",
+    )
 
-    database_path = data_dir / "val_run.db"
+    return parser.parse_args()
 
-    ligands = {
-        str(i): {
-            "forcefield": get_validation_forcefield(
-                bac_angle=bac_angle, identifier=str(i)
-            ),
-            "stoichiometry_L_M": (2, 1),
-            "ditopic": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
-            "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
-        }
-        for i, bac_angle in enumerate(range(85, 181, 5))
-    }
 
-    for lig in ligands:
-        forcefield = ligands[lig]["forcefield"]
-        ditopic = ligands[lig]["ditopic"]
-        tetra = ligands[lig]["tetra"]
-        # Prepare ligands.
-        for i, precursor in enumerate((ditopic, tetra)):
-            name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
-            building_block = cgexplore.utilities.optimise_ligand(
-                molecule=precursor.get_building_block(),
-                name=name,
-                output_dir=calculation_dir,
-                forcefield=forcefield,
-                platform=None,
-            )
-            building_block.write(str(ligand_dir / f"{name}_optl.mol"))
-            if i == 0:
-                ditopic_bb = building_block.clone()
-            elif i == 1:
-                tetra_bb = building_block.clone()
-
-        for multiplier in ligands[lig]["multipliers"]:
-            # Define a connectivity based on a multiplier.
-            iterator = HomolepticTopologyIterator(
-                multiplier=multiplier,
-                stoichiometry=ligands[lig]["stoichiometry_L_M"],
-                tetra_bb=tetra_bb,
-                ditopic_bb=ditopic_bb,
-            )
-            logging.info(f"doing: ligand {lig}, multi {multiplier}")
-            for constructed in iterator.get_constructed_molecules():
-                idx = constructed.idx
-                acage = constructed.constructed_molecule
-                # Initialise positions based on that connectivity.
-                name = f"{lig}_{multiplier}_{idx}"
-                acage.write(str(structure_dir / f"{name}_unopt.mol"))
-
-                num_components = len(
-                    stko.Network.init_from_molecule(acage).get_connected_components()
-                )
-
-                if num_components != 1:
-                    continue
-
-                # Optimise and save.
-                logging.info(f"building {name}")
-
-                try:
-                    conformer = optimise_cage(
-                        molecule=acage,
-                        name=name,
-                        output_dir=calculation_dir,
-                        forcefield=forcefield,
-                        platform=None,
-                        database_path=database_path,
-                    )
-                    if conformer is not None:
-                        conformer.molecule.write(
-                            str(structure_dir / f"{name}_optc.mol")
-                        )
-
-                    analyse_cage(
-                        database_path=database_path,
-                        name=name,
-                        forcefield=forcefield,
-                        iterator=iterator,
-                    )
-
-                except OpenMMException:
-                    pass
-
+def make_plot(
+    figure_dir: pathlib.Path,
+    database_path: pathlib.Path,
+    structure_dir: pathlib.Path,
+):
     cmap = {
         "1": "tab:blue",
         "2": "tab:orange",
@@ -333,7 +251,7 @@ def main():
     )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel("bac angle [deg]", fontsize=16)
+    ax.set_xlabel("target bite angle [deg]", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.axhline(y=0.3, c="k", ls="--")
@@ -345,6 +263,116 @@ def main():
         bbox_inches="tight",
     )
     plt.close()
+
+
+def main():
+    args = _parse_args()
+
+    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    calculation_dir = wd / "val_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    structure_dir = wd / "val_structures"
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / "val_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir = wd / "val_data"
+    data_dir.mkdir(exist_ok=True)
+    figure_dir = wd / "figures"
+    figure_dir.mkdir(exist_ok=True)
+
+    database_path = data_dir / "val_run.db"
+
+    ligands = {
+        str(i): {
+            "forcefield": get_validation_forcefield(
+                bac_angle=bac_angle, identifier=str(i)
+            ),
+            "stoichiometry_L_M": (2, 1),
+            "ditopic": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
+        }
+        for i, bac_angle in enumerate(range(85, 181, 5))
+    }
+
+    if args.run:
+        for lig in ligands:
+            forcefield = ligands[lig]["forcefield"]
+            ditopic = ligands[lig]["ditopic"]
+            tetra = ligands[lig]["tetra"]
+            # Prepare ligands.
+            for i, precursor in enumerate((ditopic, tetra)):
+                name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
+                building_block = cgexplore.utilities.optimise_ligand(
+                    molecule=precursor.get_building_block(),
+                    name=name,
+                    output_dir=calculation_dir,
+                    forcefield=forcefield,
+                    platform=None,
+                )
+                building_block.write(str(ligand_dir / f"{name}_optl.mol"))
+                if i == 0:
+                    ditopic_bb = building_block.clone()
+                elif i == 1:
+                    tetra_bb = building_block.clone()
+
+            for multiplier in ligands[lig]["multipliers"]:
+
+                # Define a connectivity based on a multiplier.
+                iterator = HomolepticTopologyIterator(
+                    multiplier=multiplier,
+                    stoichiometry=ligands[lig]["stoichiometry_L_M"],
+                    tetra_bb=tetra_bb,
+                    ditopic_bb=ditopic_bb,
+                )
+                logging.info(f"doing: ligand {lig}, multi {multiplier}")
+                for constructed in iterator.get_constructed_molecules():
+                    idx = constructed.idx
+                    acage = constructed.constructed_molecule
+                    # Initialise positions based on that connectivity.
+                    name = f"{lig}_{multiplier}_{idx}"
+                    acage.write(str(structure_dir / f"{name}_unopt.mol"))
+
+                    num_components = len(
+                        stko.Network.init_from_molecule(
+                            acage
+                        ).get_connected_components()
+                    )
+
+                    if num_components != 1:
+                        continue
+
+                    # Optimise and save.
+                    logging.info(f"building {name}")
+
+                    try:
+                        conformer = optimise_cage(
+                            molecule=acage,
+                            name=name,
+                            output_dir=calculation_dir,
+                            forcefield=forcefield,
+                            platform=None,
+                            database_path=database_path,
+                        )
+                        if conformer is not None:
+                            conformer.molecule.write(
+                                str(structure_dir / f"{name}_optc.mol")
+                            )
+
+                        analyse_cage(
+                            database_path=database_path,
+                            name=name,
+                            forcefield=forcefield,
+                            iterator=iterator,
+                        )
+
+                    except OpenMMException:
+                        pass
+                make_plot(
+                    figure_dir=figure_dir,
+                    structure_dir=structure_dir,
+                    database_path=database_path,
+                )
 
 
 if __name__ == "__main__":
