@@ -231,9 +231,16 @@ class CGM12L24(stk.cage.M12L24):
 
 
 @dataclass
+class TopologyCode:
+    vertex_map: abc.Sequence[tuple[int, int]]
+    as_string: str
+
+
+@dataclass
 class Constructed:
     constructed_molecule: stk.ConstructedMolecule
-    idx: int
+    idx: int | None
+    topology_code: TopologyCode
 
 
 class TopologyIterator:
@@ -254,6 +261,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = UnalignedM1L2
                 self._scale_multiplier = 2
+                self._skip_initial = True
 
             elif multiplier == 2:
                 self._building_blocks = {
@@ -263,6 +271,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = stk.cage.M2L4Lantern
                 self._scale_multiplier = 2
+                self._skip_initial = False
 
             elif multiplier == 3:
                 self._building_blocks = {
@@ -272,6 +281,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = stk.cage.M3L6
                 self._scale_multiplier = 2
+                self._skip_initial = False
 
             elif multiplier == 4:
                 self._building_blocks = {
@@ -281,6 +291,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = CGM4L8
                 self._scale_multiplier = 2
+                self._skip_initial = False
 
         if stoichiometry == (4, 2, 3):
             if multiplier == 1:
@@ -291,6 +302,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = stk.cage.M3L6
                 self._scale_multiplier = 2
+                self._skip_initial = False
 
             elif multiplier == 2:
                 self._building_blocks = {
@@ -300,6 +312,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = stk.cage.M6L12Cube
                 self._scale_multiplier = 5
+                self._skip_initial = False
 
             elif multiplier == 4:
                 self._building_blocks = {
@@ -309,6 +322,7 @@ class TopologyIterator:
                 }
                 self._underlying_topology = CGM12L24
                 self._scale_multiplier = 5
+                self._skip_initial = False
 
         self._init_vertex_prototypes = deepcopy(
             self._underlying_topology._vertex_prototypes
@@ -334,45 +348,116 @@ class TopologyIterator:
             for i in self._underlying_topology._edge_prototypes
         )
         self._num_scrambles = 200
-        self._num_coordinates = 5
-        self._skip_initial = True
+        self._num_mashes = 2
+
+        self._define_underlying()
+        self._beta = 10
+
+    def _define_underlying(self):
+        self._vertex_connections = {}
+        for edge in self._init_edge_prototypes:
+            if edge.get_vertex1_id() not in self._vertex_connections:
+                self._vertex_connections[edge.get_vertex1_id()] = 0
+            self._vertex_connections[edge.get_vertex1_id()] += 1
+
+            if edge.get_vertex2_id() not in self._vertex_connections:
+                self._vertex_connections[edge.get_vertex2_id()] = 0
+            self._vertex_connections[edge.get_vertex2_id()] += 1
+
+        self._type1 = [
+            i for i in self._vertex_connections if self._vertex_connections[i] == 4
+        ]
+        self._type2 = [
+            i for i in self._vertex_connections if self._vertex_connections[i] == 2
+        ]
+
+        combination = [
+            tuple(sorted((i.get_vertex1_id(), i.get_vertex2_id())))
+            for i in self._init_edge_prototypes
+        ]
+        self._initial_topology_code = TopologyCode(
+            vertex_map=combination,
+            as_string=vmap_to_str(combination),
+        )
 
     def get_num_building_blocks(self):
         return len(self._init_vertex_prototypes)
 
+    def get_beta(self) -> float:
+        return self._beta
+
+    def get_num_scrambles(self):
+        return self._num_scrambles
+
+    def get_num_mashes(self):
+        return self._num_mashes
+
     def get_constructed_molecules(self):
+        combinations_tested = set()
+        rng = np.random.default_rng(seed=100)
+        count = 0
+
         if not self._skip_initial:
             try:
                 constructed = stk.ConstructedMolecule(
-                    self._underlying_topology(self._building_blocks)
+                    self._underlying_topology(
+                        building_blocks=self._building_blocks,
+                        vertex_positions=None,
+                    )
                 )
-                yield Constructed(constructed_molecule=constructed, idx=0)
+
+                yield Constructed(
+                    constructed_molecule=constructed,
+                    idx=0,
+                    topology_code=self._initial_topology_code,
+                )
             except ValueError:
                 pass
+            combinations_tested.add(self._initial_topology_code.as_string)
 
-        vertex_connections = {}
-        for edge in self._init_edge_prototypes:
-            if edge.get_vertex1_id() not in vertex_connections:
-                vertex_connections[edge.get_vertex1_id()] = 0
-            vertex_connections[edge.get_vertex1_id()] += 1
+            # Scramble the vertex positions.
+            for step2 in range(self._num_mashes):
+                coordinates = rng.random(size=(len(self._vertices), 3))
+                new_vertex_positions = {
+                    j: coordinates[j] * 10 for j, i in enumerate(self._vertices)
+                }
 
-            if edge.get_vertex2_id() not in vertex_connections:
-                vertex_connections[edge.get_vertex2_id()] = 0
-            vertex_connections[edge.get_vertex2_id()] += 1
+                count += 1
+                try:
+                    # Try with aligning vertices.
+                    constructed = stk.ConstructedMolecule(
+                        self._underlying_topology(
+                            building_blocks=self._building_blocks,
+                            vertex_positions=None,
+                        )
+                    )
+                    yield Constructed(
+                        constructed_molecule=constructed,
+                        idx=count,
+                        topology_code=self._initial_topology_code,
+                    )
+                except ValueError:
+                    # Try with unaligning.
+                    try:
+                        constructed = stk.ConstructedMolecule(
+                            self._underlying_topology(
+                                building_blocks=self._building_blocks,
+                                vertex_positions=None,
+                            )
+                        )
+                        yield Constructed(
+                            constructed_molecule=constructed,
+                            idx=count,
+                            topology_code=self._initial_topology_code,
+                        )
+                    except ValueError:
+                        pass
 
-        type1 = [i for i in vertex_connections if vertex_connections[i] == 4]
-        type2 = [i for i in vertex_connections if vertex_connections[i] == 2]
-
-        rng = np.random.default_rng(seed=100)
-
-        combinations_tested = set()
-
-        count = 0
         for step in range(self._num_scrambles):
             # Scramble the edges.
-            remaining_connections = deepcopy(vertex_connections)
-            available_type1s = deepcopy(type1)
-            available_type2s = deepcopy(type2)
+            remaining_connections = deepcopy(self._vertex_connections)
+            available_type1s = deepcopy(self._type1)
+            available_type2s = deepcopy(self._type2)
 
             new_edges = []
             combination = []
@@ -401,18 +486,27 @@ class TopologyIterator:
                     if remaining_connections[i] != 0
                 }
 
-                available_type1s = [i for i in type1 if i in remaining_connections]
-                available_type2s = [i for i in type2 if i in remaining_connections]
+                available_type1s = [
+                    i for i in self._type1 if i in remaining_connections
+                ]
+                available_type2s = [
+                    i for i in self._type2 if i in remaining_connections
+                ]
                 combination.append(tuple(sorted((vertex1, vertex2))))
+
+            topology_code = TopologyCode(
+                vertex_map=combination,
+                as_string=vmap_to_str(combination),
+            )
 
             # If you broke early, do not try to build.
             if len(new_edges) != len(self._edges):
                 continue
 
-            if tuple(sorted(combination)) in combinations_tested:
+            if topology_code.as_string in combinations_tested:
                 continue
 
-            combinations_tested.add(tuple(sorted(combination)))
+            combinations_tested.add(topology_code.as_string)
 
             count += 1
             try:
@@ -427,7 +521,11 @@ class TopologyIterator:
                         scale_multiplier=self._scale_multiplier,
                     )
                 )
-                yield Constructed(constructed_molecule=constructed, idx=count)
+                yield Constructed(
+                    constructed_molecule=constructed,
+                    idx=count,
+                    topology_code=topology_code,
+                )
             except ValueError:
                 # Try with unaligning.
                 try:
@@ -441,12 +539,16 @@ class TopologyIterator:
                             scale_multiplier=self._scale_multiplier,
                         )
                     )
-                    yield Constructed(constructed_molecule=constructed, idx=count)
+                    yield Constructed(
+                        constructed_molecule=constructed,
+                        idx=count,
+                        topology_code=topology_code,
+                    )
                 except ValueError:
                     pass
 
             # Scramble the vertex positions.
-            for step2 in range(self._num_coordinates - 1):
+            for step2 in range(self._num_mashes):
                 coordinates = rng.random(size=(len(self._vertices), 3))
                 new_vertex_positions = {
                     j: coordinates[j] * 10 for j, i in enumerate(self._vertices)
@@ -465,7 +567,11 @@ class TopologyIterator:
                             scale_multiplier=self._scale_multiplier,
                         )
                     )
-                    yield Constructed(constructed_molecule=constructed, idx=count)
+                    yield Constructed(
+                        constructed_molecule=constructed,
+                        idx=count,
+                        topology_code=topology_code,
+                    )
                 except ValueError:
                     # Try with unaligning.
                     try:
@@ -479,7 +585,11 @@ class TopologyIterator:
                                 scale_multiplier=self._scale_multiplier,
                             )
                         )
-                        yield Constructed(constructed_molecule=constructed, idx=count)
+                        yield Constructed(
+                            constructed_molecule=constructed,
+                            idx=count,
+                            topology_code=topology_code,
+                        )
                     except ValueError:
                         pass
 
