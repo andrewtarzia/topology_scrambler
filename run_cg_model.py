@@ -5,7 +5,10 @@ import pathlib
 import matplotlib.pyplot as plt
 from rdkit import RDLogger
 import stko
+import stk
+import json
 import argparse
+import bbprep
 from min_utilities import (
     binder_bead,
     abead_d,
@@ -24,7 +27,15 @@ from min_utilities import (
     optimise_cage,
 )
 import cgexplore
-from topologies import TopologyIterator
+from utilities import optimisation_sequence
+from topologies import (
+    TopologyIterator,
+    CustomTopology,
+    TopologyCode,
+    vmap_to_str,
+    get_underyling_vertices,
+)
+import numpy as np
 from openmm import openmm, OpenMMException
 
 logging.basicConfig(
@@ -34,10 +45,43 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def analyse_cage(database_path, name, forcefield, iterator):
+def get_vertex_positions(name, topology_code, structure_dir, calculation_dir):
+    vertex_file = calculation_dir / f"{name}_vertices.json"
+    with vertex_file.open("r") as f:
+        centroids = json.load(f)
+    return {int(i): np.array(centroids[i]) for i in centroids}
+
+
+def optimiser(pair, multi):
+    opts = {
+        "lf_ls1": {
+            "1": stk.MCHammer(target_bond_length=3),
+            "2": stk.MCHammer(),
+            "3": stk.MCHammer(),
+        },
+        "lf_ls9": {
+            "1": stk.MCHammer(target_bond_length=3),
+            "2": stk.MCHammer(),
+            "3": stk.MCHammer(),
+        },
+        "la_st5": {
+            "1": stk.MCHammer(),
+            "2": stk.MCHammer(),
+            "4": stk.MCHammer(),
+        },
+        "la_st52": {
+            "1": stk.MCHammer(),
+            "2": stk.MCHammer(),
+            "4": stk.MCHammer(),
+        },
+    }
+    return opts[pair][multi]
+
+
+def analyse_cage(database_path, name, forcefield, iterator, topology_code):
     database = cgexplore.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
-    if "num_components" not in properties:
+    if "topology_code_vmap" not in properties:
         energy_decomp = {}
         for component in properties["energy_decomposition"]:
             component_tup = properties["energy_decomposition"][component]
@@ -125,6 +169,9 @@ def analyse_cage(database_path, name, forcefield, iterator):
                 "pair": name.split("_")[0] + "_" + name.split("_")[1],
                 "num_components": num_components,
                 "multiplier": name.split("_")[2],
+                "topology_code_vmap": tuple(
+                    (int(i[0]), int(i[1])) for i in topology_code.vertex_map
+                ),
             },
         )
 
@@ -136,8 +183,52 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="set to iterate through structure functions",
     )
+    parser.add_argument(
+        "--atomise",
+        action="store_true",
+        help="set to build atomistic structures",
+    )
 
     return parser.parse_args()
+
+
+def react_factory():
+    return stk.DativeReactionFactory(
+        stk.GenericReactionFactory(
+            bond_orders={
+                frozenset({stko.functional_groups.ThreeSiteFG, stk.SingleAtom}): 9,
+            },
+        ),
+    )
+
+
+def get_ligand_bb(path: pathlib.Path, optl_path: pathlib.Path) -> stk.BuildingBlock:
+    try:
+        return stk.BuildingBlock.init_from_file(
+            path=path,
+            functional_groups=(
+                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
+            ),
+        )
+    except OSError:
+        temp = stk.BuildingBlock.init_from_file(
+            path=optl_path,
+            functional_groups=(
+                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
+            ),
+        )
+        generator = bbprep.generators.ETKDG(num_confs=100)
+        ensemble = generator.generate_conformers(temp)
+        process = bbprep.DitopicFitter(ensemble=ensemble)
+        min_molecule = process.get_minimum()
+        min_molecule.molecule.write(path)
+
+    return stk.BuildingBlock.init_from_file(
+        path=path,
+        functional_groups=(
+            stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
+        ),
+    )
 
 
 def main():
@@ -154,6 +245,10 @@ def main():
     data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
+    atomistic_dir = wd / "atomistic"
+    atomistic_dir.mkdir(exist_ok=True)
+    atomistic_calculation_dir = wd / "atomistic_calculations"
+    atomistic_calculation_dir.mkdir(exist_ok=True)
 
     database_path = data_dir / "min_run.db"
 
@@ -196,6 +291,103 @@ def main():
         },
     }
 
+    lf_bb = get_ligand_bb(
+        path=wd / "ligands" / "lf_prep.mol",
+        optl_path=wd / "ligands" / "lf_optl.mol",
+    )
+    ls1_bb = get_ligand_bb(
+        path=wd / "ligands" / "ls1_prep.mol",
+        optl_path=wd / "ligands" / "ls1_optl.mol",
+    )
+    ls9_bb = get_ligand_bb(
+        path=wd / "ligands" / "ls9_prep.mol",
+        optl_path=wd / "ligands" / "ls9_optl.mol",
+    )
+    st5_bb = get_ligand_bb(
+        path=wd / "ligands" / "st5_prep.mol",
+        optl_path=wd / "ligands" / "st5_optl.mol",
+    )
+    la_bb = get_ligand_bb(
+        path=wd / "ligands" / "la_prep.mol",
+        optl_path=wd / "ligands" / "la_optl.mol",
+    )
+    pd_bb = stk.BuildingBlock(
+        smiles="[Pd+2]",
+        functional_groups=(stk.SingleAtom(stk.Pd(0, charge=2)) for i in range(4)),
+        position_matrix=[[0, 0, 0]],
+    )
+
+    bb_library = {
+        "lf_ls1": {
+            "1": {
+                pd_bb: (0,),
+                lf_bb: (1,),
+                ls1_bb: (2,),
+            },
+            "2": {
+                pd_bb: (0, 1),
+                lf_bb: (2, 3),
+                ls1_bb: (4, 5),
+            },
+            "3": {
+                pd_bb: (0, 1, 2),
+                lf_bb: (3, 4, 5),
+                ls1_bb: (6, 7, 8),
+            },
+        },
+        "lf_ls9": {
+            "1": {
+                pd_bb: (0,),
+                lf_bb: (1,),
+                ls9_bb: (2,),
+            },
+            "2": {
+                pd_bb: (0, 1),
+                lf_bb: (2, 3),
+                ls9_bb: (4, 5),
+            },
+            "3": {
+                pd_bb: (0, 1, 2),
+                lf_bb: (3, 4, 5),
+                ls9_bb: (6, 7, 8),
+            },
+        },
+        "la_st5": {
+            "1": {
+                pd_bb: (0, 1, 2),
+                la_bb: (3, 4, 5, 6),
+                st5_bb: (7, 8),
+            },
+            "2": {
+                pd_bb: (0, 1, 2, 3, 4, 5),
+                la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
+                st5_bb: (14, 15, 16, 17),
+            },
+            "4": {
+                pd_bb: range(0, 12),
+                la_bb: range(12, 28),
+                st5_bb: range(28, 36),
+            },
+        },
+        "la_st52": {
+            "1": {
+                pd_bb: (0, 1, 2),
+                la_bb: (3, 4, 5, 6),
+                st5_bb: (7, 8),
+            },
+            "2": {
+                pd_bb: (0, 1, 2, 3, 4, 5),
+                la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
+                st5_bb: (14, 15, 16, 17),
+            },
+            "4": {
+                pd_bb: range(0, 12),
+                la_bb: range(12, 28),
+                st5_bb: range(28, 36),
+            },
+        },
+    }
+
     for pair in pairs:
         forcefield = pairs[pair]["forcefield"]
         converging = pairs[pair]["converging"]
@@ -234,16 +426,14 @@ def main():
                 for constructed in iterator.get_constructed_molecules():
                     idx = constructed.idx
                     acage = constructed.constructed_molecule
-                    # Initialise positions based on that connectivity.
                     name = f"{pair}_{multiplier}_{idx}"
-                    acage.write(str(structure_dir / f"{name}_unopt.mol"))
+                    acage.write(structure_dir / f"{name}_unopt.mol")
 
                     num_components = len(
                         stko.Network.init_from_molecule(
                             acage
                         ).get_connected_components()
                     )
-
                     if num_components != 1:
                         continue
 
@@ -265,11 +455,38 @@ def main():
                                 str(structure_dir / f"{name}_optc.mol")
                             )
 
+                        # Save vertex positions.
+                        vertex_file = calculation_dir / f"{name}_vertices.json"
+                        if not vertex_file.exists():
+                            constructed_molecule = acage.with_structure_from_file(
+                                structure_dir / f"{name}_optc.mol"
+                            )
+
+                            bbs = {}
+                            for ai in constructed_molecule.get_atom_infos():
+                                bbid = ai.get_building_block_id()
+                                if bbid not in bbs:
+                                    bbs[bbid] = []
+                                bbs[bbid].append(ai.get_atom().get_id())
+
+                            centroids = {
+                                i: tuple(
+                                    float(i)
+                                    for i in constructed_molecule.get_centroid(
+                                        atom_ids=bbs[i]
+                                    )
+                                )
+                                for i in bbs
+                            }
+                            with vertex_file.open("w") as f:
+                                json.dump(centroids, f, indent=4)
+
                         analyse_cage(
                             database_path=database_path,
                             name=name,
                             forcefield=forcefield,
                             iterator=iterator,
+                            topology_code=constructed.topology_code,
                         )
 
                     except OpenMMException:
@@ -278,13 +495,13 @@ def main():
 
             fig, ax = plt.subplots(figsize=(8, 5))
             energies = {}
-
             cmap = {
                 "1": "tab:blue",
                 "2": "tab:orange",
                 "3": "tab:green",
                 "4": "tab:red",
             }
+
             for entry in cgexplore.utilities.AtomliteDatabase(
                 database_path
             ).get_entries():
@@ -298,7 +515,7 @@ def main():
 
                 if entry.properties["num_components"] > 1:
                     continue
-                energies[multi].append((energy, entry.key))
+                energies[multi].append((round(energy, 4), entry.key))
 
             with (figure_dir / f"min_{pair}.txt").open("w") as f:
                 for multi in energies:
@@ -316,7 +533,7 @@ def main():
                         # s=40,
                         # alpha=0.3,
                         # ec="none",
-                        label=f"{multi}: {round(min_energy[0],2)} @ {min_energy[1]}",
+                        label=f"{multi}: {round(min_energy[0],3)} @ {min_energy[1]}",
                     )
 
                     opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
@@ -326,7 +543,7 @@ def main():
             ax.set_ylabel(eb_str(), fontsize=16)
             ax.set_yscale("log")
             ax.axhline(y=0.3, c="k", ls="--")
-            ax.legend(ncols=2, fontsize=16)
+            ax.legend(ncols=1, fontsize=16)
             fig.tight_layout()
             fig.savefig(
                 figure_dir / f"min_1_{pair}.png",
@@ -334,6 +551,108 @@ def main():
                 bbox_inches="tight",
             )
             plt.close()
+
+            top_ten_distinct = sorted(set([i[0] for i in energies[multi]]))[:10]
+
+            if args.atomise:
+                for energy in top_ten_distinct:
+                    options = energies[str(multiplier)]
+                    for o_energy, o_name in options:
+                        if o_energy == energy:
+                            chosen = o_name
+                            break
+
+                    entry = cgexplore.utilities.AtomliteDatabase(
+                        database_path
+                    ).get_entry(chosen)
+
+                    topology_code = TopologyCode(
+                        vertex_map=entry.properties["topology_code_vmap"],
+                        as_string=vmap_to_str(entry.properties["topology_code_vmap"]),
+                    )
+
+                    building_blocks = bb_library[pair][multi]
+                    vertices = get_underyling_vertices(pair, multi)
+                    fake_vertices = tuple(
+                        stk.cage.UnaligningVertex(
+                            id=i.get_id(),
+                            position=i.get_position(),
+                            aligner_edge=i.get_aligner_edge(),
+                            use_neighbor_placement=i.use_neighbor_placement,
+                        )
+                        for i in vertices
+                    )
+
+                    try:
+                        logging.info("loading positions of %s", chosen)
+                        vertex_positions = get_vertex_positions(
+                            name=entry.key,
+                            topology_code=topology_code,
+                            structure_dir=structure_dir,
+                            calculation_dir=calculation_dir,
+                        )
+                    except FileNotFoundError:
+                        continue
+
+                    logging.info("building AA model of %s", chosen)
+                    try:
+                        cage_molecule = stk.ConstructedMolecule(
+                            CustomTopology(
+                                building_blocks=building_blocks,
+                                vertex_prototypes=vertices,
+                                edge_prototypes=tuple(
+                                    stk.Edge(
+                                        id=i,
+                                        vertex1=vertices[vmap[0]],
+                                        vertex2=vertices[vmap[1]],
+                                    )
+                                    for i, vmap in enumerate(topology_code.vertex_map)
+                                ),
+                                vertex_alignments=None,
+                                vertex_positions=vertex_positions,
+                                scale_multiplier=10.0,
+                                # optimizer=optimiser(pair, multi),
+                                reaction_factory=react_factory(),
+                            )
+                        )
+                    except ValueError:
+                        # Try with unaligning.
+                        try:
+                            logging.info("using unaligning for %s", chosen)
+                            cage_molecule = stk.ConstructedMolecule(
+                                CustomTopology(
+                                    building_blocks=building_blocks,
+                                    vertex_prototypes=fake_vertices,
+                                    edge_prototypes=tuple(
+                                        stk.Edge(
+                                            id=i,
+                                            vertex1=fake_vertices[vmap[0]],
+                                            vertex2=fake_vertices[vmap[1]],
+                                        )
+                                        for i, vmap in enumerate(
+                                            topology_code.vertex_map
+                                        )
+                                    ),
+                                    vertex_alignments=None,
+                                    vertex_positions=vertex_positions,
+                                    scale_multiplier=10.0,
+                                    optimizer=optimiser(pair, multi),
+                                    reaction_factory=react_factory(),
+                                )
+                            )
+                        except ValueError:
+                            raise RuntimeError
+                    optc_file = atomistic_dir / f"{chosen}_optc.mol"
+                    cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+                    cage_molecule.write(atomistic_dir / f"{chosen}_unopt.mol")
+                    if not optc_file.exists():
+                        cage_molecule = optimisation_sequence(
+                            cage=cage_molecule,
+                            name=chosen,
+                            calculation_dir=atomistic_calculation_dir,
+                        )
+                        cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+                        cage_molecule.write(atomistic_dir / f"{chosen}_optc.mol")
 
 
 if __name__ == "__main__":

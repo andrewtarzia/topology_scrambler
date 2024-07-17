@@ -6,12 +6,44 @@ from copy import deepcopy
 import numpy as np
 from rdkit import RDLogger
 from dataclasses import dataclass
+from collections import abc
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
+
+
+def get_underyling_vertices(pair, multi):
+    underlying_topologies = {
+        "lf_ls1": {
+            "1": UnalignedM1L2._vertex_prototypes,
+            "2": stk.cage.M2L4Lantern._vertex_prototypes,
+            "3": stk.cage.M3L6._vertex_prototypes,
+        },
+        "lf_ls9": {
+            "1": UnalignedM1L2._vertex_prototypes,
+            "2": stk.cage.M2L4Lantern._vertex_prototypes,
+            "3": stk.cage.M3L6._vertex_prototypes,
+        },
+        "la_st5": {
+            "1": stk.cage.M3L6._vertex_prototypes,
+            "2": stk.cage.M6L12Cube._vertex_prototypes,
+            "4": CGM12L24._vertex_prototypes,
+        },
+        "la_st52": {
+            "1": stk.cage.M3L6._vertex_prototypes,
+            "2": stk.cage.M6L12Cube._vertex_prototypes,
+            "4": CGM12L24._vertex_prototypes,
+        },
+    }
+    return underlying_topologies[pair][multi]
+
+
+def vmap_to_str(vertex_map: abc.Sequence[tuple[int, int]]) -> str:
+    strs = sorted([f"{i[0]}-{i[1]}" for i in vertex_map])
+    return "_".join(strs)
 
 
 class CustomTopology:
