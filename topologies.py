@@ -593,6 +593,207 @@ class TopologyIterator:
                     except ValueError:
                         pass
 
+    def _get_random_topology_code(self, generator: np.random.Generator) -> TopologyCode:
+        remaining_connections = deepcopy(self._vertex_connections)
+        available_type1s = deepcopy(self._type1)
+        available_type2s = deepcopy(self._type2)
+
+        vertex_map = []
+        for ie in range(len(self._init_edge_prototypes)):
+            try:
+                vertex1 = generator.choice(available_type1s)
+                vertex2 = generator.choice(available_type2s)
+            except ValueError:
+                if len(remaining_connections) == 1:
+                    vertex1 = list(remaining_connections.keys())[0]
+                    vertex2 = list(remaining_connections.keys())[0]
+
+            vertex_map.append(tuple(sorted((vertex1, vertex2))))
+
+            remaining_connections[vertex1] += -1
+            remaining_connections[vertex2] += -1
+            remaining_connections = {
+                i: remaining_connections[i]
+                for i in remaining_connections
+                if remaining_connections[i] != 0
+            }
+            available_type1s = [i for i in self._type1 if i in remaining_connections]
+            available_type2s = [i for i in self._type2 if i in remaining_connections]
+
+        return TopologyCode(vertex_map=vertex_map, as_string=vmap_to_str(vertex_map))
+
+    def _shuffle_topology_code(
+        self,
+        topology_code: TopologyCode,
+        generator: np.random.Generator,
+    ) -> TopologyCode:
+        old_vertex_map = topology_code.vertex_map
+
+        size = generator.integers(low=1, high=int(len(old_vertex_map) / 2), size=1) * 2
+
+        swaps = list(
+            generator.choice(
+                range(len(old_vertex_map)),
+                size=int(size[0]),
+                replace=False,
+            )
+        )
+
+        new_vertex_map = []
+        already_done = set()
+        for vmap_idx in range(len(old_vertex_map)):
+            if vmap_idx in already_done:
+                continue
+            if vmap_idx in swaps:
+                possible_ids = [i for i in swaps if i != vmap_idx]
+                other_idx = generator.choice(possible_ids, size=1)[0]
+
+                # Swap connections.
+                old1 = old_vertex_map[vmap_idx]
+                old2 = old_vertex_map[other_idx]
+
+                new1 = (old1[0], old2[1])
+                new2 = (old2[0], old1[1])
+
+                new_vertex_map.append(new1)
+                new_vertex_map.append(new2)
+                swaps = [i for i in swaps if i not in (vmap_idx, other_idx)]
+
+                already_done.add(other_idx)
+            else:
+                new_vertex_map.append(old_vertex_map[vmap_idx])
+
+        return TopologyCode(
+            vertex_map=new_vertex_map, as_string=vmap_to_str(new_vertex_map)
+        )
+
+    def get_topology(
+        self,
+        input_topology_code: TopologyCode | None,
+        generator: np.random.Generator,
+    ) -> Constructed | None:
+        if input_topology_code is None:
+            topology_code = self._get_random_topology_code(generator=generator)
+        else:
+            topology_code = self._shuffle_topology_code(
+                topology_code=input_topology_code,
+                generator=generator,
+            )
+
+        try:
+            # Try with aligning vertices.
+            constructed = stk.ConstructedMolecule(
+                CustomTopology(
+                    building_blocks=self._building_blocks,
+                    vertex_prototypes=self._init_vertex_prototypes,
+                    edge_prototypes=tuple(
+                        stk.Edge(
+                            id=i,
+                            vertex1=self._init_vertex_prototypes[vmap[0]],
+                            vertex2=self._init_vertex_prototypes[vmap[1]],
+                        )
+                        for i, vmap in enumerate(topology_code.vertex_map)
+                    ),
+                    vertex_alignments=None,
+                    vertex_positions=None,
+                    scale_multiplier=self._scale_multiplier,
+                )
+            )
+            return Constructed(
+                constructed_molecule=constructed,
+                idx=None,
+                topology_code=topology_code,
+            )
+        except ValueError:
+            # Try with unaligning.
+            try:
+                constructed = stk.ConstructedMolecule(
+                    CustomTopology(
+                        building_blocks=self._building_blocks,
+                        vertex_prototypes=self._vertices,
+                        edge_prototypes=tuple(
+                            stk.Edge(
+                                id=i,
+                                vertex1=self._vertices[vmap[0]],
+                                vertex2=self._vertices[vmap[1]],
+                            )
+                            for i, vmap in enumerate(topology_code.vertex_map)
+                        ),
+                        vertex_alignments=None,
+                        vertex_positions=None,
+                        scale_multiplier=self._scale_multiplier,
+                    )
+                )
+                return Constructed(
+                    constructed_molecule=constructed,
+                    idx=None,
+                    topology_code=topology_code,
+                )
+            except ValueError:
+                return None
+
+    def get_mashed_topology(
+        self,
+        topology_code: TopologyCode,
+        generator: np.random.Generator,
+    ) -> Constructed | None:
+        coordinates = generator.random(size=(len(self._vertices), 3))
+        new_vertex_positions = {
+            j: coordinates[j] * 10 for j, i in enumerate(self._vertices)
+        }
+
+        try:
+            # Try with aligning vertices.
+            constructed = stk.ConstructedMolecule(
+                CustomTopology(
+                    building_blocks=self._building_blocks,
+                    vertex_prototypes=self._init_vertex_prototypes,
+                    edge_prototypes=tuple(
+                        stk.Edge(
+                            id=i,
+                            vertex1=self._init_vertex_prototypes[vmap[0]],
+                            vertex2=self._init_vertex_prototypes[vmap[1]],
+                        )
+                        for i, vmap in enumerate(topology_code.vertex_map)
+                    ),
+                    vertex_alignments=None,
+                    vertex_positions=new_vertex_positions,
+                    scale_multiplier=self._scale_multiplier,
+                )
+            )
+            return Constructed(
+                constructed_molecule=constructed,
+                idx=None,
+                topology_code=topology_code,
+            )
+        except ValueError:
+            # Try with unaligning.
+            try:
+                constructed = stk.ConstructedMolecule(
+                    CustomTopology(
+                        building_blocks=self._building_blocks,
+                        vertex_prototypes=self._vertices,
+                        edge_prototypes=tuple(
+                            stk.Edge(
+                                id=i,
+                                vertex1=self._vertices[vmap[0]],
+                                vertex2=self._vertices[vmap[1]],
+                            )
+                            for i, vmap in enumerate(topology_code.vertex_map)
+                        ),
+                        vertex_alignments=None,
+                        vertex_positions=new_vertex_positions,
+                        scale_multiplier=self._scale_multiplier,
+                    )
+                )
+                return Constructed(
+                    constructed_molecule=constructed,
+                    idx=None,
+                    topology_code=topology_code,
+                )
+            except ValueError:
+                return None
+
 
 class HomolepticTopologyIterator(TopologyIterator):
     def __init__(
@@ -611,6 +812,8 @@ class HomolepticTopologyIterator(TopologyIterator):
                 self._underlying_topology = UnalignedM1L2
                 self._scale_multiplier = 2
                 self._num_scrambles = 10
+                self._num_mashes = 2
+                self._beta = 10
 
             if multiplier == 2:
                 self._building_blocks = {
@@ -620,6 +823,8 @@ class HomolepticTopologyIterator(TopologyIterator):
                 self._underlying_topology = stk.cage.M2L4Lantern
                 self._scale_multiplier = 2
                 self._num_scrambles = 40
+                self._num_mashes = 1
+                self._beta = 10
 
             if multiplier == 3:
                 self._building_blocks = {
@@ -628,7 +833,9 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.M3L6
                 self._scale_multiplier = 2
-                self._num_scrambles = 60
+                self._num_scrambles = 100
+                self._num_mashes = 1
+                self._beta = 10
 
             if multiplier == 4:
                 self._building_blocks = {
@@ -637,7 +844,9 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = CGM4L8
                 self._scale_multiplier = 2
-                self._num_scrambles = 60
+                self._num_scrambles = 100
+                self._num_mashes = 1
+                self._beta = 10
 
             if multiplier == 6:
                 self._building_blocks = {
@@ -646,7 +855,9 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.M6L12Cube
                 self._scale_multiplier = 5
-                self._num_scrambles = 200
+                self._num_scrambles = 500
+                self._num_mashes = 1
+                self._beta = 10
 
             if multiplier == 8:
                 self._building_blocks = {
@@ -655,7 +866,9 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.EightPlusSixteen
                 self._scale_multiplier = 5
-                self._num_scrambles = 150
+                self._num_scrambles = 500
+                self._num_mashes = 1
+                self._beta = 1
 
             if multiplier == 10:
                 self._building_blocks = {
@@ -664,7 +877,9 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = stk.cage.TenPlusTwenty
                 self._scale_multiplier = 5
-                self._num_scrambles = 150
+                self._num_scrambles = 500
+                self._num_mashes = 1
+                self._beta = 1
 
             if multiplier == 12:
                 self._building_blocks = {
@@ -673,7 +888,9 @@ class HomolepticTopologyIterator(TopologyIterator):
                 }
                 self._underlying_topology = CGM12L24
                 self._scale_multiplier = 5
-                self._num_scrambles = 150
+                self._num_scrambles = 500
+                self._num_mashes = 1
+                self._beta = 1
 
         self._init_vertex_prototypes = deepcopy(
             self._underlying_topology._vertex_prototypes
@@ -698,5 +915,6 @@ class HomolepticTopologyIterator(TopologyIterator):
             )
             for i in self._underlying_topology._edge_prototypes
         )
-        self._num_coordinates = 5
+
         self._skip_initial = True
+        self._define_underlying()
