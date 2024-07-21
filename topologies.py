@@ -18,24 +18,24 @@ RDLogger.DisableLog("rdApp.*")
 def get_underyling_vertices(pair, multi):
     underlying_topologies = {
         "lf_ls1": {
-            "1": UnalignedM1L2._vertex_prototypes,
-            "2": stk.cage.M2L4Lantern._vertex_prototypes,
-            "3": stk.cage.M3L6._vertex_prototypes,
+            1: UnalignedM1L2._vertex_prototypes,
+            2: stk.cage.M2L4Lantern._vertex_prototypes,
+            3: stk.cage.M3L6._vertex_prototypes,
         },
         "lf_ls9": {
-            "1": UnalignedM1L2._vertex_prototypes,
-            "2": stk.cage.M2L4Lantern._vertex_prototypes,
-            "3": stk.cage.M3L6._vertex_prototypes,
+            1: UnalignedM1L2._vertex_prototypes,
+            2: stk.cage.M2L4Lantern._vertex_prototypes,
+            3: stk.cage.M3L6._vertex_prototypes,
         },
         "la_st5": {
-            "1": stk.cage.M3L6._vertex_prototypes,
-            "2": stk.cage.M6L12Cube._vertex_prototypes,
-            "4": CGM12L24._vertex_prototypes,
+            1: stk.cage.M3L6._vertex_prototypes,
+            2: stk.cage.M6L12Cube._vertex_prototypes,
+            4: CGM12L24._vertex_prototypes,
         },
         "la_st52": {
-            "1": stk.cage.M3L6._vertex_prototypes,
-            "2": stk.cage.M6L12Cube._vertex_prototypes,
-            "4": CGM12L24._vertex_prototypes,
+            1: stk.cage.M3L6._vertex_prototypes,
+            2: stk.cage.M6L12Cube._vertex_prototypes,
+            4: CGM12L24._vertex_prototypes,
         },
     }
     return underlying_topologies[pair][multi]

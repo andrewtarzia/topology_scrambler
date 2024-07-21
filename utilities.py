@@ -6,7 +6,10 @@ import stk
 
 import matplotlib.pyplot as plt
 import logging
+import json
+import numpy as np
 import stko
+from topologies import CustomTopology
 
 
 def optimisation_sequence(  # noqa: PLR0915
@@ -125,3 +128,175 @@ def plot_xy(
         bbox_inches="tight",
     )
     plt.close()
+
+
+def get_vertex_positions(name, topology_code, structure_dir, calculation_dir):
+    vertex_file = calculation_dir / f"{name}_vertices.json"
+    with vertex_file.open("r") as f:
+        centroids = json.load(f)
+    return {int(i): np.array(centroids[i]) for i in centroids}
+
+
+def react_factory():
+    return stk.DativeReactionFactory(
+        stk.GenericReactionFactory(
+            bond_orders={
+                frozenset({stko.functional_groups.ThreeSiteFG, stk.SingleAtom}): 9,
+            },
+        ),
+    )
+
+
+def atomise(
+    vertices,
+    name,
+    topology_code,
+    structure_dir,
+    calculation_dir,
+    atomistic_dir,
+    atomistic_calculation_dir,
+    building_blocks,
+    optimizer,
+):
+    angled_vertices = tuple(
+        stk.cage.NonLinearVertex(
+            id=i.get_id(),
+            position=i.get_position(),
+            aligner_edge=i.get_aligner_edge(),
+            use_neighbor_placement=i.use_neighbor_placement,
+        )
+        if i.__class__.__name__ == "NonLinearVertex"
+        else stk.cage.AngledVertex(
+            id=i.get_id(),
+            position=i.get_position(),
+            aligner_edge=i.get_aligner_edge(),
+            use_neighbor_placement=i.use_neighbor_placement,
+        )
+        for i in vertices
+    )
+
+    fake_vertices = tuple(
+        stk.cage.UnaligningVertex(
+            id=i.get_id(),
+            position=i.get_position(),
+            aligner_edge=i.get_aligner_edge(),
+            use_neighbor_placement=i.use_neighbor_placement,
+        )
+        for i in vertices
+    )
+
+    logging.info("loading positions of %s", name)
+    vertex_positions = get_vertex_positions(
+        name=name,
+        topology_code=topology_code,
+        structure_dir=structure_dir,
+        calculation_dir=calculation_dir,
+    )
+
+    try:
+        cage_name = f"co_{name}"
+        optc_file = atomistic_dir / f"{cage_name}_optc.mol"
+        if not optc_file.exists():
+            logging.info("building AA model of %s", cage_name)
+            cage_molecule = stk.ConstructedMolecule(
+                CustomTopology(
+                    building_blocks=building_blocks,
+                    vertex_prototypes=vertices,
+                    edge_prototypes=tuple(
+                        stk.Edge(
+                            id=i,
+                            vertex1=vertices[vmap[0]],
+                            vertex2=vertices[vmap[1]],
+                        )
+                        for i, vmap in enumerate(topology_code.vertex_map)
+                    ),
+                    vertex_alignments=None,
+                    vertex_positions=vertex_positions,
+                    scale_multiplier=20.0,
+                    optimizer=optimizer,
+                    reaction_factory=react_factory(),
+                )
+            )
+            cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+            cage_molecule.write(atomistic_dir / f"{cage_name}_unopt.mol")
+            cage_molecule = optimisation_sequence(
+                cage=cage_molecule,
+                name=cage_name,
+                calculation_dir=atomistic_calculation_dir,
+            )
+            cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+            cage_molecule.write(optc_file)
+    except ValueError:
+        pass
+
+    try:
+        cage_name = f"cu_{name}"
+        optc_file = atomistic_dir / f"{cage_name}_optc.mol"
+        if not optc_file.exists():
+            logging.info("using unaligning for %s", cage_name)
+            cage_molecule = stk.ConstructedMolecule(
+                CustomTopology(
+                    building_blocks=building_blocks,
+                    vertex_prototypes=fake_vertices,
+                    edge_prototypes=tuple(
+                        stk.Edge(
+                            id=i,
+                            vertex1=fake_vertices[vmap[0]],
+                            vertex2=fake_vertices[vmap[1]],
+                        )
+                        for i, vmap in enumerate(topology_code.vertex_map)
+                    ),
+                    vertex_alignments=None,
+                    vertex_positions=vertex_positions,
+                    scale_multiplier=20.0,
+                    optimizer=optimizer,
+                    reaction_factory=react_factory(),
+                )
+            )
+            cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+            cage_molecule.write(atomistic_dir / f"{cage_name}_unopt.mol")
+            cage_molecule = optimisation_sequence(
+                cage=cage_molecule,
+                name=cage_name,
+                calculation_dir=atomistic_calculation_dir,
+            )
+            cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+            cage_molecule.write(optc_file)
+    except ValueError:
+        pass
+
+    try:
+        cage_name = f"ca_{name}"
+        optc_file = atomistic_dir / f"{cage_name}_optc.mol"
+        if not optc_file.exists():
+            logging.info("using angled vertices for %s", cage_name)
+            cage_molecule = stk.ConstructedMolecule(
+                CustomTopology(
+                    building_blocks=building_blocks,
+                    vertex_prototypes=angled_vertices,
+                    edge_prototypes=tuple(
+                        stk.Edge(
+                            id=i,
+                            vertex1=angled_vertices[vmap[0]],
+                            vertex2=angled_vertices[vmap[1]],
+                        )
+                        for i, vmap in enumerate(topology_code.vertex_map)
+                    ),
+                    vertex_alignments=None,
+                    vertex_positions=vertex_positions,
+                    scale_multiplier=20.0,
+                    optimizer=optimizer,
+                    reaction_factory=react_factory(),
+                )
+            )
+            cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+            cage_molecule.write(atomistic_dir / f"{cage_name}_unopt.mol")
+            cage_molecule = optimisation_sequence(
+                cage=cage_molecule,
+                name=cage_name,
+                calculation_dir=atomistic_calculation_dir,
+            )
+            cage_molecule = cage_molecule.with_centroid((0, 0, 0))
+            cage_molecule.write(optc_file)
+    except ValueError:
+        pass

@@ -143,37 +143,43 @@ def optimise_cage(
         traj_freq=traj_freq,
         platform=platform,
     )
+    failed_md = False
     if soft_md_trajectory is None:
-        logging.info(f"!!!!! {name} MD exploded !!!!!")
-        # md_exploded = True
-        raise ValueError("OpenMM Exception")
+        msg = f"!!!!! {name} MD exploded !!!!!"
+        if name != "la_st52_2_459":
+            raise ValueError(msg)
+        failed_md = True
 
-    soft_md_data = soft_md_trajectory.get_data()
-    # Check that the trajectory is as long as it should be.
-    if len(soft_md_data) != num_steps / traj_freq:
-        logging.info(f"!!!!! {name} MD failed !!!!!")
-        # md_failed = True
-        raise ValueError()
+    if not failed_md:
+        soft_md_data = soft_md_trajectory.get_data()
+        # Check that the trajectory is as long as it should be.
+        if len(soft_md_data) != num_steps / traj_freq:
+            msg = f"!!!!! {name} MD failed !!!!!"
+            if name != "la_st52_2_459":
+                raise ValueError(msg)
+            failed_md = True
 
-    # Go through each conformer from soft MD.
-    # Optimise them all.
-    for md_conformer in soft_md_trajectory.yield_conformers():
-        conformer = cgexplore.utilities.run_optimisation(
-            assigned_system=cgexplore.forcefields.AssignedSystem(
-                molecule=md_conformer.molecule,
-                forcefield_terms=assigned_system.forcefield_terms,
-                system_xml=assigned_system.system_xml,
-                topology_xml=assigned_system.topology_xml,
-                bead_set=assigned_system.bead_set,
-                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
-            ),
-            name=name,
-            file_suffix="smd_mdc",
-            output_dir=output_dir,
-            # max_iterations=50,
-            platform=platform,
-        )
-        ensemble.add_conformer(conformer=conformer, source="smd")
+        # Go through each conformer from soft MD.
+        # Optimise them all.
+        for md_conformer in soft_md_trajectory.yield_conformers():
+            if failed_md:
+                continue
+            conformer = cgexplore.utilities.run_optimisation(
+                assigned_system=cgexplore.forcefields.AssignedSystem(
+                    molecule=md_conformer.molecule,
+                    forcefield_terms=assigned_system.forcefield_terms,
+                    system_xml=assigned_system.system_xml,
+                    topology_xml=assigned_system.topology_xml,
+                    bead_set=assigned_system.bead_set,
+                    vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+                ),
+                name=name,
+                file_suffix="smd_mdc",
+                output_dir=output_dir,
+                # max_iterations=50,
+                platform=platform,
+            )
+            ensemble.add_conformer(conformer=conformer, source="smd")
     ensemble.write_conformers_to_file()
 
     min_energy_conformer = ensemble.get_lowest_e_conformer()

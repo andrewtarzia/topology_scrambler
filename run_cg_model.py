@@ -27,15 +27,13 @@ from min_utilities import (
     optimise_cage,
 )
 import cgexplore
-from utilities import optimisation_sequence
+from utilities import atomise
 from topologies import (
     TopologyIterator,
-    CustomTopology,
     TopologyCode,
     vmap_to_str,
     get_underyling_vertices,
 )
-import numpy as np
 from openmm import openmm, OpenMMException
 
 logging.basicConfig(
@@ -43,13 +41,6 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
-
-
-def get_vertex_positions(name, topology_code, structure_dir, calculation_dir):
-    vertex_file = calculation_dir / f"{name}_vertices.json"
-    with vertex_file.open("r") as f:
-        centroids = json.load(f)
-    return {int(i): np.array(centroids[i]) for i in centroids}
 
 
 def optimiser(pair, multi):
@@ -192,16 +183,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def react_factory():
-    return stk.DativeReactionFactory(
-        stk.GenericReactionFactory(
-            bond_orders={
-                frozenset({stko.functional_groups.ThreeSiteFG, stk.SingleAtom}): 9,
-            },
-        ),
-    )
-
-
 def get_ligand_bb(path: pathlib.Path, optl_path: pathlib.Path) -> stk.BuildingBlock:
     try:
         return stk.BuildingBlock.init_from_file(
@@ -319,68 +300,68 @@ def main():
 
     bb_library = {
         "lf_ls1": {
-            "1": {
+            1: {
                 pd_bb: (0,),
                 lf_bb: (1,),
                 ls1_bb: (2,),
             },
-            "2": {
+            2: {
                 pd_bb: (0, 1),
                 lf_bb: (2, 3),
                 ls1_bb: (4, 5),
             },
-            "3": {
+            3: {
                 pd_bb: (0, 1, 2),
                 lf_bb: (3, 4, 5),
                 ls1_bb: (6, 7, 8),
             },
         },
         "lf_ls9": {
-            "1": {
+            1: {
                 pd_bb: (0,),
                 lf_bb: (1,),
                 ls9_bb: (2,),
             },
-            "2": {
+            2: {
                 pd_bb: (0, 1),
                 lf_bb: (2, 3),
                 ls9_bb: (4, 5),
             },
-            "3": {
+            3: {
                 pd_bb: (0, 1, 2),
                 lf_bb: (3, 4, 5),
                 ls9_bb: (6, 7, 8),
             },
         },
         "la_st5": {
-            "1": {
+            1: {
                 pd_bb: (0, 1, 2),
                 la_bb: (3, 4, 5, 6),
                 st5_bb: (7, 8),
             },
-            "2": {
+            2: {
                 pd_bb: (0, 1, 2, 3, 4, 5),
                 la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
                 st5_bb: (14, 15, 16, 17),
             },
-            "4": {
+            4: {
                 pd_bb: range(0, 12),
                 la_bb: range(12, 28),
                 st5_bb: range(28, 36),
             },
         },
         "la_st52": {
-            "1": {
+            1: {
                 pd_bb: (0, 1, 2),
                 la_bb: (3, 4, 5, 6),
                 st5_bb: (7, 8),
             },
-            "2": {
+            2: {
                 pd_bb: (0, 1, 2, 3, 4, 5),
                 la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
                 st5_bb: (14, 15, 16, 17),
             },
-            "4": {
+            4: {
                 pd_bb: range(0, 12),
                 la_bb: range(12, 28),
                 st5_bb: range(28, 36),
@@ -526,7 +507,7 @@ def main():
                     min_energy = sorted_energies[0]
 
                     ax.plot(
-                        [i[0] for i in sorted_energies],
+                        [i[0] for i in energies[multi]],
                         marker="o",
                         c=cmap[multi],
                         markersize=4,
@@ -542,6 +523,7 @@ def main():
             ax.tick_params(axis="both", which="major", labelsize=16)
             ax.set_ylabel(eb_str(), fontsize=16)
             ax.set_yscale("log")
+            ax.set_ylim(0.01, 100)
             ax.axhline(y=0.3, c="k", ls="--")
             ax.legend(ncols=1, fontsize=16)
             fig.tight_layout()
@@ -552,11 +534,14 @@ def main():
             )
             plt.close()
 
-            top_ten_distinct = sorted(set([i[0] for i in energies[multi]]))[:10]
+            top_ten_distinct = sorted(set([i[0] for i in energies[str(multiplier)]]))[
+                :10
+            ]
 
             if args.atomise:
                 for energy in top_ten_distinct:
                     options = energies[str(multiplier)]
+
                     for o_energy, o_name in options:
                         if o_energy == energy:
                             chosen = o_name
@@ -566,93 +551,22 @@ def main():
                         database_path
                     ).get_entry(chosen)
 
-                    topology_code = TopologyCode(
-                        vertex_map=entry.properties["topology_code_vmap"],
-                        as_string=vmap_to_str(entry.properties["topology_code_vmap"]),
+                    atomise(
+                        vertices=get_underyling_vertices(pair, multiplier),
+                        name=chosen,
+                        topology_code=TopologyCode(
+                            vertex_map=entry.properties["topology_code_vmap"],
+                            as_string=vmap_to_str(
+                                entry.properties["topology_code_vmap"]
+                            ),
+                        ),
+                        structure_dir=structure_dir,
+                        calculation_dir=calculation_dir,
+                        atomistic_dir=atomistic_dir,
+                        atomistic_calculation_dir=atomistic_calculation_dir,
+                        building_blocks=bb_library[pair][multiplier],
+                        optimizer=optimiser(pair, multi),
                     )
-
-                    building_blocks = bb_library[pair][multi]
-                    vertices = get_underyling_vertices(pair, multi)
-                    fake_vertices = tuple(
-                        stk.cage.UnaligningVertex(
-                            id=i.get_id(),
-                            position=i.get_position(),
-                            aligner_edge=i.get_aligner_edge(),
-                            use_neighbor_placement=i.use_neighbor_placement,
-                        )
-                        for i in vertices
-                    )
-
-                    try:
-                        logging.info("loading positions of %s", chosen)
-                        vertex_positions = get_vertex_positions(
-                            name=entry.key,
-                            topology_code=topology_code,
-                            structure_dir=structure_dir,
-                            calculation_dir=calculation_dir,
-                        )
-                    except FileNotFoundError:
-                        continue
-
-                    logging.info("building AA model of %s", chosen)
-                    try:
-                        cage_molecule = stk.ConstructedMolecule(
-                            CustomTopology(
-                                building_blocks=building_blocks,
-                                vertex_prototypes=vertices,
-                                edge_prototypes=tuple(
-                                    stk.Edge(
-                                        id=i,
-                                        vertex1=vertices[vmap[0]],
-                                        vertex2=vertices[vmap[1]],
-                                    )
-                                    for i, vmap in enumerate(topology_code.vertex_map)
-                                ),
-                                vertex_alignments=None,
-                                vertex_positions=vertex_positions,
-                                scale_multiplier=10.0,
-                                # optimizer=optimiser(pair, multi),
-                                reaction_factory=react_factory(),
-                            )
-                        )
-                    except ValueError:
-                        # Try with unaligning.
-                        try:
-                            logging.info("using unaligning for %s", chosen)
-                            cage_molecule = stk.ConstructedMolecule(
-                                CustomTopology(
-                                    building_blocks=building_blocks,
-                                    vertex_prototypes=fake_vertices,
-                                    edge_prototypes=tuple(
-                                        stk.Edge(
-                                            id=i,
-                                            vertex1=fake_vertices[vmap[0]],
-                                            vertex2=fake_vertices[vmap[1]],
-                                        )
-                                        for i, vmap in enumerate(
-                                            topology_code.vertex_map
-                                        )
-                                    ),
-                                    vertex_alignments=None,
-                                    vertex_positions=vertex_positions,
-                                    scale_multiplier=10.0,
-                                    optimizer=optimiser(pair, multi),
-                                    reaction_factory=react_factory(),
-                                )
-                            )
-                        except ValueError:
-                            raise RuntimeError
-                    optc_file = atomistic_dir / f"{chosen}_optc.mol"
-                    cage_molecule = cage_molecule.with_centroid((0, 0, 0))
-                    cage_molecule.write(atomistic_dir / f"{chosen}_unopt.mol")
-                    if not optc_file.exists():
-                        cage_molecule = optimisation_sequence(
-                            cage=cage_molecule,
-                            name=chosen,
-                            calculation_dir=atomistic_calculation_dir,
-                        )
-                        cage_molecule = cage_molecule.with_centroid((0, 0, 0))
-                        cage_molecule.write(atomistic_dir / f"{chosen}_optc.mol")
 
 
 if __name__ == "__main__":
