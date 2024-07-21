@@ -18,6 +18,7 @@ from min_utilities import (
     ebead_c,
     ebead_d,
     tetra_bead,
+    save_vertex_positions,
     forcefield_lf_ls1,
     forcefield_lf_ls9,
     SixBead,
@@ -26,15 +27,49 @@ from min_utilities import (
     forcefield_la_st5,
     optimise_cage,
 )
+import stk
 import cgexplore
 from topologies import TopologyIterator
 from openmm import openmm, OpenMMException
+from utilities import atomise, get_ligand_bb
+from topologies import (
+    TopologyCode,
+    vmap_to_str,
+    get_underyling_vertices,
+)
+
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
+
+
+def optimiser(pair, multi):
+    opts = {
+        "lf_ls1": {
+            "1": stk.MCHammer(target_bond_length=3),
+            "2": stk.MCHammer(),
+            "3": stk.MCHammer(),
+        },
+        "lf_ls9": {
+            "1": stk.MCHammer(target_bond_length=3),
+            "2": stk.MCHammer(),
+            "3": stk.MCHammer(),
+        },
+        "la_st5": {
+            "1": stk.MCHammer(),
+            "2": stk.MCHammer(),
+            "4": stk.MCHammer(),
+        },
+        "la_st52": {
+            "1": stk.MCHammer(),
+            "2": stk.MCHammer(),
+            "4": stk.MCHammer(),
+        },
+    }
+    return opts[pair][multi]
 
 
 def analyse_cage(database_path, name, forcefield, iterator, topology_code):
@@ -165,6 +200,10 @@ def main():
     data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
+    atomistic_dir = wd / "mcatomistic"
+    atomistic_dir.mkdir(exist_ok=True)
+    atomistic_calculation_dir = wd / "mcatomistic_calculations"
+    atomistic_calculation_dir.mkdir(exist_ok=True)
 
     database_path = data_dir / "minmc_run.db"
 
@@ -204,6 +243,103 @@ def main():
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
             "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
             "multipliers": (1, 2, 4),
+        },
+    }
+
+    lf_bb = get_ligand_bb(
+        path=wd / "ligands" / "lf_prep.mol",
+        optl_path=wd / "ligands" / "lf_optl.mol",
+    )
+    ls1_bb = get_ligand_bb(
+        path=wd / "ligands" / "ls1_prep.mol",
+        optl_path=wd / "ligands" / "ls1_optl.mol",
+    )
+    ls9_bb = get_ligand_bb(
+        path=wd / "ligands" / "ls9_prep.mol",
+        optl_path=wd / "ligands" / "ls9_optl.mol",
+    )
+    st5_bb = get_ligand_bb(
+        path=wd / "ligands" / "st5_prep.mol",
+        optl_path=wd / "ligands" / "st5_optl.mol",
+    )
+    la_bb = get_ligand_bb(
+        path=wd / "ligands" / "la_prep.mol",
+        optl_path=wd / "ligands" / "la_optl.mol",
+    )
+    pd_bb = stk.BuildingBlock(
+        smiles="[Pd+2]",
+        functional_groups=(stk.SingleAtom(stk.Pd(0, charge=2)) for i in range(4)),
+        position_matrix=[[0, 0, 0]],
+    )
+
+    bb_library = {
+        "lf_ls1": {
+            1: {
+                pd_bb: (0,),
+                lf_bb: (1,),
+                ls1_bb: (2,),
+            },
+            2: {
+                pd_bb: (0, 1),
+                lf_bb: (2, 3),
+                ls1_bb: (4, 5),
+            },
+            3: {
+                pd_bb: (0, 1, 2),
+                lf_bb: (3, 4, 5),
+                ls1_bb: (6, 7, 8),
+            },
+        },
+        "lf_ls9": {
+            1: {
+                pd_bb: (0,),
+                lf_bb: (1,),
+                ls9_bb: (2,),
+            },
+            2: {
+                pd_bb: (0, 1),
+                lf_bb: (2, 3),
+                ls9_bb: (4, 5),
+            },
+            3: {
+                pd_bb: (0, 1, 2),
+                lf_bb: (3, 4, 5),
+                ls9_bb: (6, 7, 8),
+            },
+        },
+        "la_st5": {
+            1: {
+                pd_bb: (0, 1, 2),
+                la_bb: (3, 4, 5, 6),
+                st5_bb: (7, 8),
+            },
+            2: {
+                pd_bb: (0, 1, 2, 3, 4, 5),
+                la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
+                st5_bb: (14, 15, 16, 17),
+            },
+            4: {
+                pd_bb: range(0, 12),
+                la_bb: range(12, 28),
+                st5_bb: range(28, 36),
+            },
+        },
+        "la_st52": {
+            1: {
+                pd_bb: (0, 1, 2),
+                la_bb: (3, 4, 5, 6),
+                st5_bb: (7, 8),
+            },
+            2: {
+                pd_bb: (0, 1, 2, 3, 4, 5),
+                la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
+                st5_bb: (14, 15, 16, 17),
+            },
+            4: {
+                pd_bb: range(0, 12),
+                la_bb: range(12, 28),
+                st5_bb: range(28, 36),
+            },
         },
     }
 
@@ -281,9 +417,8 @@ def main():
                 if new_topology_code.as_string in vmap_str_map:
                     name = vmap_str_map[new_topology_code.as_string]
                     name = name.split("_")
-                    logging.info("when you rerun, fix these names!!!")
-                    name[3] = str(mash_step)
-                    name[4] = str(seed)
+                    name[4] = str(mash_step)
+                    name[5] = str(seed)
                     name = "_".join(name)
                 else:
                     name = f"{pair}_{multiplier}_{scramble_step}_{mash_step}_{seed}"
@@ -311,6 +446,13 @@ def main():
                         conformer.molecule.write(
                             str(structure_dir / f"{name}_optc.mol")
                         )
+
+                    save_vertex_positions(
+                        name=name,
+                        calculation_dir=calculation_dir,
+                        structure_dir=structure_dir,
+                        molecule=acage,
+                    )
 
                     analyse_cage(
                         database_path=database_path,
@@ -350,9 +492,8 @@ def main():
                     if new_topology_code.as_string in vmap_str_map:
                         name = vmap_str_map[new_topology_code.as_string]
                         name = name.split("_")
-                        logging.info("when you rerun, fix these names!!!")
-                        name[3] = str(mash_step)
-                        name[4] = str(seed)
+                        name[4] = str(mash_step)
+                        name[5] = str(seed)
                         name = "_".join(name)
                     else:
                         name = f"{pair}_{multiplier}_{scramble_step}_{mash_step}_{seed}"
@@ -387,6 +528,13 @@ def main():
                             conformer.molecule.write(
                                 str(structure_dir / f"{name}_optc.mol")
                             )
+
+                        save_vertex_positions(
+                            name=name,
+                            calculation_dir=calculation_dir,
+                            structure_dir=structure_dir,
+                            molecule=acage,
+                        )
 
                         analyse_cage(
                             database_path=database_path,
@@ -453,7 +601,7 @@ def main():
                     min_energy = sorted_energies[0]
 
                     ax.plot(
-                        [i[0] for i in sorted_energies],
+                        [i[0] for i in energies[multi]],
                         marker="o",
                         c=cmap[multi],
                         markersize=4,
@@ -479,6 +627,40 @@ def main():
                 bbox_inches="tight",
             )
             plt.close()
+
+            top_ten_distinct = sorted(set([i[0] for i in energies[str(multiplier)]]))[
+                :10
+            ]
+
+            if args.atomise:
+                for energy in top_ten_distinct:
+                    options = energies[str(multiplier)]
+
+                    for o_energy, o_name in options:
+                        if o_energy == energy:
+                            chosen = o_name
+                            break
+
+                    entry = cgexplore.utilities.AtomliteDatabase(
+                        database_path
+                    ).get_entry(chosen)
+
+                    atomise(
+                        vertices=get_underyling_vertices(pair, multiplier),
+                        name=chosen,
+                        topology_code=TopologyCode(
+                            vertex_map=entry.properties["topology_code_vmap"],
+                            as_string=vmap_to_str(
+                                entry.properties["topology_code_vmap"]
+                            ),
+                        ),
+                        structure_dir=structure_dir,
+                        calculation_dir=calculation_dir,
+                        atomistic_dir=atomistic_dir,
+                        atomistic_calculation_dir=atomistic_calculation_dir,
+                        building_blocks=bb_library[pair][multiplier],
+                        optimizer=optimiser(pair, multi),
+                    )
 
 
 if __name__ == "__main__":
