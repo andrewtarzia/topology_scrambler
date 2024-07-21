@@ -9,6 +9,7 @@ import numpy as np
 from copy import deepcopy
 import os
 from openmm import openmm
+import json
 
 logging.basicConfig(
     level=logging.INFO,
@@ -675,3 +676,27 @@ class SixBead(cgexplore.molecular.Precursor):
                 ]
             ),
         )
+
+
+def save_vertex_positions(name, calculation_dir, structure_dir, molecule):
+    vertex_file = calculation_dir / f"{name}_vertices.json"
+    if not vertex_file.exists():
+        constructed_molecule = molecule.with_structure_from_file(
+            structure_dir / f"{name}_optc.mol"
+        )
+
+        bbs = {}
+        for ai in constructed_molecule.get_atom_infos():
+            bbid = ai.get_building_block_id()
+            if bbid not in bbs:
+                bbs[bbid] = []
+            bbs[bbid].append(ai.get_atom().get_id())
+
+        centroids = {
+            i: tuple(
+                float(i) for i in constructed_molecule.get_centroid(atom_ids=bbs[i])
+            )
+            for i in bbs
+        }
+        with vertex_file.open("w") as f:
+            json.dump(centroids, f, indent=4)

@@ -6,12 +6,11 @@ import matplotlib.pyplot as plt
 from rdkit import RDLogger
 import stko
 import stk
-import json
 import argparse
-import bbprep
 from min_utilities import (
     binder_bead,
     abead_d,
+    save_vertex_positions,
     abead_c,
     cbead_d,
     cbead_c,
@@ -27,7 +26,7 @@ from min_utilities import (
     optimise_cage,
 )
 import cgexplore
-from utilities import atomise
+from utilities import atomise, get_ligand_bb
 from topologies import (
     TopologyIterator,
     TopologyCode,
@@ -181,35 +180,6 @@ def _parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
-
-
-def get_ligand_bb(path: pathlib.Path, optl_path: pathlib.Path) -> stk.BuildingBlock:
-    try:
-        return stk.BuildingBlock.init_from_file(
-            path=path,
-            functional_groups=(
-                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-            ),
-        )
-    except OSError:
-        temp = stk.BuildingBlock.init_from_file(
-            path=optl_path,
-            functional_groups=(
-                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-            ),
-        )
-        generator = bbprep.generators.ETKDG(num_confs=100)
-        ensemble = generator.generate_conformers(temp)
-        process = bbprep.DitopicFitter(ensemble=ensemble)
-        min_molecule = process.get_minimum()
-        min_molecule.molecule.write(path)
-
-    return stk.BuildingBlock.init_from_file(
-        path=path,
-        functional_groups=(
-            stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-        ),
-    )
 
 
 def main():
@@ -436,31 +406,12 @@ def main():
                                 str(structure_dir / f"{name}_optc.mol")
                             )
 
-                        # Save vertex positions.
-                        vertex_file = calculation_dir / f"{name}_vertices.json"
-                        if not vertex_file.exists():
-                            constructed_molecule = acage.with_structure_from_file(
-                                structure_dir / f"{name}_optc.mol"
-                            )
-
-                            bbs = {}
-                            for ai in constructed_molecule.get_atom_infos():
-                                bbid = ai.get_building_block_id()
-                                if bbid not in bbs:
-                                    bbs[bbid] = []
-                                bbs[bbid].append(ai.get_atom().get_id())
-
-                            centroids = {
-                                i: tuple(
-                                    float(i)
-                                    for i in constructed_molecule.get_centroid(
-                                        atom_ids=bbs[i]
-                                    )
-                                )
-                                for i in bbs
-                            }
-                            with vertex_file.open("w") as f:
-                                json.dump(centroids, f, indent=4)
+                        save_vertex_positions(
+                            name=name,
+                            calculation_dir=calculation_dir,
+                            structure_dir=structure_dir,
+                            molecule=acage,
+                        )
 
                         analyse_cage(
                             database_path=database_path,

@@ -9,6 +9,7 @@ import logging
 import json
 import numpy as np
 import stko
+import bbprep
 from topologies import CustomTopology
 
 
@@ -300,3 +301,32 @@ def atomise(
             cage_molecule.write(optc_file)
     except ValueError:
         pass
+
+
+def get_ligand_bb(path: pathlib.Path, optl_path: pathlib.Path) -> stk.BuildingBlock:
+    try:
+        return stk.BuildingBlock.init_from_file(
+            path=path,
+            functional_groups=(
+                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
+            ),
+        )
+    except OSError:
+        temp = stk.BuildingBlock.init_from_file(
+            path=optl_path,
+            functional_groups=(
+                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
+            ),
+        )
+        generator = bbprep.generators.ETKDG(num_confs=100)
+        ensemble = generator.generate_conformers(temp)
+        process = bbprep.DitopicFitter(ensemble=ensemble)
+        min_molecule = process.get_minimum()
+        min_molecule.molecule.write(path)
+
+    return stk.BuildingBlock.init_from_file(
+        path=path,
+        functional_groups=(
+            stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
+        ),
+    )
