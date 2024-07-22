@@ -42,6 +42,16 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
+def num_pds(pair, multi):
+    opts = {
+        "lf_ls1": {"1": 1, "2": 2, "3": 3},
+        "lf_ls9": {"1": 1, "2": 2, "3": 3},
+        "la_st5": {"1": 3, "2": 6, "4": 12},
+        "la_st52": {"1": 3, "2": 6, "4": 12},
+    }
+    return opts[pair][multi]
+
+
 def optimiser(pair, multi):
     opts = {
         "lf_ls1": {
@@ -164,6 +174,129 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
                 ),
             },
         )
+
+
+def make_plot(pair, database_path, structure_dir, figure_dir, filename):
+    fig, ax = plt.subplots(figsize=(8, 5))
+    energies = {}
+    cmap = {
+        "1": "tab:blue",
+        "2": "tab:orange",
+        "3": "tab:green",
+        "4": "tab:red",
+    }
+
+    for entry in cgexplore.utilities.AtomliteDatabase(database_path).get_entries():
+        if pair != entry.properties["pair"]:
+            continue
+        multi = entry.properties["multiplier"]
+        energy = entry.properties["energy_per_bb"]
+
+        if multi not in energies:
+            energies[multi] = []
+
+        if entry.properties["num_components"] > 1:
+            continue
+        energies[multi].append((round(energy, 4), entry.key))
+
+    with (figure_dir / f"min_{pair}.txt").open("w") as f:
+        for multi in energies:
+            if len(energies[multi]) == 0:
+                continue
+
+            sorted_energies = sorted(energies[multi], key=lambda p: p[0])
+            min_energy = sorted_energies[0]
+
+            ax.plot(
+                [i[0] for i in energies[multi]],
+                marker="o",
+                c=cmap[multi],
+                markersize=4,
+                # s=40,
+                # alpha=0.3,
+                # ec="none",
+                label=f"{multi}: {round(min_energy[0],3)} @ {min_energy[1]}",
+            )
+
+            opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
+            f.write(f"{opt_file} ")
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.set_ylim(0.01, 100)
+    ax.axhline(y=0.3, c="k", ls="--")
+    ax.legend(ncols=1, fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+    return energies
+
+
+def make_aa_plot(pair, atomistic_dir, atomistic_calculation_dir, filename):
+    cmap = {
+        "1": "tab:blue",
+        "2": "tab:orange",
+        "3": "tab:green",
+        "4": "tab:red",
+    }
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    founds = atomistic_calculation_dir.glob(f"c*{pair}*gulp2")
+
+    energies = {}
+    for path in sorted(founds):
+        if not path.is_dir():
+            continue
+        output_file = path / "gulp_opt.ginout"
+        with output_file.open("r") as f:
+            lines = f.readlines()
+
+        name = path.name
+        multi = path.name.split("_")[3]
+        for line in lines:
+            if "Total lattice energy       =" in line and "kJ/mol" in line:
+                energy = float(line.strip().split(" ")[-2]) / num_pds(pair, multi)
+
+        if multi not in energies:
+            energies[multi] = []
+
+        energies[multi].append((name.replace("_gulp2", ""), energy))
+
+    for multi in sorted(energies):
+        if len(energies[multi]) == 0:
+            continue
+
+        sorted_energies = sorted(energies[multi], key=lambda p: p[1])
+        min_energy = sorted_energies[0]
+
+        ax.plot(
+            [i[1] for i in energies[multi]],
+            marker="o",
+            c=cmap[multi],
+            markersize=4,
+            # s=40,
+            # alpha=0.3,
+            # ec="none",
+            label=f"{multi}: {round(min_energy[1],3)} @ {min_energy[0]}",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel("UFF energy / Pd [kJmol-1]", fontsize=16)
+    ax.set_yscale("log")
+    ax.set_ylim(500, 1e5)
+    ax.legend(ncols=1, fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
 
 
 def _parse_args() -> argparse.Namespace:
@@ -425,65 +558,13 @@ def main():
                         pass
                 logging.info(f"for: pair {pair}, multi {multiplier}, built {count}!")
 
-            fig, ax = plt.subplots(figsize=(8, 5))
-            energies = {}
-            cmap = {
-                "1": "tab:blue",
-                "2": "tab:orange",
-                "3": "tab:green",
-                "4": "tab:red",
-            }
-
-            for entry in cgexplore.utilities.AtomliteDatabase(
-                database_path
-            ).get_entries():
-                if pair != entry.properties["pair"]:
-                    continue
-                multi = entry.properties["multiplier"]
-                energy = entry.properties["energy_per_bb"]
-
-                if multi not in energies:
-                    energies[multi] = []
-
-                if entry.properties["num_components"] > 1:
-                    continue
-                energies[multi].append((round(energy, 4), entry.key))
-
-            with (figure_dir / f"min_{pair}.txt").open("w") as f:
-                for multi in energies:
-                    if len(energies[multi]) == 0:
-                        continue
-
-                    sorted_energies = sorted(energies[multi], key=lambda p: p[0])
-                    min_energy = sorted_energies[0]
-
-                    ax.plot(
-                        [i[0] for i in energies[multi]],
-                        marker="o",
-                        c=cmap[multi],
-                        markersize=4,
-                        # s=40,
-                        # alpha=0.3,
-                        # ec="none",
-                        label=f"{multi}: {round(min_energy[0],3)} @ {min_energy[1]}",
-                    )
-
-                    opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
-                    f.write(f"{opt_file} ")
-
-            ax.tick_params(axis="both", which="major", labelsize=16)
-            ax.set_ylabel(eb_str(), fontsize=16)
-            ax.set_yscale("log")
-            ax.set_ylim(0.01, 100)
-            ax.axhline(y=0.3, c="k", ls="--")
-            ax.legend(ncols=1, fontsize=16)
-            fig.tight_layout()
-            fig.savefig(
-                figure_dir / f"min_1_{pair}.png",
-                dpi=360,
-                bbox_inches="tight",
+            energies = make_plot(
+                database_path=database_path,
+                pair=pair,
+                structure_dir=structure_dir,
+                figure_dir=figure_dir,
+                filename=figure_dir / f"min_1_{pair}.png",
             )
-            plt.close()
 
             top_ten_distinct = sorted(set([i[0] for i in energies[str(multiplier)]]))[
                 :10
@@ -516,8 +597,14 @@ def main():
                         atomistic_dir=atomistic_dir,
                         atomistic_calculation_dir=atomistic_calculation_dir,
                         building_blocks=bb_library[pair][multiplier],
-                        optimizer=optimiser(pair, multi),
+                        optimizer=optimiser(pair, str(multiplier)),
                     )
+            make_aa_plot(
+                pair=pair,
+                atomistic_dir=atomistic_dir,
+                atomistic_calculation_dir=atomistic_calculation_dir,
+                filename=figure_dir / f"min_3_{pair}.png",
+            )
 
 
 if __name__ == "__main__":

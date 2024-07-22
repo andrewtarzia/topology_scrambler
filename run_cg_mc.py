@@ -3,7 +3,6 @@
 import logging
 import mchammer as mch
 import pathlib
-import matplotlib.pyplot as plt
 from rdkit import RDLogger
 import stko
 import itertools as it
@@ -22,7 +21,6 @@ from min_utilities import (
     forcefield_lf_ls1,
     forcefield_lf_ls9,
     SixBead,
-    eb_str,
     forcefield_la_st52,
     forcefield_la_st5,
     optimise_cage,
@@ -37,6 +35,7 @@ from topologies import (
     vmap_to_str,
     get_underyling_vertices,
 )
+from run_cg_model import make_plot, make_aa_plot
 
 
 logging.basicConfig(
@@ -568,65 +567,13 @@ def main():
                             round(current_energy, 3),
                         )
 
-            fig, ax = plt.subplots(figsize=(8, 5))
-            energies = {}
-
-            cmap = {
-                "1": "tab:blue",
-                "2": "tab:orange",
-                "3": "tab:green",
-                "4": "tab:red",
-            }
-            for entry in cgexplore.utilities.AtomliteDatabase(
-                database_path
-            ).get_entries():
-                if pair != entry.properties["pair"]:
-                    continue
-                multi = entry.properties["multiplier"]
-                energy = entry.properties["energy_per_bb"]
-
-                if multi not in energies:
-                    energies[multi] = []
-
-                if entry.properties["num_components"] > 1:
-                    continue
-                energies[multi].append((energy, entry.key))
-
-            with (figure_dir / f"min_{pair}.txt").open("w") as f:
-                for multi in energies:
-                    if len(energies[multi]) == 0:
-                        continue
-
-                    sorted_energies = sorted(energies[multi], key=lambda p: p[0])
-                    min_energy = sorted_energies[0]
-
-                    ax.plot(
-                        [i[0] for i in energies[multi]],
-                        marker="o",
-                        c=cmap[multi],
-                        markersize=4,
-                        # s=40,
-                        # alpha=0.3,
-                        # ec="none",
-                        label=f"{multi}: {round(min_energy[0],2)} @ {min_energy[1]}",
-                    )
-
-                    opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
-                    f.write(f"{opt_file} ")
-
-            ax.tick_params(axis="both", which="major", labelsize=16)
-            ax.set_ylabel(eb_str(), fontsize=16)
-            ax.set_yscale("log")
-            ax.axhline(y=0.3, c="k", ls="--")
-            ax.legend(ncols=1, fontsize=16)
-            ax.set_title("by MC", fontsize=16)
-            fig.tight_layout()
-            fig.savefig(
-                figure_dir / f"min_2_{pair}.png",
-                dpi=360,
-                bbox_inches="tight",
+            energies = make_plot(
+                database_path=database_path,
+                pair=pair,
+                structure_dir=structure_dir,
+                figure_dir=figure_dir,
+                filename=figure_dir / f"min_2_{pair}.png",
             )
-            plt.close()
 
             top_ten_distinct = sorted(set([i[0] for i in energies[str(multiplier)]]))[
                 :10
@@ -659,8 +606,21 @@ def main():
                         atomistic_dir=atomistic_dir,
                         atomistic_calculation_dir=atomistic_calculation_dir,
                         building_blocks=bb_library[pair][multiplier],
-                        optimizer=optimiser(pair, multi),
+                        optimizer=optimiser(pair, str(multiplier)),
                     )
+        energies = make_plot(
+            database_path=database_path,
+            pair=pair,
+            structure_dir=structure_dir,
+            figure_dir=figure_dir,
+            filename=figure_dir / f"min_2_{pair}.png",
+        )
+        make_aa_plot(
+            pair=pair,
+            atomistic_dir=atomistic_dir,
+            atomistic_calculation_dir=atomistic_calculation_dir,
+            filename=figure_dir / f"min_4_{pair}.png",
+        )
 
 
 if __name__ == "__main__":
