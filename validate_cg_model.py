@@ -411,6 +411,7 @@ def main():
             tetra = ligands[lig]["tetra"]
             # Prepare ligands.
             for i, precursor in enumerate((ditopic, tetra)):
+                raise SystemExit("think aout if this name is an issue wrt ff.idnet")
                 name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
                 building_block = cgexplore.utilities.optimise_ligand(
                     molecule=precursor.get_building_block(),
