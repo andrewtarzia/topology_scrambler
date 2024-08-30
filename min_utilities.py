@@ -213,156 +213,7 @@ def eb_str(no_unit=False):
     return r"$E_{\mathrm{b}}$ [kJmol$^{-1}$]"
 
 
-def element_from_type(
-    bead_type: str,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> str:
-    """Get element of cgbead from type of cgbead."""
-    return next(i.element_string for i in present_beads if i.bead_type == bead_type)
 
-
-def define_bond(
-    interaction_key: str,
-    interaction_list: list,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> cgexplore.terms.TargetBond:
-    """Define target from a known structured list."""
-    return cgexplore.terms.TargetBond(
-        type1=interaction_key[0],
-        type2=interaction_key[1],
-        element1=element_from_type(interaction_key[0], present_beads),
-        element2=element_from_type(interaction_key[1], present_beads),
-        bond_r=openmm.unit.Quantity(
-            value=interaction_list[1], unit=openmm.unit.angstrom
-        ),
-        bond_k=openmm.unit.Quantity(
-            value=interaction_list[2],
-            unit=openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.nanometer**2,
-        ),
-    )
-
-
-def define_angle(
-    interaction_key: str,
-    interaction_list: list,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> cgexplore.terms.TargetAngle:
-    """Define target from a known structured list."""
-    return cgexplore.terms.TargetAngle(
-        type1=interaction_key[0],
-        type2=interaction_key[1],
-        type3=interaction_key[2],
-        element1=element_from_type(interaction_key[0], present_beads),
-        element2=element_from_type(interaction_key[1], present_beads),
-        element3=element_from_type(interaction_key[2], present_beads),
-        angle=openmm.unit.Quantity(value=interaction_list[1], unit=openmm.unit.degrees),
-        angle_k=openmm.unit.Quantity(
-            value=interaction_list[2],
-            unit=openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.radian**2,
-        ),
-    )
-
-
-def define_pyramid(
-    interaction_key: str,
-    interaction_list: list,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> cgexplore.terms.TargetPyramidAngle:
-    """Define target from a known structured list."""
-    angle = openmm.unit.Quantity(value=interaction_list[1], unit=openmm.unit.degrees)
-    opposite_angle = openmm.unit.Quantity(
-        value=cgexplore.utilities.convert_pyramid_angle(
-            angle.value_in_unit(angle.unit)
-        ),
-        unit=angle.unit,
-    )
-    return cgexplore.terms.TargetPyramidAngle(
-        type1=interaction_key[0],
-        type2=interaction_key[1],
-        type3=interaction_key[2],
-        element1=element_from_type(interaction_key[0], present_beads),
-        element2=element_from_type(interaction_key[1], present_beads),
-        element3=element_from_type(interaction_key[2], present_beads),
-        angle=angle,
-        opposite_angle=opposite_angle,
-        angle_k=openmm.unit.Quantity(
-            value=interaction_list[2],
-            unit=openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.radian**2,
-        ),
-    )
-
-
-def define_cosine_angle(
-    interaction_key: str,
-    interaction_list: list,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> cgexplore.terms.TargetCosineAngle:
-    """Define target from a known structured list."""
-    return cgexplore.terms.TargetCosineAngle(
-        type1=interaction_key[0],
-        type2=interaction_key[1],
-        type3=interaction_key[2],
-        element1=element_from_type(interaction_key[0], present_beads),
-        element2=element_from_type(interaction_key[1], present_beads),
-        element3=element_from_type(interaction_key[2], present_beads),
-        n=interaction_list[1],
-        b=interaction_list[2],
-        angle_k=openmm.unit.Quantity(
-            value=interaction_list[3],
-            unit=openmm.unit.kilojoule / openmm.unit.mole,
-        ),
-    )
-
-
-def define_torsion(
-    interaction_key: str,
-    interaction_list: list,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> cgexplore.terms.TargetTorsion:
-    """Define target from a known structured list."""
-    measured_atom_ids = tuple(int(i) for i in interaction_list[1])
-    if len(measured_atom_ids) != 4:  # noqa: PLR2004
-        msg = (
-            f"trying to define torsion with measured atoms {measured_atom_ids}"
-            ", should be 4"
-        )
-        raise RuntimeError(msg)
-    return cgexplore.terms.TargetTorsion(
-        search_string=tuple(i for i in interaction_key),
-        search_estring=tuple(
-            element_from_type(test, present_beads) for test in interaction_key
-        ),
-        measured_atom_ids=measured_atom_ids,
-        phi0=openmm.unit.Quantity(
-            value=interaction_list[2],
-            unit=openmm.unit.degrees,
-        ),
-        torsion_k=openmm.unit.Quantity(
-            value=interaction_list[3],
-            unit=openmm.unit.kilojoules_per_mole,
-        ),
-        torsion_n=interaction_list[4],
-    )
-
-
-def define_nonbonded(
-    interaction_key: str,
-    interaction_list: list,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-) -> cgexplore.terms.TargetNonbonded:
-    """Define target from a known structured list."""
-    return cgexplore.terms.TargetNonbonded(
-        bead_class=interaction_key[0],
-        bead_element=element_from_type(interaction_key[0], present_beads),
-        epsilon=openmm.unit.Quantity(
-            value=interaction_list[1],
-            unit=openmm.unit.kilojoules_per_mole,
-        ),
-        sigma=openmm.unit.Quantity(
-            value=interaction_list[2], unit=openmm.unit.angstrom
-        ),
-        force="custom-excl-vol",
-    )
 
 
 # Diverging ligands.
@@ -420,88 +271,6 @@ tetra_bead = cgexplore.molecular.CgBead(
 )
 
 
-def get_forcefield(
-    identifier: str,
-    prefix: str,
-    vdw_bond_cutoff: int,
-    present_beads: tuple[cgexplore.molecular.CgBead, ...],
-    definer_dict: dict,
-) -> cgexplore.forcefields.ForceField:  # noqa: C901
-    """Get forcefield."""
-
-    bond_terms: list = []
-    angle_terms: list[
-        cgexplore.terms.TargetAngle | cgexplore.terms.TargetCosineAngle
-    ] = []
-    torsion_terms: list = []
-    nonbonded_terms: list = []
-    for key_ in definer_dict:
-        term = definer_dict[key_]  # type: ignore[assignment]
-
-        if term[0] == "bond":
-            bond_terms.append(
-                define_bond(
-                    interaction_key=key_,
-                    interaction_list=term,
-                    present_beads=present_beads,
-                )
-            )
-
-        elif term[0] == "pyramid":
-            angle_terms.append(
-                define_pyramid(
-                    interaction_key=key_,
-                    interaction_list=term,
-                    present_beads=present_beads,
-                )
-            )
-
-        elif term[0] == "angle":
-            angle_terms.append(
-                define_angle(
-                    interaction_key=key_,
-                    interaction_list=term,
-                    present_beads=present_beads,
-                )
-            )
-
-        elif term[0] == "cosine":
-            angle_terms.append(
-                define_cosine_angle(
-                    interaction_key=key_,
-                    interaction_list=term,
-                    present_beads=present_beads,
-                )
-            )
-
-        elif term[0] == "tors":
-            torsion_terms.append(
-                define_torsion(
-                    interaction_key=key_,
-                    interaction_list=term,
-                    present_beads=present_beads,
-                )
-            )
-
-        elif term[0] == "nb":
-            nonbonded_terms.append(
-                define_nonbonded(
-                    interaction_key=key_,
-                    interaction_list=term,
-                    present_beads=present_beads,
-                )
-            )
-
-    return cgexplore.forcefields.ForceField(
-        identifier=identifier,
-        prefix=prefix,
-        present_beads=present_beads,
-        bond_targets=tuple(bond_terms),
-        angle_targets=tuple(angle_terms),
-        torsion_targets=tuple(torsion_terms),
-        nonbonded_targets=tuple(nonbonded_terms),
-        vdw_bond_cutoff=vdw_bond_cutoff,
-    )
 
 
 present_beads = (
@@ -552,7 +321,7 @@ definer_dict_lf_ls1["dde"] = ("angle", 130, 1e2)
 definer_dict_lf_ls1["deg"] = ("angle", 120, 1e2)
 definer_dict_lf_ls1["edde"] = ("tors", "0123", 180, 50, 1)
 # definer_dict_lf_ls1["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_lf_ls1 = get_forcefield(
+forcefield_lf_ls1 = get_forcefield_from_dict(
     identifier="lfls1",
     prefix="min_opt",
     present_beads=present_beads,
@@ -573,7 +342,7 @@ definer_dict_lf_ls9["dde"] = ("angle", 130, 1e2)
 definer_dict_lf_ls9["deg"] = ("angle", 120, 1e2)
 definer_dict_lf_ls9["edde"] = ("tors", "0123", 180, 50, 1)
 # definer_dict_lf_ls9["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_lf_ls9 = get_forcefield(
+forcefield_lf_ls9 = get_forcefield_from_dict(
     identifier="lfls9",
     prefix="min_opt",
     present_beads=present_beads,
@@ -598,7 +367,7 @@ definer_dict_la_st5["dde"] = ("angle", 170, 1e2)
 definer_dict_la_st5["deg"] = ("angle", 120, 1e2)
 definer_dict_la_st5["edde"] = ("tors", "0123", 180, 50, 1)
 # definer_dict_la_st5["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_la_st5 = get_forcefield(
+forcefield_la_st5 = get_forcefield_from_dict(
     identifier="last5",
     prefix="min_opt",
     present_beads=present_beads,
@@ -623,7 +392,7 @@ definer_dict_la_st52["dde"] = ("angle", 170, 1e2)
 definer_dict_la_st52["deg"] = ("angle", 120, 1e2)
 definer_dict_la_st52["edde"] = ("tors", "0123", 180, 50, 1)
 # definer_dict_la_st52["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_la_st52 = get_forcefield(
+forcefield_la_st52 = get_forcefield_from_dict(
     identifier="last52",
     prefix="min_opt",
     present_beads=present_beads,
