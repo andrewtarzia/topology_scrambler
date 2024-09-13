@@ -213,7 +213,7 @@ def make_plot(
     ax.legend(ncols=1, fontsize=16)
     fig.tight_layout()
     fig.savefig(
-        filename,
+        figure_dir / filename,
         dpi=360,
         bbox_inches="tight",
     )
@@ -482,7 +482,6 @@ def main() -> None:
                     diverging_bb=diverging_bb,
                 )
                 logging.info("doing: pair %s, multi %s", pair, multiplier)
-                count = 0
                 for constructed in iterator.get_constructed_molecules():
                     idx = constructed.idx
                     acage = constructed.constructed_molecule
@@ -499,7 +498,6 @@ def main() -> None:
 
                     # Optimise and save.
                     logging.info("building %s", name)
-                    count += 1
 
                     try:
                         conformer = optimise_cage(
@@ -538,7 +536,7 @@ def main() -> None:
                 pair=pair,
                 structure_dir=structure_dir,
                 figure_dir=figure_dir,
-                filename=figure_dir / f"rerun_1_{pair}.png",
+                filename=f"rerun_1_{pair}.png",
             )
 
 

@@ -1,27 +1,31 @@
 """Script to generate and optimise CG models."""
 
+import argparse
 import logging
 import pathlib
-import numpy as np
-import matplotlib.pyplot as plt
-from rdkit import RDLogger
-import stko
-import argparse
 import warnings
+from collections import defaultdict
+
+import cgexplore
+import matplotlib.pyplot as plt
+import stko
+from openmm import OpenMMException, openmm
+from rdkit import RDLogger
 
 from min_utilities import (
-    binder_bead,
     abead_d,
+    binder_bead,
     cbead_d,
     eb_str,
-    tetra_bead,
     optimise_cage,
-    get_forcefield,
+    prepare_building_block,
+    tetra_bead,
 )
-import cgexplore
-from topologies import HomolepticTopologyIterator
-from openmm import openmm, OpenMMException
-import mchammer as mch
+from topologies import (
+    HomolepticTopologyIterator,
+    TopologyCode,
+    TopologyIterator,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +35,14 @@ RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
 
 
-def analyse_cage(database_path, name, forcefield, iterator, topology_code):
+def analyse_cage(  # noqa: C901
+    database_path: pathlib.Path,
+    name: str,
+    forcefield: cgexplore.forcefields.ForceField,
+    iterator: TopologyIterator,
+    topology_code: TopologyCode,
+) -> None:
+    """Analyse toy model cage."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
     if "num_components" not in properties:
@@ -52,7 +63,11 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
                     energy_decomp[key] = value
         fin_energy = energy_decomp["total energy_kJ/mol"]
         if (
-            sum(energy_decomp[i] for i in energy_decomp if "total energy" not in i)
+            sum(
+                energy_decomp[i]
+                for i in energy_decomp
+                if "total energy" not in i
+            )
             != fin_energy
         ):
             msg = (
@@ -70,17 +85,25 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
         for bt in ff_targets["bonds"]:
             cp = (bt.type1, bt.type2)
             k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.nanometer**2
+                openmm.unit.kilojoule
+                / openmm.unit.mole
+                / openmm.unit.nanometer**2
             )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(openmm.unit.angstrom)
+            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
+                openmm.unit.angstrom
+            )
 
         for at in ff_targets["angles"]:
             cp = (at.type1, at.type2, at.type3)
             try:
                 k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.radian**2
+                    openmm.unit.kilojoule
+                    / openmm.unit.mole
+                    / openmm.unit.radian**2
                 )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(openmm.unit.degrees)
+                v_dict["_".join(cp)] = at.angle.value_in_unit(
+                    openmm.unit.degrees
+                )
             except TypeError:
                 # Handle different angle types.
                 k_dict["_".join(cp)] = at.angle_k.value_in_unit(
@@ -95,7 +118,9 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
             )
             v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
         for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(openmm.unit.angstrom)
+            v_dict[at.bead_class] = at.sigma.value_in_unit(
+                openmm.unit.angstrom
+            )
             k_dict[at.bead_class] = at.epsilon.value_in_unit(
                 openmm.unit.kilojoules_per_mole
             )
@@ -118,7 +143,8 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
             property_dict={
                 "forcefield_dict": forcefield_dict,
                 "strain_energy": fin_energy,
-                "energy_per_bb": fin_energy / iterator.get_num_building_blocks(),
+                "energy_per_bb": fin_energy
+                / iterator.get_num_building_blocks(),
                 "ligand": name.split("_")[0],
                 "num_components": num_components,
                 "multiplier": name.split("_")[1],
@@ -132,9 +158,8 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
 def get_validation_forcefield(
     bac_angle: float,
     identifier: str,
-) -> cgexplore.forcefields.ForceField:  # noqa: C901
+) -> cgexplore.forcefields.ForceField:
     """Get forcefield."""
-
     present_beads = (cbead_d, abead_d, binder_bead, tetra_bead)
     definer_dict = {
         # Bonds.
@@ -154,7 +179,7 @@ def get_validation_forcefield(
         "b": ("nb", 10.0, 1.0),
         "c": ("nb", 10.0, 1.0),
     }
-    return get_forcefield(
+    return cgexplore.systems_optimisation.get_forcefield_from_dict(
         identifier=identifier,
         prefix="min_val",
         present_beads=present_beads,
@@ -182,7 +207,9 @@ def make_plot(
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
     structure_dir: pathlib.Path,
-):
+    filename: str,
+) -> None:
+    """Plot energies."""
     cmap = {
         "1": "tab:blue",
         "2": "tab:orange",
@@ -193,58 +220,41 @@ def make_plot(
         "10": "tab:cyan",
         "12": "tab:brown",
     }
-    fig, axs = plt.subplots(ncols=2, sharex=True, sharey=True, figsize=(16, 5))
-    energies = {}
-    bacs = {}
-    energies2 = {}
-    bacs2 = {}
-    for entry in cgexplore.utilities.AtomliteDatabase(database_path).get_entries():
+    fig, ax = plt.subplots(figsize=(8, 5))
+    energies = defaultdict(list)
+    bacs = defaultdict(list)
+
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
         bite_angle = (bac_angle - 90) * 2
 
-        if len(entry.key.split("_")) == 3:
-            if multi not in energies:
-                energies[multi] = []
+        if entry.properties["num_components"] > 1:
+            continue
 
-            if bite_angle not in bacs:
-                bacs[bite_angle] = []
-
-            if entry.properties["num_components"] > 1:
-                continue
-
-            energies[multi].append((bite_angle, energy))
-            bacs[bite_angle].append((multi, energy, entry.key))
-        elif len(entry.key.split("_")) == 5:
-            if multi not in energies2:
-                energies2[multi] = []
-
-            if bite_angle not in bacs2:
-                bacs2[bite_angle] = []
-
-            if entry.properties["num_components"] > 1:
-                continue
-
-            energies2[multi].append((bite_angle, energy))
-            bacs2[bite_angle].append((multi, energy, entry.key))
+        energies[multi].append((bite_angle, energy))
+        bacs[bite_angle].append((multi, energy, entry.key))
 
     for multi in sorted([int(i) for i in energies]):
         idx = str(multi)
         min_energy = min(energies[idx], key=lambda p: p[1])
 
-        axs[0].scatter(
+        ax.scatter(
             [i[0] for i in energies[idx]],
             [i[1] for i in energies[idx]],
             marker="o",
             c=cmap[idx],
             s=20,
-            alpha=0.2,
+            alpha=0.4,
             ec="none",
             label=(
                 f"M{idx}: {round(min_energy[1],2)} @ {min_energy[0]} "
                 f"({len(energies[idx])})"
             ),
+            zorder=2,
         )
 
         bac_line = []
@@ -255,12 +265,13 @@ def make_plot(
             min_energy = min(rel_energies)
             bac_line.append((bac_angle, min_energy))
 
-        axs[0].plot(
+        ax.plot(
             [i[0] for i in bac_line],
             [i[1] for i in bac_line],
             c=cmap[idx],
             ls="--",
-            alpha=0.4,
+            alpha=0.6,
+            zorder=1,
         )
 
     with (figure_dir / "val_opt.txt").open("w") as f:
@@ -271,137 +282,76 @@ def make_plot(
             f.write(f"{opt_file} ")
             bac_line.append((bac_angle, min_energy[1]))
 
-            axs[0].scatter(
+            ax.scatter(
                 bac_angle,
                 min_energy[1],
                 c=cmap[min_energy[0]],
                 marker="o",
                 s=60,
                 ec="k",
+                zorder=3,
             )
 
-    axs[0].plot(
+    ax.plot(
         [i[0] for i in bac_line],
         [i[1] for i in bac_line],
         c="k",
-        zorder=-1,
+        zorder=2,
     )
 
-    axs[0].tick_params(axis="both", which="major", labelsize=16)
-    axs[0].set_xlabel("target bite angle [deg]", fontsize=16)
-    axs[0].set_ylabel(eb_str(), fontsize=16)
-    axs[0].set_yscale("log")
-    axs[0].axhline(y=0.3, c="k", ls="--")
-    leg = axs[0].legend(ncols=1, fontsize=12)
-    for lh in leg.legend_handles:
-        lh.set_alpha(1)
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("target bite angle [deg]", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.axhline(y=0.3, c="k", ls="--")
 
-    for multi in sorted([int(i) for i in energies2]):
-        idx = str(multi)
-        min_energy = min(energies2[idx], key=lambda p: p[1])
-
-        axs[1].scatter(
-            [i[0] for i in energies2[idx]],
-            [i[1] for i in energies2[idx]],
-            marker="o",
-            c=cmap[idx],
-            s=20,
-            alpha=1,
-            ec="none",
-            label=(
-                f"M{idx}: {round(min_energy[1],2)} @ {min_energy[0]} "
-                f"({len(energies2[idx])})"
-            ),
-        )
-
-        bac_line = []
-        for bac_angle in sorted(bacs2):
-            rel_energies = [i[1] for i in energies2[idx] if i[0] == bac_angle]
-            if len(rel_energies) == 0:
-                continue
-            min_energy = min(rel_energies)
-            bac_line.append((bac_angle, min_energy))
-
-        axs[1].plot(
-            [i[0] for i in bac_line],
-            [i[1] for i in bac_line],
-            c=cmap[idx],
-            ls="--",
-            alpha=0.4,
-        )
-
-    bac_line2 = []
-    for bac_angle in sorted(bacs2):
-        min_energy = min(bacs2[bac_angle], key=lambda p: p[1])
-        opt_file = structure_dir / f"{min_energy[2]}_optc.mol"
-        bac_line2.append((bac_angle, min_energy[1]))
-
-        axs[1].scatter(
-            bac_angle,
-            min_energy[1],
-            c=cmap[min_energy[0]],
-            marker="o",
-            s=60,
-            ec="k",
-        )
-
-    axs[1].plot(
-        [i[0] for i in bac_line2],
-        [i[1] for i in bac_line2],
-        c="k",
-        zorder=-1,
-    )
-
-    axs[1].tick_params(axis="both", which="major", labelsize=16)
-    axs[1].set_xlabel("target bite angle [deg]", fontsize=16)
-    axs[1].set_ylabel(eb_str(), fontsize=16)
-    axs[1].set_yscale("log")
-    axs[1].axhline(y=0.3, c="k", ls="--")
-    leg = axs[1].legend(ncols=1, fontsize=12)
+    leg = ax.legend(ncols=1, fontsize=12)
     for lh in leg.legend_handles:
         lh.set_alpha(1)
 
     fig.tight_layout()
     fig.savefig(
-        figure_dir / "val_1.png",
+        figure_dir / filename,
         dpi=360,
         bbox_inches="tight",
     )
     plt.close()
 
 
-def main():
-    raise SystemExit(
-        "**paused this for now, I know it can work, but it is a matter of "
-        "thinking about the algorithm. Can revisit when we take this further**"
-    )
+def main() -> None:  # noqa: PLR0915, C901, PLR0912
+    """Run script."""
     args = _parse_args()
 
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "val_calculations"
+    calculation_dir = wd / "validation_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "val_structures"
+    structure_dir = wd / "validation_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "val_ligands"
+    ligand_dir = wd / "validation_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "val_data"
+    data_dir = wd / "validation_data"
     data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
 
-    database_path = data_dir / "val_run.db"
+    database_path = data_dir / "validation_run.db"
 
     ligands = {
-        str(i): {
+        str(bac_angle): {
             "forcefield": get_validation_forcefield(
-                bac_angle=bac_angle, identifier=str(i)
+                bac_angle=bac_angle,
+                identifier=str(i),
             ),
             "stoichiometry_L_M": (2, 1),
-            "ditopic": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "ditopic": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d, abead1=abead_d
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
             "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
         }
-        for i, bac_angle in enumerate(range(85, 181, 5))
+        for i, bac_angle in enumerate(range(45, 181, 5))
     }
 
     if args.run:
@@ -409,235 +359,81 @@ def main():
             forcefield = ligands[lig]["forcefield"]
             ditopic = ligands[lig]["ditopic"]
             tetra = ligands[lig]["tetra"]
-            # Prepare ligands.
-            for i, precursor in enumerate((ditopic, tetra)):
-                raise SystemExit("think aout if this name is an issue wrt ff.idnet")
-                name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
-                building_block = cgexplore.utilities.optimise_ligand(
-                    molecule=precursor.get_building_block(),
-                    name=name,
-                    output_dir=calculation_dir,
-                    forcefield=forcefield,
-                    platform=None,
-                )
-                building_block.write(str(ligand_dir / f"{name}_optl.mol"))
-                if i == 0:
-                    ditopic_bb = building_block.clone()
-                elif i == 1:
-                    tetra_bb = building_block.clone()
+
+            ditopic_bb = prepare_building_block(
+                precursor=ditopic,
+                forcefield=forcefield,
+                calculation_dir=calculation_dir,
+                ligand_dir=ligand_dir,
+            )
+            tetra_bb = prepare_building_block(
+                precursor=tetra,
+                forcefield=forcefield,
+                calculation_dir=calculation_dir,
+                ligand_dir=ligand_dir,
+            )
 
             for multiplier in ligands[lig]["multipliers"]:
-                # if lig not in ("9", "10", "11"):
-                #     continue
-                # if multiplier not in (6,):
-                #     continue
+                iterator = HomolepticTopologyIterator(
+                    multiplier=multiplier,
+                    stoichiometry=ligands[lig]["stoichiometry_L_M"],
+                    tetra_bb=tetra_bb,
+                    ditopic_bb=ditopic_bb,
+                )
+                count = 0
+                logging.info("doing: ligand %s, multi %s", lig, multiplier)
+                for constructed in iterator.get_constructed_molecules():
+                    idx = constructed.idx
+                    acage = constructed.constructed_molecule
+                    name = f"{lig}_{multiplier}_{idx}"
+                    acage.write(structure_dir / f"{name}_unopt.mol")
 
-                # if lig not in ("12", "13", "14", "19"):
-                #     continue
-                # if multiplier not in (12,):
-                #     continue
-
-                if lig not in ("5",):
-                    continue
-                if multiplier not in (3,):
-                    continue
-
-                # if lig not in ("7",):
-                #     continue
-                # if multiplier not in (4,):
-                #     continue
-
-                vmap_str_map = {}
-                cut_energy = 0.3
-                current_energy = 1e24
-                seeds = (100, 32963, 399, 9)
-                for seed in seeds:
-                    if current_energy < cut_energy:
-                        logging.info(f"breaking before seed {seed}")
-                        break
-                    rng = np.random.default_rng(seed=seed)
-
-                    # Define a connectivity based on a multiplier.
-                    iterator = HomolepticTopologyIterator(
-                        multiplier=multiplier,
-                        stoichiometry=ligands[lig]["stoichiometry_L_M"],
-                        tetra_bb=tetra_bb,
-                        ditopic_bb=ditopic_bb,
+                    num_components = len(
+                        stko.Network.init_from_molecule(
+                            acage
+                        ).get_connected_components()
                     )
-                    logging.info(f"doing: ligand {lig}, multi {multiplier}")
-                    for scramble_step in range(iterator.get_num_scrambles()):
-                        logging.info(f"doing: step {scramble_step}")
-                        if scramble_step == 0:
-                            new_constructed = iterator.get_topology(
-                                input_topology_code=None,
-                                generator=rng,
-                            )
-                            current_energy = 1e24
-                            current_topology_code = None
-                            current_best = None
+                    if num_components != 1:
+                        continue
 
-                        else:
-                            new_constructed = iterator.get_topology(
-                                input_topology_code=current_topology_code,
-                                generator=rng,
-                            )
+                    # Optimise and save.
+                    logging.info("building %s", name)
 
-                        if new_constructed is None:
-                            logging.info(f"fail for {scramble_step}")
-                            continue
-
-                        if current_energy < cut_energy:
-                            logging.info(f"breaking at step {scramble_step}")
-                            break
-
-                        mash_step = 0
-                        acage = new_constructed.constructed_molecule
-                        new_topology_code = new_constructed.topology_code
-                        # Avoid redoing same TGs.
-                        if new_topology_code.as_string in vmap_str_map:
-                            name = vmap_str_map[new_topology_code.as_string]
-                            name = name.split("_")
-                            name[3] = str(mash_step)
-                            name[4] = str(seed)
-                            name = "_".join(name)
-                        else:
-                            name = (
-                                f"{lig}_{multiplier}_{scramble_step}_{mash_step}_{seed}"
-                            )
-                            vmap_str_map[new_topology_code.as_string] = name
-
-                        logging.info(f"building {name}")
-                        acage.write(str(structure_dir / f"{name}_unopt.mol"))
-
-                        num_components = len(
-                            stko.Network.init_from_molecule(
-                                acage
-                            ).get_connected_components()
+                    try:
+                        conformer = optimise_cage(
+                            molecule=acage,
+                            name=name,
+                            output_dir=calculation_dir,
+                            forcefield=forcefield,
+                            platform=None,
+                            database_path=database_path,
                         )
-                        if num_components != 1:
-                            continue
-                        # Optimise and save.
-                        try:
-                            conformer = optimise_cage(
-                                molecule=acage,
-                                name=name,
-                                output_dir=calculation_dir,
-                                forcefield=forcefield,
-                                platform=None,
-                                database_path=database_path,
-                            )
-                            if conformer is not None:
-                                conformer.molecule.write(
-                                    str(structure_dir / f"{name}_optc.mol")
-                                )
-
-                            analyse_cage(
-                                database_path=database_path,
-                                name=name,
-                                forcefield=forcefield,
-                                iterator=iterator,
-                                topology_code=new_topology_code,
+                        if conformer is not None:
+                            conformer.molecule.with_centroid((0, 0, 0)).write(
+                                str(structure_dir / f"{name}_optc.mol")
                             )
 
-                        except OpenMMException:
-                            continue
-
-                        new_energy = (
-                            cgexplore.utilities.AtomliteDatabase(database_path)
-                            .get_entry(key=name)
-                            .properties["energy_per_bb"]
+                        analyse_cage(
+                            database_path=database_path,
+                            name=name,
+                            forcefield=forcefield,
+                            iterator=iterator,
+                            topology_code=constructed.topology_code,
                         )
 
-                        if mch.test_move(
-                            beta=iterator.get_beta(),
-                            curr_pot=current_energy,
-                            new_pot=new_energy,
-                            generator=rng,
-                        ):
-                            current_energy = new_energy
-                            current_topology_code = new_topology_code
-                            current_best = name
-                            logging.info(
-                                "new best %s with E: %s",
-                                current_best,
-                                round(current_energy, 3),
-                            )
+                    except OpenMMException:
+                        pass
+                    count += 1
+                    if count == 3:  # noqa: PLR2004
+                        break
 
-                        # Scramble the vertex positions.
-                        for mash_step in range(1, iterator.get_num_mashes() + 1):
-                            # Avoid redoing same TGs.
-                            if new_topology_code.as_string in vmap_str_map:
-                                name = vmap_str_map[new_topology_code.as_string]
-                                name = name.split("_")
-                                name[3] = str(mash_step)
-                                name[4] = str(seed)
-                                name = "_".join(name)
-                            else:
-                                name = f"{lig}_{multiplier}_{scramble_step}_{mash_step}_{seed}"
-                                vmap_str_map[new_topology_code.as_string] = name
-
-                            new_constructed = iterator.get_mashed_topology(
-                                topology_code=new_topology_code,
-                                generator=rng,
-                            )
-                            acage = new_constructed.constructed_molecule
-
-                            logging.info(f"building {name}")
-                            acage.write(str(structure_dir / f"{name}_unopt.mol"))
-                            num_components = len(
-                                stko.Network.init_from_molecule(
-                                    acage
-                                ).get_connected_components()
-                            )
-                            if num_components != 1:
-                                continue
-                            # Optimise and save.
-                            try:
-                                conformer = optimise_cage(
-                                    molecule=acage,
-                                    name=name,
-                                    output_dir=calculation_dir,
-                                    forcefield=forcefield,
-                                    platform=None,
-                                    database_path=database_path,
-                                )
-                                if conformer is not None:
-                                    conformer.molecule.write(
-                                        str(structure_dir / f"{name}_optc.mol")
-                                    )
-
-                                analyse_cage(
-                                    database_path=database_path,
-                                    name=name,
-                                    forcefield=forcefield,
-                                    iterator=iterator,
-                                    topology_code=new_topology_code,
-                                )
-
-                            except OpenMMException:
-                                continue
-
-                            new_energy = (
-                                cgexplore.utilities.AtomliteDatabase(database_path)
-                                .get_entry(key=name)
-                                .properties["energy_per_bb"]
-                            )
-
-                            if mch.test_move(
-                                beta=iterator.get_beta(),
-                                curr_pot=current_energy,
-                                new_pot=new_energy,
-                                generator=rng,
-                            ):
-                                current_energy = new_energy
-                                current_topology_code = new_topology_code
-                                current_best = name
-                                logging.info(
-                                    "new best %s with E: %s",
-                                    current_best,
-                                    round(current_energy, 3),
-                                )
-
+                make_plot(
+                    database_path=database_path,
+                    structure_dir=structure_dir,
+                    figure_dir=figure_dir,
+                    filename="validation_1.png",
+                )
+                continue
                 raise SystemExit("figure out hwo to atomisse")
                 continue
 
@@ -689,9 +485,14 @@ def main():
                         pass
 
     make_plot(
-        figure_dir=figure_dir,
-        structure_dir=structure_dir,
         database_path=database_path,
+        structure_dir=structure_dir,
+        figure_dir=figure_dir,
+        filename="validation_1.png",
+    )
+    raise SystemExit(
+        "**paused this for now, I know it can work, but it is a matter of "
+        "thinking about the algorithm. Can revisit when we take this further**"
     )
 
 
