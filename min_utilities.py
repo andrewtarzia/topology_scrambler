@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import pathlib
 from copy import deepcopy
 
@@ -36,15 +35,16 @@ def prepare_building_block(
     return building_block.clone()
 
 
-def optimise_cage(
-    molecule,
-    name,
-    output_dir,
-    forcefield,
-    platform,
-    database_path,
-):
-    fina_mol_file = os.path.join(output_dir, f"{name}_final.mol")
+def optimise_cage(  # noqa: C901, PLR0913
+    molecule: stk.Molecule,
+    name: str,
+    output_dir: pathlib.Path,
+    forcefield: cgexplore.forcefields.ForceField,
+    platform: str | None,
+    database_path: pathlib.Path,
+) -> cgexplore.molecular.Conformer:
+    """Optimise a toy model cage."""
+    fina_mol_file = output_dir / f"{name}_final.mol"
 
     database = cgexplore.utilities.AtomliteDatabase(database_path)
     # Do not rerun if database entry exists.
@@ -61,12 +61,12 @@ def optimise_cage(
         )
 
     # Do not rerun if final mol exists.
-    if os.path.exists(fina_mol_file):
+    if fina_mol_file.exists():
         ensemble = cgexplore.molecular.Ensemble(
             base_molecule=molecule,
-            base_mol_path=os.path.join(output_dir, f"{name}_base.mol"),
-            conformer_xyz=os.path.join(output_dir, f"{name}_ensemble.xyz"),
-            data_json=os.path.join(output_dir, f"{name}_ensemble.json"),
+            base_mol_path=output_dir / f"{name}_base.mol",
+            conformer_xyz=output_dir / f"{name}_ensemble.xyz",
+            data_json=output_dir / f"{name}_ensemble.json",
             overwrite=False,
         )
         conformer = ensemble.get_lowest_e_conformer()
@@ -85,9 +85,9 @@ def optimise_cage(
 
     ensemble = cgexplore.molecular.Ensemble(
         base_molecule=molecule,
-        base_mol_path=os.path.join(output_dir, f"{name}_base.mol"),
-        conformer_xyz=os.path.join(output_dir, f"{name}_ensemble.xyz"),
-        data_json=os.path.join(output_dir, f"{name}_ensemble.json"),
+        base_mol_path=output_dir / f"{name}_base.mol",
+        conformer_xyz=output_dir / f"{name}_ensemble.xyz",
+        data_json=output_dir / f"{name}_ensemble.json",
         overwrite=True,
     )
     temp_molecule = cgexplore.utilities.run_constrained_optimisation(
@@ -112,7 +112,6 @@ def optimise_cage(
         name=name,
         file_suffix="opt1",
         output_dir=output_dir,
-        # max_iterations=50,
         platform=platform,
     )
     ensemble.add_conformer(conformer=conformer, source="opt1")
@@ -134,7 +133,6 @@ def optimise_cage(
             name=name,
             file_suffix="sopt",
             output_dir=output_dir,
-            # max_iterations=50,
             platform=platform,
         )
         ensemble.add_conformer(conformer=conformer, source="shifted")
@@ -196,7 +194,6 @@ def optimise_cage(
                 name=name,
                 file_suffix="smd_mdc",
                 output_dir=output_dir,
-                # max_iterations=50,
                 platform=platform,
             )
             ensemble.add_conformer(conformer=conformer, source="smd")
@@ -206,9 +203,10 @@ def optimise_cage(
     min_energy_conformerid = min_energy_conformer.conformer_id
     min_energy = min_energy_conformer.energy_decomposition["total energy"][0]
     logging.info(
-        f"Min. energy conformer: {min_energy_conformerid} from "
-        f"{min_energy_conformer.source}"
-        f" with energy: {min_energy} kJ.mol-1"
+        "Min. energy conformer: %s from %s with energy: %s kJ.mol-1",
+        min_energy_conformerid,
+        min_energy_conformer.source,
+        min_energy,
     )
 
     # Add to atomlite database.
@@ -225,7 +223,8 @@ def optimise_cage(
     return min_energy_conformer
 
 
-def eb_str(no_unit=False):
+def eb_str(no_unit: bool = False) -> str:
+    """Get variable string."""
     if no_unit:
         return r"$E_{\mathrm{b}}$"
 
@@ -459,7 +458,13 @@ class FiveBead(cgexplore.molecular.Precursor):
         )
 
 
-def save_vertex_positions(name, calculation_dir, structure_dir, molecule):
+def save_vertex_positions(
+    name: str,
+    calculation_dir: pathlib.Path,
+    structure_dir: pathlib.Path,
+    molecule: stk.ConstructedMolecule,
+) -> None:
+    """Save vertex positions of molecule to file."""
     vertex_file = calculation_dir / f"{name}_vertices.json"
     if not vertex_file.exists():
         constructed_molecule = molecule.with_structure_from_file(

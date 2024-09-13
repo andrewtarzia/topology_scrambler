@@ -25,7 +25,7 @@ from min_utilities import (
     save_vertex_positions,
     tetra_bead,
 )
-from topologies import TopologyIterator
+from topologies import TopologyCode, TopologyIterator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,7 +34,14 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def analyse_cage(database_path, name, forcefield, iterator, topology_code):
+def analyse_cage(  # noqa: C901
+    database_path: pathlib.Path,
+    name: str,
+    forcefield: cgexplore.forcefields.ForceField,
+    iterator: TopologyIterator,
+    topology_code: TopologyCode,
+) -> None:
+    """Analyse a toy model cage."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
     if "topology_code_vmap" not in properties:
@@ -147,7 +154,14 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
         )
 
 
-def make_plot(pair, database_path, structure_dir, figure_dir, filename):
+def make_plot(
+    pair: str,
+    database_path: pathlib.Path,
+    structure_dir: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
     fig, ax = plt.subplots(figsize=(8, 5))
     energies = {}
     cmap = {
@@ -185,9 +199,6 @@ def make_plot(pair, database_path, structure_dir, figure_dir, filename):
                 marker="o",
                 c=cmap[multi],
                 markersize=4,
-                # s=40,
-                # alpha=0.3,
-                # ec="none",
                 label=f"{multi}: {round(min_energy[0],3)} @ {min_energy[1]}",
             )
 
