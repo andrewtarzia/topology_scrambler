@@ -16,33 +16,38 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def get_underyling_vertices(pair, multi):
+def get_underyling_vertices(
+    pair: str,
+    multi: int,
+) -> dict[int, list[stk.Vertex]]:
+    """Get the vertex prototypes from stk."""
     underlying_topologies = {
         "lf_ls1": {
-            1: UnalignedM1L2._vertex_prototypes,
-            2: stk.cage.M2L4Lantern._vertex_prototypes,
-            3: stk.cage.M3L6._vertex_prototypes,
+            1: UnalignedM1L2._vertex_prototypes,  # noqa: SLF001
+            2: stk.cage.M2L4Lantern._vertex_prototypes,  # noqa: SLF001
+            3: stk.cage.M3L6._vertex_prototypes,  # noqa: SLF001
         },
         "lf_ls9": {
-            1: UnalignedM1L2._vertex_prototypes,
-            2: stk.cage.M2L4Lantern._vertex_prototypes,
-            3: stk.cage.M3L6._vertex_prototypes,
+            1: UnalignedM1L2._vertex_prototypes,  # noqa: SLF001
+            2: stk.cage.M2L4Lantern._vertex_prototypes,  # noqa: SLF001
+            3: stk.cage.M3L6._vertex_prototypes,  # noqa: SLF001
         },
         "la_st5": {
-            1: stk.cage.M3L6._vertex_prototypes,
-            2: stk.cage.M6L12Cube._vertex_prototypes,
-            4: CGM12L24._vertex_prototypes,
+            1: stk.cage.M3L6._vertex_prototypes,  # noqa: SLF001
+            2: stk.cage.M6L12Cube._vertex_prototypes,  # noqa: SLF001
+            4: CGM12L24._vertex_prototypes,  # noqa: SLF001
         },
         "la_st52": {
-            1: stk.cage.M3L6._vertex_prototypes,
-            2: stk.cage.M6L12Cube._vertex_prototypes,
-            4: CGM12L24._vertex_prototypes,
+            1: stk.cage.M3L6._vertex_prototypes,  # noqa: SLF001
+            2: stk.cage.M6L12Cube._vertex_prototypes,  # noqa: SLF001
+            4: CGM12L24._vertex_prototypes,  # noqa: SLF001
         },
     }
     return underlying_topologies[pair][multi]
 
 
 def vmap_to_str(vertex_map: abc.Sequence[tuple[int, int]]) -> str:
+    """Convert vertex map to str."""
     strs = sorted([f"{i[0]}-{i[1]}" for i in vertex_map])
     return "_".join(strs)
 
@@ -79,10 +84,16 @@ class CustomTopology:
 
 
 class UnalignedM1L2(stk.cage.Cage):
+    """New topology definition."""
+
     _vertex_prototypes = (
         stk.cage.UnaligningVertex(0, np.array([0, 0, 0])),
-        stk.cage.UnaligningVertex(1, np.array([-3, 0, 0]), False),
-        stk.cage.UnaligningVertex(2, np.array([3, 0, 0]), False),
+        stk.cage.UnaligningVertex(
+            1, np.array([-3, 0, 0]), use_neighbor_placement=False
+        ),
+        stk.cage.UnaligningVertex(
+            2, np.array([3, 0, 0]), use_neighbor_placement=False
+        ),
     )
 
     _edge_prototypes = (
@@ -101,14 +112,14 @@ class CGM4L8(stk.cage.M4L8):
         stk.cage.NonLinearVertex(1, [0, 2, 0]),
         stk.cage.NonLinearVertex(2, [-2, 0, 0]),
         stk.cage.NonLinearVertex(3, [0, -2, 0]),
-        stk.cage.LinearVertex(4, [1, 1, 0.5], False),
-        stk.cage.LinearVertex(5, [1, 1, -0.5], False),
-        stk.cage.LinearVertex(6, [1, -1, 0.5], False),
-        stk.cage.LinearVertex(7, [1, -1, -0.5], False),
-        stk.cage.LinearVertex(8, [-1, -1, 0.5], False),
-        stk.cage.LinearVertex(9, [-1, -1, -0.5], False),
-        stk.cage.LinearVertex(10, [-1, 1, 0.5], False),
-        stk.cage.LinearVertex(11, [-1, 1, -0.5], False),
+        stk.cage.LinearVertex(4, [1, 1, 0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(5, [1, 1, -0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(6, [1, -1, 0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(7, [1, -1, -0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(8, [-1, -1, 0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(9, [-1, -1, -0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(10, [-1, 1, 0.5], use_neighbor_placement=False),
+        stk.cage.LinearVertex(11, [-1, 1, -0.5], use_neighbor_placement=False),
     )
 
     _edge_prototypes = (
@@ -147,30 +158,78 @@ class CGM12L24(stk.cage.M12L24):
         stk.cage.NonLinearVertex(9, [0.625, -0.625, -0.88]),
         stk.cage.NonLinearVertex(10, [-0.625, 0.625, -0.88]),
         stk.cage.NonLinearVertex(11, [-0.625, -0.625, -0.88]),
-        stk.cage.LinearVertex(12, [0.9, 0.31, 0.31], False),
-        stk.cage.LinearVertex(13, [0.9, 0.31, -0.31], False),
-        stk.cage.LinearVertex(14, [0.9, -0.31, 0.31], False),
-        stk.cage.LinearVertex(15, [0.9, -0.31, -0.31], False),
-        stk.cage.LinearVertex(16, [-0.9, 0.31, 0.31], False),
-        stk.cage.LinearVertex(17, [-0.9, 0.31, -0.31], False),
-        stk.cage.LinearVertex(18, [-0.9, -0.31, 0.31], False),
-        stk.cage.LinearVertex(19, [-0.9, -0.31, -0.31], False),
-        stk.cage.LinearVertex(20, [0.31, 0.9, 0.31], False),
-        stk.cage.LinearVertex(21, [0.31, 0.9, -0.31], False),
-        stk.cage.LinearVertex(22, [-0.31, 0.9, 0.31], False),
-        stk.cage.LinearVertex(23, [-0.31, 0.9, -0.31], False),
-        stk.cage.LinearVertex(24, [0.31, -0.9, 0.31], False),
-        stk.cage.LinearVertex(25, [0.31, -0.9, -0.31], False),
-        stk.cage.LinearVertex(26, [-0.31, -0.9, 0.31], False),
-        stk.cage.LinearVertex(27, [-0.31, -0.9, -0.31], False),
-        stk.cage.LinearVertex(28, [0.58, 0, 0.82], False),
-        stk.cage.LinearVertex(29, [-0.58, 0, 0.82], False),
-        stk.cage.LinearVertex(30, [0, 0.58, 0.82], False),
-        stk.cage.LinearVertex(31, [0, -0.58, 0.82], False),
-        stk.cage.LinearVertex(32, [0.58, 0, -0.82], False),
-        stk.cage.LinearVertex(33, [-0.58, 0, -0.82], False),
-        stk.cage.LinearVertex(34, [0, 0.58, -0.82], False),
-        stk.cage.LinearVertex(35, [0, -0.58, -0.82], False),
+        stk.cage.LinearVertex(
+            12, [0.9, 0.31, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            13, [0.9, 0.31, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            14, [0.9, -0.31, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            15, [0.9, -0.31, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            16, [-0.9, 0.31, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            17, [-0.9, 0.31, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            18, [-0.9, -0.31, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            19, [-0.9, -0.31, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            20, [0.31, 0.9, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            21, [0.31, 0.9, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            22, [-0.31, 0.9, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            23, [-0.31, 0.9, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            24, [0.31, -0.9, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            25, [0.31, -0.9, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            26, [-0.31, -0.9, 0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            27, [-0.31, -0.9, -0.31], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            28, [0.58, 0, 0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            29, [-0.58, 0, 0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            30, [0, 0.58, 0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            31, [0, -0.58, 0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            32, [0.58, 0, -0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            33, [-0.58, 0, -0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            34, [0, 0.58, -0.82], use_neighbor_placement=False
+        ),
+        stk.cage.LinearVertex(
+            35, [0, -0.58, -0.82], use_neighbor_placement=False
+        ),
     )
 
     _edge_prototypes = (

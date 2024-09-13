@@ -11,7 +11,10 @@ import numpy as np
 import stk
 import stko
 
-from topologies import CustomTopology, TopologyCode
+from desymmetrised_scripts._internal.topologies.topologies import (
+    CustomTopology,
+    TopologyCode,
+)
 
 
 def extract_ensemble(molecule: stk.Molecule, crest_run: pathlib.Path) -> dict:

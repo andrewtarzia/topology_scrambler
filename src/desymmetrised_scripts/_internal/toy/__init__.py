@@ -1,0 +1,1 @@
+"""Toy model module."""

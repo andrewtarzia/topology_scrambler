@@ -12,20 +12,7 @@ import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
 
-from min_utilities import (
-    abead_d,
-    binder_bead,
-    cbead_d,
-    eb_str,
-    optimise_cage,
-    prepare_building_block,
-    tetra_bead,
-)
-from topologies import (
-    HomolepticTopologyIterator,
-    TopologyCode,
-    TopologyIterator,
-)
+import desymmetrised_scripts
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,8 +26,8 @@ def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
     name: str,
     forcefield: cgexplore.forcefields.ForceField,
-    iterator: TopologyIterator,
-    topology_code: TopologyCode,
+    iterator: desymmetrised_scripts.topologies.TopologyIterator,
+    topology_code: desymmetrised_scripts.topologies.TopologyCode,
 ) -> None:
     """Analyse toy model cage."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
@@ -160,7 +147,12 @@ def get_validation_forcefield(
     identifier: str,
 ) -> cgexplore.forcefields.ForceField:
     """Get forcefield."""
-    present_beads = (cbead_d, abead_d, binder_bead, tetra_bead)
+    present_beads = (
+        desymmetrised_scripts.toy.cbead_d,
+        desymmetrised_scripts.toy.abead_d,
+        desymmetrised_scripts.toy.binder_bead,
+        desymmetrised_scripts.toy.tetra_bead,
+    )
     definer_dict = {
         # Bonds.
         "mb": ("bond", 1.0, 1e5),
@@ -221,6 +213,7 @@ def make_plot(
         "12": "tab:brown",
     }
     fig, ax = plt.subplots(figsize=(8, 5))
+    axi = ax.twiny()
     energies = defaultdict(list)
     bacs = defaultdict(list)
 
@@ -301,9 +294,21 @@ def make_plot(
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("target bite angle [deg]", fontsize=16)
-    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_ylabel(desymmetrised_scripts.toy.eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.axhline(y=0.3, c="k", ls="--")
+
+    # set limits for shared axis
+    axi.set_xlim(ax.get_xlim())
+
+    # set ticks for shared axis
+    axi.tick_params(axis="both", which="major", labelsize=16)
+    inverse_ticks = []
+    for tick in ax.get_xticks():
+        newtick = (tick / 2) + 90
+        inverse_ticks.append(int(newtick))
+    axi.set_xticklabels(inverse_ticks)
+    axi.set_xlabel("target $bac$ angle [deg]", fontsize=16)
 
     leg = ax.legend(ncols=1, fontsize=12)
     for lh in leg.legend_handles:
@@ -344,10 +349,12 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             ),
             "stoichiometry_L_M": (2, 1),
             "ditopic": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d, abead1=abead_d
+                bead=desymmetrised_scripts.toy.cbead_d,
+                abead1=desymmetrised_scripts.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead, abead1=binder_bead
+                bead=desymmetrised_scripts.toy.tetra_bead,
+                abead1=desymmetrised_scripts.toy.binder_bead,
             ),
             "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
         }
@@ -360,13 +367,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             ditopic = ligands[lig]["ditopic"]
             tetra = ligands[lig]["tetra"]
 
-            ditopic_bb = prepare_building_block(
+            ditopic_bb = desymmetrised_scripts.toy.prepare_building_block(
                 precursor=ditopic,
                 forcefield=forcefield,
                 calculation_dir=calculation_dir,
                 ligand_dir=ligand_dir,
             )
-            tetra_bb = prepare_building_block(
+            tetra_bb = desymmetrised_scripts.toy.prepare_building_block(
                 precursor=tetra,
                 forcefield=forcefield,
                 calculation_dir=calculation_dir,
@@ -374,7 +381,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             )
 
             for multiplier in ligands[lig]["multipliers"]:
-                iterator = HomolepticTopologyIterator(
+                iterator = desymmetrised_scripts.topologies.HomolepticTopologyIterator(
                     multiplier=multiplier,
                     stoichiometry=ligands[lig]["stoichiometry_L_M"],
                     tetra_bb=tetra_bb,
@@ -400,7 +407,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     logging.info("building %s", name)
 
                     try:
-                        conformer = optimise_cage(
+                        conformer = desymmetrised_scripts.toy.optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,
@@ -461,7 +468,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
 
                     # Optimise and save.
                     try:
-                        conformer = optimise_cage(
+                        conformer = desymmetrised_scripts.toy.optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,
