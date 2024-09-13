@@ -1,12 +1,13 @@
 """Script to generate and optimise CG models."""
 
 import logging
-import stk
-from copy import deepcopy
-import numpy as np
-from rdkit import RDLogger
-from dataclasses import dataclass
 from collections import abc
+from copy import deepcopy
+from dataclasses import dataclass
+
+import numpy as np
+import stk
+from rdkit import RDLogger
 
 logging.basicConfig(
     level=logging.INFO,
@@ -316,7 +317,7 @@ class TopologyIterator:
 
             elif multiplier == 4:
                 self._building_blocks = {
-                    tetra_bb: range(0, 12),
+                    tetra_bb: range(12),
                     converging_bb: range(12, 28),
                     diverging_bb: range(28, 36),
                 }
@@ -365,10 +366,14 @@ class TopologyIterator:
             self._vertex_connections[edge.get_vertex2_id()] += 1
 
         self._type1 = [
-            i for i in self._vertex_connections if self._vertex_connections[i] == 4
+            i
+            for i in self._vertex_connections
+            if self._vertex_connections[i] == 4
         ]
         self._type2 = [
-            i for i in self._vertex_connections if self._vertex_connections[i] == 2
+            i
+            for i in self._vertex_connections
+            if self._vertex_connections[i] == 2
         ]
 
         combination = [
@@ -419,7 +424,8 @@ class TopologyIterator:
             for step2 in range(self._num_mashes):
                 coordinates = rng.random(size=(len(self._vertices), 3))
                 new_vertex_positions = {
-                    j: coordinates[j] * 10 for j, i in enumerate(self._vertices)
+                    j: coordinates[j] * 10
+                    for j, i in enumerate(self._vertices)
                 }
 
                 count += 1
@@ -551,7 +557,8 @@ class TopologyIterator:
             for step2 in range(self._num_mashes):
                 coordinates = rng.random(size=(len(self._vertices), 3))
                 new_vertex_positions = {
-                    j: coordinates[j] * 10 for j, i in enumerate(self._vertices)
+                    j: coordinates[j] * 10
+                    for j, i in enumerate(self._vertices)
                 }
 
                 count += 1
@@ -593,7 +600,9 @@ class TopologyIterator:
                     except ValueError:
                         pass
 
-    def _get_random_topology_code(self, generator: np.random.Generator) -> TopologyCode:
+    def _get_random_topology_code(
+        self, generator: np.random.Generator
+    ) -> TopologyCode:
         remaining_connections = deepcopy(self._vertex_connections)
         available_type1s = deepcopy(self._type1)
         available_type2s = deepcopy(self._type2)
@@ -617,10 +626,16 @@ class TopologyIterator:
                 for i in remaining_connections
                 if remaining_connections[i] != 0
             }
-            available_type1s = [i for i in self._type1 if i in remaining_connections]
-            available_type2s = [i for i in self._type2 if i in remaining_connections]
+            available_type1s = [
+                i for i in self._type1 if i in remaining_connections
+            ]
+            available_type2s = [
+                i for i in self._type2 if i in remaining_connections
+            ]
 
-        return TopologyCode(vertex_map=vertex_map, as_string=vmap_to_str(vertex_map))
+        return TopologyCode(
+            vertex_map=vertex_map, as_string=vmap_to_str(vertex_map)
+        )
 
     def _shuffle_topology_code(
         self,
@@ -629,7 +644,12 @@ class TopologyIterator:
     ) -> TopologyCode:
         old_vertex_map = topology_code.vertex_map
 
-        size = generator.integers(low=1, high=int(len(old_vertex_map) / 2), size=1) * 2
+        size = (
+            generator.integers(
+                low=1, high=int(len(old_vertex_map) / 2), size=1
+            )
+            * 2
+        )
 
         swaps = list(
             generator.choice(
@@ -850,7 +870,7 @@ class HomolepticTopologyIterator(TopologyIterator):
 
             if multiplier == 6:
                 self._building_blocks = {
-                    tetra_bb: range(0, 6),
+                    tetra_bb: range(6),
                     ditopic_bb: range(6, 18),
                 }
                 self._underlying_topology = stk.cage.M6L12Cube
@@ -861,7 +881,7 @@ class HomolepticTopologyIterator(TopologyIterator):
 
             if multiplier == 8:
                 self._building_blocks = {
-                    tetra_bb: range(0, 8),
+                    tetra_bb: range(8),
                     ditopic_bb: range(8, 24),
                 }
                 self._underlying_topology = stk.cage.EightPlusSixteen
@@ -872,7 +892,7 @@ class HomolepticTopologyIterator(TopologyIterator):
 
             if multiplier == 10:
                 self._building_blocks = {
-                    tetra_bb: range(0, 10),
+                    tetra_bb: range(10),
                     ditopic_bb: range(10, 30),
                 }
                 self._underlying_topology = stk.cage.TenPlusTwenty
@@ -883,7 +903,7 @@ class HomolepticTopologyIterator(TopologyIterator):
 
             if multiplier == 12:
                 self._building_blocks = {
-                    tetra_bb: range(0, 12),
+                    tetra_bb: range(12),
                     ditopic_bb: range(12, 36),
                 }
                 self._underlying_topology = CGM12L24

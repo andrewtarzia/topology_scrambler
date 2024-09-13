@@ -532,7 +532,6 @@ def main() -> None:
 
                     except OpenMMException:
                         pass
-                    break
 
             _ = make_plot(
                 database_path=database_path,
