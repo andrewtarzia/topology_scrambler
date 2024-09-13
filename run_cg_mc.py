@@ -1,42 +1,18 @@
 """Script to generate and optimise CG models."""
 
-import logging
-import mchammer as mch
-import pathlib
-from rdkit import RDLogger
-import stko
-import itertools as it
 import argparse
-import numpy as np
-from min_utilities import (
-    binder_bead,
-    abead_d,
-    abead_c,
-    cbead_d,
-    cbead_c,
-    ebead_c,
-    ebead_d,
-    tetra_bead,
-    save_vertex_positions,
-    forcefield_lf_ls1,
-    forcefield_lf_ls9,
-    SixBead,
-    forcefield_la_st52,
-    forcefield_la_st5,
-    optimise_cage,
-)
-import stk
-import cgexplore
-from topologies import TopologyIterator
-from openmm import openmm, OpenMMException
-from utilities import atomise, get_ligand_bb
-from topologies import (
-    TopologyCode,
-    vmap_to_str,
-    get_underyling_vertices,
-)
-from run_cg_model import make_plot, make_aa_plot
+import itertools as it
+import logging
+import pathlib
 
+import cgexplore
+import mchammer as mch
+import numpy as np
+import stk
+import stko
+from openmm import OpenMMException, openmm
+from rdkit import RDLogger
+from run_cg_model import make_aa_plot, make_plot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -92,7 +68,11 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
                     energy_decomp[key] = value
         fin_energy = energy_decomp["total energy_kJ/mol"]
         if (
-            sum(energy_decomp[i] for i in energy_decomp if "total energy" not in i)
+            sum(
+                energy_decomp[i]
+                for i in energy_decomp
+                if "total energy" not in i
+            )
             != fin_energy
         ):
             msg = (
@@ -110,17 +90,25 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
         for bt in ff_targets["bonds"]:
             cp = (bt.type1, bt.type2)
             k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.nanometer**2
+                openmm.unit.kilojoule
+                / openmm.unit.mole
+                / openmm.unit.nanometer**2
             )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(openmm.unit.angstrom)
+            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
+                openmm.unit.angstrom
+            )
 
         for at in ff_targets["angles"]:
             cp = (at.type1, at.type2, at.type3)
             try:
                 k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.radian**2
+                    openmm.unit.kilojoule
+                    / openmm.unit.mole
+                    / openmm.unit.radian**2
                 )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(openmm.unit.degrees)
+                v_dict["_".join(cp)] = at.angle.value_in_unit(
+                    openmm.unit.degrees
+                )
             except TypeError:
                 # Handle different angle types.
                 k_dict["_".join(cp)] = at.angle_k.value_in_unit(
@@ -135,7 +123,9 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
             )
             v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
         for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(openmm.unit.angstrom)
+            v_dict[at.bead_class] = at.sigma.value_in_unit(
+                openmm.unit.angstrom
+            )
             k_dict[at.bead_class] = at.epsilon.value_in_unit(
                 openmm.unit.kilojoules_per_mole
             )
@@ -158,7 +148,8 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
             property_dict={
                 "forcefield_dict": forcefield_dict,
                 "strain_energy": fin_energy,
-                "energy_per_bb": fin_energy / iterator.get_num_building_blocks(),
+                "energy_per_bb": fin_energy
+                / iterator.get_num_building_blocks(),
                 "pair": name.split("_")[0] + "_" + name.split("_")[1],
                 "num_components": num_components,
                 "multiplier": name.split("_")[2],
@@ -207,40 +198,67 @@ def main():
     database_path = data_dir / "minmc_run.db"
 
     # Define bead libraries.
-    present_beads = (cbead_d, abead_d, cbead_c, abead_c, binder_bead, tetra_bead)
+    present_beads = (
+        cbead_d,
+        abead_d,
+        cbead_c,
+        abead_c,
+        binder_bead,
+        tetra_bead,
+    )
     cgexplore.molecular.BeadLibrary(beads=present_beads)
 
     pairs = {
         "lf_ls1": {
             "forcefield": forcefield_lf_ls1,
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
-            "diverging": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "converging": SixBead(
+                bead=cbead_c, abead1=abead_c, abead2=ebead_c
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d, abead1=abead_d
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
             "multipliers": (1, 2, 3),
         },
         "lf_ls9": {
             "forcefield": forcefield_lf_ls9,
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
-            "diverging": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "converging": SixBead(
+                bead=cbead_c, abead1=abead_c, abead2=ebead_c
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d, abead1=abead_d
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
             "multipliers": (1, 2, 3),
         },
         "la_st5": {
             "forcefield": forcefield_la_st5,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
+            "converging": SixBead(
+                bead=cbead_c, abead1=abead_c, abead2=ebead_c
+            ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
             "multipliers": (1, 2, 4),
         },
         "la_st52": {
             "forcefield": forcefield_la_st52,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
+            "converging": SixBead(
+                bead=cbead_c, abead1=abead_c, abead2=ebead_c
+            ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
             "multipliers": (1, 2, 4),
         },
     }
@@ -267,7 +285,9 @@ def main():
     )
     pd_bb = stk.BuildingBlock(
         smiles="[Pd+2]",
-        functional_groups=(stk.SingleAtom(stk.Pd(0, charge=2)) for i in range(4)),
+        functional_groups=(
+            stk.SingleAtom(stk.Pd(0, charge=2)) for i in range(4)
+        ),
         position_matrix=[[0, 0, 0]],
     )
 
@@ -318,7 +338,7 @@ def main():
                 st5_bb: (14, 15, 16, 17),
             },
             4: {
-                pd_bb: range(0, 12),
+                pd_bb: range(12),
                 la_bb: range(12, 28),
                 st5_bb: range(28, 36),
             },
@@ -335,7 +355,7 @@ def main():
                 st5_bb: (14, 15, 16, 17),
             },
             4: {
-                pd_bb: range(0, 12),
+                pd_bb: range(12),
                 la_bb: range(12, 28),
                 st5_bb: range(28, 36),
             },
@@ -349,7 +369,9 @@ def main():
         tetra = pairs[pair]["tetra"]
         # Prepare ligands.
         for i, precursor in enumerate((converging, diverging, tetra)):
-            raise SystemExit("think aout if this name is an issue wrt ff.idnet")
+            raise SystemExit(
+                "think aout if this name is an issue wrt ff.idnet"
+            )
             name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
             building_block = cgexplore.utilities.optimise_ligand(
                 molecule=precursor.get_building_block(),
@@ -428,7 +450,9 @@ def main():
                 acage.write(str(structure_dir / f"{name}_unopt.mol"))
 
                 num_components = len(
-                    stko.Network.init_from_molecule(acage).get_connected_components()
+                    stko.Network.init_from_molecule(
+                        acage
+                    ).get_connected_components()
                 )
                 if num_components != 1:
                     continue
@@ -576,9 +600,9 @@ def main():
                 filename=figure_dir / f"min_2_{pair}.png",
             )
 
-            top_ten_distinct = sorted(set([i[0] for i in energies[str(multiplier)]]))[
-                :10
-            ]
+            top_ten_distinct = sorted(
+                set([i[0] for i in energies[str(multiplier)]])
+            )[:10]
 
             if args.atomise:
                 for energy in top_ten_distinct:

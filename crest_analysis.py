@@ -13,8 +13,6 @@ import numpy as np
 import stk
 import stko
 
-from utilities import extract_ensemble, get_ligand_bb, plot_xy
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
