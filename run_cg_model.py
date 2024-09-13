@@ -3,18 +3,15 @@
 import argparse
 import logging
 import pathlib
-from copy import deepcopy
 
 import cgexplore
 import matplotlib.pyplot as plt
-import numpy as np
-import stk
 import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
 
 from min_utilities import (
-    FiveBead,
+    SixBead,
     abead_c,
     abead_d,
     binder_bead,
@@ -22,14 +19,13 @@ from min_utilities import (
     cbead_d,
     eb_str,
     ebead_c,
-    ebead_d,
     optimise_cage,
+    precursors_to_forcefield,
     prepare_building_block,
     save_vertex_positions,
     tetra_bead,
 )
 from topologies import TopologyIterator
-from utilities import extract_ensemble
 
 logging.basicConfig(
     level=logging.INFO,
@@ -225,7 +221,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:  # noqa: PLR0915
+def main() -> None:
     """Run script."""
     args = _parse_args()
 
@@ -241,32 +237,104 @@ def main() -> None:  # noqa: PLR0915
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
 
-    atomistic_calculation_dir = wd / "calculations"
-    atomistic_ligand_dir = wd / "ligands"
-
     database_path = data_dir / "rerun.db"
 
-    # Define bead libraries.
-    present_beads = (
-        cbead_d,
-        abead_d,
-        cbead_c,
-        abead_c,
-        ebead_c,
-        ebead_d,
-        binder_bead,
-        tetra_bead,
-    )
-    cgexplore.molecular.BeadLibrary(present_beads)
+    ligand_measures = {
+        "la": {"dd": 7.0, "de": 1.5, "dde": 170, "eg": 1.4, "gb": 1.4},
+        "lf": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
+        "ls1": {"ba": 2.8, "aa": 4.9, "bac": 150, "bacab": 180},
+        "ls9": {"ba": 2.8, "aa": 5.5, "bac": 165, "bacab": 180},
+        "st5": {"ba": 2.8, "aa": 3.9, "bac": 120, "bacab": 180},
+        "st52": {"ba": 2.8, "aa": 5.0, "bac": 110, "bacab": 180},
+        "c1": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 180},
+        "c12": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 120},
+        "c13": {"ba": 2.8, "aa": 3.4, "bac": 100, "bacab": 180},
+        "c14": {"ba": 2.8, "aa": 3.4, "bac": 110, "bacab": 180},
+        "c15": {"ba": 2.8, "aa": 3.4, "bac": 120, "bacab": 180},
+    }
 
     pairs = {
         "la_c1": {
             "converging_name": "la",
             "diverging_name": "c1",
-            "converging_confid": 3,
-            "diverging_confid": 1,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": FiveBead(
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
+        "la_c12": {
+            "converging_name": "la",
+            "diverging_name": "c12",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
+        "la_c13": {
+            "converging_name": "la",
+            "diverging_name": "c13",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
+        "la_c14": {
+            "converging_name": "la",
+            "diverging_name": "c14",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
+        "la_c15": {
+            "converging_name": "la",
+            "diverging_name": "c15",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -284,10 +352,8 @@ def main() -> None:  # noqa: PLR0915
         "lf_ls1": {
             "converging_name": "lf",
             "diverging_name": "ls1",
-            "converging_confid": None,
-            "diverging_confid": None,
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": FiveBead(
+            "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -305,10 +371,8 @@ def main() -> None:  # noqa: PLR0915
         "lf_ls9": {
             "converging_name": "lf",
             "diverging_name": "ls9",
-            "converging_confid": None,
-            "diverging_confid": None,
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": FiveBead(
+            "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -326,18 +390,15 @@ def main() -> None:  # noqa: PLR0915
         "la_st5": {
             "converging_name": "la",
             "diverging_name": "st5",
-            "converging_confid": None,
-            "diverging_confid": None,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": FiveBead(
+            "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": FiveBead(
+            "diverging": cgexplore.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
-                abead2=ebead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
@@ -347,18 +408,15 @@ def main() -> None:  # noqa: PLR0915
         "la_st52": {
             "converging_name": "la",
             "diverging_name": "st52",
-            "converging_confid": None,
-            "diverging_confid": None,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": FiveBead(
+            "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": FiveBead(
+            "diverging": cgexplore.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
-                abead2=ebead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
                 bead=tetra_bead,
@@ -373,167 +431,14 @@ def main() -> None:  # noqa: PLR0915
         diverging_name = pairs[pair]["diverging_name"]
         converging = pairs[pair]["converging"]
         diverging = pairs[pair]["diverging"]
-        converging_confid = pairs[pair]["converging_confid"]
-        diverging_confid = pairs[pair]["diverging_confid"]
-        if converging_confid is None or diverging_confid is None:
-            raise RuntimeError
         tetra = pairs[pair]["tetra"]
 
-        constant_definer_dict = {
-            # Bonds.
-            "mb": ("bond", 1.0, 1e5),
-            "ab": ("bond", 1.0, 1e5),
-            "gb": ("bond", 0.7, 1e5),
-            "fb": ("bond", 0.7, 1e5),
-            "eg": ("bond", 0.7, 1e5),
-            "af": ("bond", 0.7, 1e5),
-            # Angles.
-            "bmb": ("pyramid", 90, 1e2),
-            "mba": ("angle", 180, 1e2),
-            "mbg": ("angle", 180, 1e2),
-            "mbf": ("angle", 180, 1e2),
-            "aca": ("angle", 180, 1e2),
-            "ede": ("angle", 180, 1e2),
-            # Torsions.
-            # Nonbondeds.
-            "m": ("nb", 10.0, 1.0),
-            "d": ("nb", 10.0, 1.0),
-            "e": ("nb", 10.0, 1.0),
-            "a": ("nb", 10.0, 1.0),
-            "b": ("nb", 10.0, 1.0),
-            "c": ("nb", 10.0, 1.0),
-            "g": ("nb", 10.0, 1.0),
-            "f": ("nb", 10.0, 1.0),
-        }
-        definer_dict = deepcopy(constant_definer_dict)
-
-        conf_data = extract_ensemble(
-            molecule=stk.BuildingBlock.init_from_file(
-                path=atomistic_ligand_dir / f"{converging_name}_optl.mol",
-                functional_groups=(
-                    stko.functional_groups.ThreeSiteFactory(
-                        "[#6]~[#7X2]~[#6]"
-                    ),
-                ),
-            ),
-            crest_run=atomistic_calculation_dir / f"{converging_name}_crest",
-        )[converging_confid]
-
-        if isinstance(converging, FiveBead):
-            bead1, bead2, bead3 = list(converging.get_bead_set())
-
-            # This angle is constant.
-            deg = 120
-            # Therefore, from trapezoid, so is this:
-            egg = (360 - deg * 2) / 2
-            definer_dict[f"{bead3}{bead2}{bead1}"] = ("angle", deg, 1e2)
-
-            bge = sum(conf_data["binder_angles"]) / 2
-            # Scale to cg, divide by 2.
-            bb = conf_data["binder_distance"] / 2
-            gb = definer_dict["gb"][1]
-            if bge / 2 < 90:  # noqa: PLR2004
-                gg = bb + (2 * gb * np.cos(np.radians(bge / 2)))
-            else:
-                theta = bge - 90 - egg
-                gg = bb - (2 * gb * np.sin(np.radians(theta)))
-
-            eg = definer_dict["eg"][1]
-            ee = gg - (2 * eg * np.sin(np.radians(deg - 90)))
-            ed = ee / 2
-
-            definer_dict[f"{bead2}{bead1}"] = ("bond", ed, 1e5)
-            definer_dict[f"b{bead3}{bead2}"] = ("angle", bge, 1e2)
-
-            # Define torsion as restricted.
-            tname = f"{bead3}{bead2}{bead1}{bead2}{bead3}"
-            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
-
-        elif isinstance(converging, cgexplore.molecular.TwoC1Arm):
-            bead1, bead2 = list(converging.get_bead_set())
-            if bead1 != "c" or bead2 != "a":
-                raise NotImplementedError
-            # Define bac by the average of the binder angles.
-            bac = sum(conf_data["binder_angles"]) / 2
-            definer_dict[f"b{bead2}{bead1}"] = ("angle", bac, 1e2)
-
-            # Defined by binder-binder distance /2 .
-            bb = conf_data["binder_distance"] / 2
-            ba = definer_dict["ab"][1]
-            aa = bb - (2 * ba * np.sin(np.radians(bac - 90)))
-            ac = aa / 2
-            definer_dict[f"{bead2}{bead1}"] = ("bond", ac, 1e5)
-
-            # Define torsion as restricted.
-            tname = f"b{bead2}{bead1}{bead2}b"
-            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
-
-        conf_data = extract_ensemble(
-            molecule=stk.BuildingBlock.init_from_file(
-                path=atomistic_ligand_dir / f"{diverging_name}_optl.mol",
-                functional_groups=(
-                    stko.functional_groups.ThreeSiteFactory(
-                        "[#6]~[#7X2]~[#6]"
-                    ),
-                ),
-            ),
-            crest_run=atomistic_calculation_dir / f"{diverging_name}_crest",
-        )[diverging_confid]
-
-        if isinstance(diverging, FiveBead):
-            bead1, bead2, bead3 = list(diverging.get_bead_set())
-
-            # This angle is constant.
-            deg = 120
-            # Therefore, from trapezoid, so is this:
-            egg = (360 - deg * 2) / 2
-            definer_dict[f"{bead3}{bead2}{bead1}"] = ("angle", deg, 1e2)
-
-            bge = sum(conf_data["binder_angles"]) / 2
-            # Scale to cg, divide by 2.
-            bb = conf_data["binder_distance"] / 2
-            gb = definer_dict["gb"][1]
-            if bge / 2 < 90:  # noqa: PLR2004
-                gg = bb + (2 * gb * np.cos(np.radians(bge / 2)))
-            else:
-                theta = bge - 90 - egg
-                gg = bb - (2 * gb * np.sin(np.radians(theta)))
-
-            eg = definer_dict["eg"][1]
-            ee = gg - (2 * eg * np.sin(np.radians(deg - 90)))
-            ed = ee / 2
-
-            definer_dict[f"{bead2}{bead1}"] = ("bond", ed, 1e5)
-            definer_dict[f"b{bead3}{bead2}"] = ("angle", bge, 1e2)
-
-            # Define torsion as restricted.
-            tname = f"{bead3}{bead2}{bead1}{bead2}{bead3}"
-            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
-
-        elif isinstance(diverging, cgexplore.molecular.TwoC1Arm):
-            bead1, bead2 = list(diverging.get_bead_set())
-            if bead1 != "c" or bead2 != "a":
-                raise NotImplementedError
-            # Define bac by the average of the binder angles.
-            bac = sum(conf_data["binder_angles"]) / 2
-            definer_dict[f"b{bead2}{bead1}"] = ("angle", bac, 1e2)
-
-            # Defined by binder-binder distance /2 .
-            bb = conf_data["binder_distance"] / 2
-            aa = bb - (2 * np.sin(np.radians(bac - 90)))
-            ac = aa / 2
-            definer_dict[f"{bead2}{bead1}"] = ("bond", ac, 1e5)
-
-            # Define torsion as restricted.
-            tname = f"b{bead2}{bead1}{bead2}b"
-            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
-
-        forcefield = cgexplore.systems_optimisation.get_forcefield_from_dict(
-            identifier=f"{pair}ff",
-            prefix=f"{pair}ff",
-            vdw_bond_cutoff=2,
-            present_beads=present_beads,
-            definer_dict=definer_dict,
+        forcefield = precursors_to_forcefield(
+            pair=pair,
+            diverging=diverging,
+            converging=converging,
+            conv_meas=ligand_measures[converging_name],
+            dive_meas=ligand_measures[diverging_name],
         )
 
         converging_bb = prepare_building_block(
@@ -625,7 +530,6 @@ def main() -> None:  # noqa: PLR0915
                 figure_dir=figure_dir,
                 filename=figure_dir / f"rerun_1_{pair}.png",
             )
-            raise SystemExit
 
 
 if __name__ == "__main__":

@@ -1,20 +1,39 @@
 """Utilities module."""
 
-import cgexplore
-import logging
-
-
-import stk
-import numpy as np
-from copy import deepcopy
-import os
-from openmm import openmm
 import json
+import logging
+import os
+import pathlib
+from copy import deepcopy
+
+import cgexplore
+import numpy as np
+import stk
+from openmm import openmm
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
+
+
+def prepare_building_block(
+    precursor: cgexplore.molecular.Precursor,
+    forcefield: cgexplore.forcefields.ForceField,
+    calculation_dir: pathlib.Path,
+    ligand_dir: pathlib.Path,
+) -> stk.BuildingBlock:
+    """Prepare a building block."""
+    name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
+    building_block = cgexplore.utilities.optimise_ligand(
+        molecule=precursor.get_building_block(),
+        name=name,
+        output_dir=calculation_dir,
+        forcefield=forcefield,
+        platform=None,
+    )
+    building_block.write(str(ligand_dir / f"{name}_optl.mol"))
+    return building_block.clone()
 
 
 def optimise_cage(
@@ -213,9 +232,6 @@ def eb_str(no_unit=False):
     return r"$E_{\mathrm{b}}$ [kJmol$^{-1}$]"
 
 
-
-
-
 # Diverging ligands.
 cbead_d = cgexplore.molecular.CgBead(
     element_string="Ag",
@@ -270,33 +286,16 @@ tetra_bead = cgexplore.molecular.CgBead(
     coordination=4,
 )
 
-
-
-
-present_beads = (
-    cbead_d,
-    abead_d,
-    cbead_c,
-    abead_c,
-    ebead_c,
-    ebead_d,
-    binder_bead,
-    tetra_bead,
-)
-cgexplore.molecular.BeadLibrary(present_beads)
 constant_definer_dict = {
     # Bonds.
     "mb": ("bond", 1.0, 1e5),
-    "ab": ("bond", 1.0, 1e5),
-    "gb": ("bond", 1.0, 1e5),
-    "fb": ("bond", 1.0, 1e5),
     # Angles.
     "bmb": ("pyramid", 90, 1e2),
     "mba": ("angle", 180, 1e2),
     "mbg": ("angle", 180, 1e2),
-    "mbf": ("angle", 180, 1e2),
     "aca": ("angle", 180, 1e2),
-    "ede": ("angle", 180, 1e2),
+    "egb": ("angle", 120, 1e2),
+    "deg": ("angle", 180, 1e2),
     # Torsions.
     # Nonbondeds.
     "m": ("nb", 10.0, 1.0),
@@ -306,99 +305,67 @@ constant_definer_dict = {
     "b": ("nb", 10.0, 1.0),
     "c": ("nb", 10.0, 1.0),
     "g": ("nb", 10.0, 1.0),
-    "f": ("nb", 10.0, 1.0),
 }
 
-definer_dict_lf_ls1 = deepcopy(constant_definer_dict)
-definer_dict_lf_ls1["ac"] = ("bond", 1.5, 1e5)
-definer_dict_lf_ls1["bac"] = ("angle", 150, 1e2)
-definer_dict_lf_ls1["bacab"] = ("tors", "0134", 180, 50, 1)
-definer_dict_lf_ls1["dd"] = ("bond", 3, 1e5)
-definer_dict_lf_ls1["ed"] = ("bond", 2, 1e5)
-definer_dict_lf_ls1["eg"] = ("bond", 0.5, 1e5)
-definer_dict_lf_ls1["bge"] = ("angle", 180, 1e2)
-definer_dict_lf_ls1["dde"] = ("angle", 130, 1e2)
-definer_dict_lf_ls1["deg"] = ("angle", 120, 1e2)
-definer_dict_lf_ls1["edde"] = ("tors", "0123", 180, 50, 1)
-# definer_dict_lf_ls1["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_lf_ls1 = get_forcefield_from_dict(
-    identifier="lfls1",
-    prefix="min_opt",
-    present_beads=present_beads,
-    vdw_bond_cutoff=2,
-    definer_dict=definer_dict_lf_ls1,
-)
 
+def precursors_to_forcefield(
+    pair: str,
+    diverging: cgexplore.molecular.Precursor,
+    converging: cgexplore.molecular.Precursor,
+    conv_meas: dict[str, float],
+    dive_meas: dict[str, float],
+) -> cgexplore.forcefields.ForceField:
+    """Get a forcefield from precursor definitions."""
+    # Define bead libraries.
+    present_beads = (
+        cbead_d,
+        abead_d,
+        cbead_c,
+        abead_c,
+        ebead_c,
+        ebead_d,
+        binder_bead,
+        tetra_bead,
+    )
+    cgexplore.molecular.BeadLibrary(present_beads)
 
-definer_dict_lf_ls9 = deepcopy(constant_definer_dict)
-definer_dict_lf_ls9["ac"] = ("bond", 1.5, 1e5)
-definer_dict_lf_ls9["bac"] = ("angle", 165, 1e2)
-definer_dict_lf_ls9["bacab"] = ("tors", "0134", 180, 50, 1)
-definer_dict_lf_ls9["dd"] = ("bond", 3, 1e5)
-definer_dict_lf_ls9["ed"] = ("bond", 2, 1e5)
-definer_dict_lf_ls9["eg"] = ("bond", 0.5, 1e5)
-definer_dict_lf_ls9["bge"] = ("angle", 180, 1e2)
-definer_dict_lf_ls9["dde"] = ("angle", 130, 1e2)
-definer_dict_lf_ls9["deg"] = ("angle", 120, 1e2)
-definer_dict_lf_ls9["edde"] = ("tors", "0123", 180, 50, 1)
-# definer_dict_lf_ls9["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_lf_ls9 = get_forcefield_from_dict(
-    identifier="lfls9",
-    prefix="min_opt",
-    present_beads=present_beads,
-    vdw_bond_cutoff=2,
-    definer_dict=definer_dict_lf_ls9,
-)
+    definer_dict = deepcopy(constant_definer_dict)
 
-definer_dict_la_st5 = deepcopy(constant_definer_dict)
-definer_dict_la_st5["cc"] = ("bond", 1, 1e5)
-definer_dict_la_st5["ac"] = ("bond", 1, 1e5)
-definer_dict_la_st5["af"] = ("bond", 0.5, 1e5)
-definer_dict_la_st5["bfa"] = ("angle", 180, 1e2)
-definer_dict_la_st5["cca"] = ("angle", 100, 1e2)
-definer_dict_la_st5["caf"] = ("angle", 180, 1e2)
-definer_dict_la_st5["acca"] = ("tors", "0123", 180, 50, 1)
-# definer_dict_la_st5["faccaf"] = ("tors", "0145", 150, 50, 1)
-definer_dict_la_st5["dd"] = ("bond", 2, 1e5)
-definer_dict_la_st5["ed"] = ("bond", 2, 1e5)
-definer_dict_la_st5["eg"] = ("bond", 0.5, 1e5)
-definer_dict_la_st5["bge"] = ("angle", 180, 1e2)
-definer_dict_la_st5["dde"] = ("angle", 170, 1e2)
-definer_dict_la_st5["deg"] = ("angle", 120, 1e2)
-definer_dict_la_st5["edde"] = ("tors", "0123", 180, 50, 1)
-# definer_dict_la_st5["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_la_st5 = get_forcefield_from_dict(
-    identifier="last5",
-    prefix="min_opt",
-    present_beads=present_beads,
-    vdw_bond_cutoff=2,
-    definer_dict=definer_dict_la_st5,
-)
+    cg_scale = 2
 
-definer_dict_la_st52 = deepcopy(constant_definer_dict)
-definer_dict_la_st52["cc"] = ("bond", 1, 1e5)
-definer_dict_la_st52["ac"] = ("bond", 1, 1e5)
-definer_dict_la_st52["af"] = ("bond", 0.5, 1e5)
-definer_dict_la_st52["bfa"] = ("angle", 180, 1e2)
-definer_dict_la_st52["cca"] = ("angle", 120, 1e2)
-definer_dict_la_st52["caf"] = ("angle", 180, 1e2)
-definer_dict_la_st52["acca"] = ("tors", "0123", 180, 50, 1)
-# definer_dict_la_st52["faccaf"] = ("tors", "0145", 150, 50, 1)
-definer_dict_la_st52["dd"] = ("bond", 2, 1e5)
-definer_dict_la_st52["ed"] = ("bond", 2, 1e5)
-definer_dict_la_st52["eg"] = ("bond", 0.5, 1e5)
-definer_dict_la_st52["bge"] = ("angle", 180, 1e2)
-definer_dict_la_st52["dde"] = ("angle", 170, 1e2)
-definer_dict_la_st52["deg"] = ("angle", 120, 1e2)
-definer_dict_la_st52["edde"] = ("tors", "0123", 180, 50, 1)
-# definer_dict_la_st52["geddeg"] = ("tors", "0145", 180, 0, 1)
-forcefield_la_st52 = get_forcefield_from_dict(
-    identifier="last52",
-    prefix="min_opt",
-    present_beads=present_beads,
-    vdw_bond_cutoff=2,
-    definer_dict=definer_dict_la_st52,
-)
+    if isinstance(converging, SixBead):
+        beads = converging.get_bead_set()
+        if "d" not in beads or "e" not in beads or "g" not in beads:
+            raise RuntimeError
+        definer_dict["dd"] = ("bond", conv_meas["dd"] / cg_scale, 1e5)
+        definer_dict["de"] = ("bond", conv_meas["de"] / cg_scale, 1e5)
+        definer_dict["eg"] = ("bond", conv_meas["eg"] / cg_scale, 1e5)
+        definer_dict["gb"] = ("bond", conv_meas["gb"] / cg_scale, 1e5)
+        definer_dict["dde"] = ("angle", conv_meas["dde"], 1e2)
+        definer_dict["edde"] = ("tors", "0123", 180, 50, 1)
+        definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
+    else:
+        raise NotImplementedError
+
+    if isinstance(diverging, cgexplore.molecular.TwoC1Arm):
+        beads = diverging.get_bead_set()
+        if "a" not in beads or "c" not in beads:
+            raise RuntimeError
+        definer_dict["ba"] = ("bond", dive_meas["ba"] / cg_scale, 1e5)
+        ac = dive_meas["aa"] / 2
+        definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
+        definer_dict["bac"] = ("angle", dive_meas["bac"], 1e2)
+        definer_dict["bacab"] = ("tors", "0134", dive_meas["bacab"], 50, 1)
+    else:
+        raise NotImplementedError
+
+    return cgexplore.systems_optimisation.get_forcefield_from_dict(
+        identifier=f"{pair}ff",
+        prefix=f"{pair}ff",
+        vdw_bond_cutoff=2,
+        present_beads=present_beads,
+        definer_dict=definer_dict,
+    )
 
 
 class SixBead(cgexplore.molecular.Precursor):
@@ -447,6 +414,51 @@ class SixBead(cgexplore.molecular.Precursor):
         )
 
 
+class FiveBead(cgexplore.molecular.Precursor):
+    """A Precursor."""
+
+    def __init__(
+        self,
+        bead: cgexplore.molecular.CgBead,
+        abead1: cgexplore.molecular.CgBead,
+        abead2: cgexplore.molecular.CgBead,
+    ) -> None:
+        """Initialize a precursor."""
+        self._bead = bead
+        self._abead1 = abead1
+        self._abead2 = abead2
+        self._name = f"5C2{bead.bead_type}{abead1.bead_type}{abead2.bead_type}"
+        self._bead_set = {
+            bead.bead_type: bead,
+            abead1.bead_type: abead1,
+            abead2.bead_type: abead2,
+        }
+
+        new_fgs = stk.SmartsFunctionalGroupFactory(
+            smarts=f"[{abead2.element_string}X1][{abead1.element_string}]",
+            bonders=(0,),
+            deleters=(),
+            placers=(0, 1),
+        )
+        self._building_block = stk.BuildingBlock(
+            smiles=(
+                f"[{abead2.element_string}][{abead1.element_string}]"
+                f"[{bead.element_string}]"
+                f"[{abead1.element_string}][{abead2.element_string}]"
+            ),
+            functional_groups=new_fgs,
+            position_matrix=np.array(
+                [
+                    [-6, 3, 0.2],
+                    [-4, 2, 0.1],
+                    [0, 0, 0],
+                    [4, 1, 0],
+                    [6, 3, 0.2],
+                ]
+            ),
+        )
+
+
 def save_vertex_positions(name, calculation_dir, structure_dir, molecule):
     vertex_file = calculation_dir / f"{name}_vertices.json"
     if not vertex_file.exists():
@@ -463,7 +475,8 @@ def save_vertex_positions(name, calculation_dir, structure_dir, molecule):
 
         centroids = {
             i: tuple(
-                float(i) for i in constructed_molecule.get_centroid(atom_ids=bbs[i])
+                float(i)
+                for i in constructed_molecule.get_centroid(atom_ids=bbs[i])
             )
             for i in bbs
         }
