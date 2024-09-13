@@ -1,81 +1,41 @@
 """Script to generate and optimise CG models."""
 
+import argparse
 import logging
 import pathlib
+from copy import deepcopy
+
+import cgexplore
 import matplotlib.pyplot as plt
-from rdkit import RDLogger
-import stko
+import numpy as np
 import stk
-import argparse
+import stko
+from openmm import OpenMMException, openmm
+from rdkit import RDLogger
+
 from min_utilities import (
-    binder_bead,
-    abead_d,
-    save_vertex_positions,
+    FiveBead,
     abead_c,
-    cbead_d,
+    abead_d,
+    binder_bead,
     cbead_c,
+    cbead_d,
+    eb_str,
     ebead_c,
     ebead_d,
-    tetra_bead,
-    forcefield_lf_ls1,
-    forcefield_lf_ls9,
-    SixBead,
-    eb_str,
-    forcefield_la_st52,
-    forcefield_la_st5,
     optimise_cage,
+    prepare_building_block,
+    save_vertex_positions,
+    tetra_bead,
 )
-import cgexplore
-from utilities import atomise, get_ligand_bb
-from topologies import (
-    TopologyIterator,
-    TopologyCode,
-    vmap_to_str,
-    get_underyling_vertices,
-)
-from openmm import openmm, OpenMMException
+from topologies import TopologyIterator
+from utilities import extract_ensemble
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
-
-
-def num_pds(pair, multi):
-    opts = {
-        "lf_ls1": {"1": 1, "2": 2, "3": 3},
-        "lf_ls9": {"1": 1, "2": 2, "3": 3},
-        "la_st5": {"1": 3, "2": 6, "4": 12},
-        "la_st52": {"1": 3, "2": 6, "4": 12},
-    }
-    return opts[pair][multi]
-
-
-def optimiser(pair, multi):
-    opts = {
-        "lf_ls1": {
-            "1": stk.MCHammer(target_bond_length=3),
-            "2": stk.MCHammer(),
-            "3": stk.MCHammer(),
-        },
-        "lf_ls9": {
-            "1": stk.MCHammer(target_bond_length=3),
-            "2": stk.MCHammer(),
-            "3": stk.MCHammer(),
-        },
-        "la_st5": {
-            "1": stk.MCHammer(),
-            "2": stk.MCHammer(),
-            "4": stk.MCHammer(),
-        },
-        "la_st52": {
-            "1": stk.MCHammer(),
-            "2": stk.MCHammer(),
-            "4": stk.MCHammer(),
-        },
-    }
-    return opts[pair][multi]
 
 
 def analyse_cage(database_path, name, forcefield, iterator, topology_code):
@@ -99,7 +59,11 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
                     energy_decomp[key] = value
         fin_energy = energy_decomp["total energy_kJ/mol"]
         if (
-            sum(energy_decomp[i] for i in energy_decomp if "total energy" not in i)
+            sum(
+                energy_decomp[i]
+                for i in energy_decomp
+                if "total energy" not in i
+            )
             != fin_energy
         ):
             msg = (
@@ -117,17 +81,25 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
         for bt in ff_targets["bonds"]:
             cp = (bt.type1, bt.type2)
             k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.nanometer**2
+                openmm.unit.kilojoule
+                / openmm.unit.mole
+                / openmm.unit.nanometer**2
             )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(openmm.unit.angstrom)
+            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
+                openmm.unit.angstrom
+            )
 
         for at in ff_targets["angles"]:
             cp = (at.type1, at.type2, at.type3)
             try:
                 k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole / openmm.unit.radian**2
+                    openmm.unit.kilojoule
+                    / openmm.unit.mole
+                    / openmm.unit.radian**2
                 )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(openmm.unit.degrees)
+                v_dict["_".join(cp)] = at.angle.value_in_unit(
+                    openmm.unit.degrees
+                )
             except TypeError:
                 # Handle different angle types.
                 k_dict["_".join(cp)] = at.angle_k.value_in_unit(
@@ -142,7 +114,9 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
             )
             v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
         for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(openmm.unit.angstrom)
+            v_dict[at.bead_class] = at.sigma.value_in_unit(
+                openmm.unit.angstrom
+            )
             k_dict[at.bead_class] = at.epsilon.value_in_unit(
                 openmm.unit.kilojoules_per_mole
             )
@@ -165,7 +139,8 @@ def analyse_cage(database_path, name, forcefield, iterator, topology_code):
             property_dict={
                 "forcefield_dict": forcefield_dict,
                 "strain_energy": fin_energy,
-                "energy_per_bb": fin_energy / iterator.get_num_building_blocks(),
+                "energy_per_bb": fin_energy
+                / iterator.get_num_building_blocks(),
                 "pair": name.split("_")[0] + "_" + name.split("_")[1],
                 "num_components": num_components,
                 "multiplier": name.split("_")[2],
@@ -186,7 +161,9 @@ def make_plot(pair, database_path, structure_dir, figure_dir, filename):
         "4": "tab:red",
     }
 
-    for entry in cgexplore.utilities.AtomliteDatabase(database_path).get_entries():
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
         if pair != entry.properties["pair"]:
             continue
         multi = entry.properties["multiplier"]
@@ -237,68 +214,6 @@ def make_plot(pair, database_path, structure_dir, figure_dir, filename):
     return energies
 
 
-def make_aa_plot(pair, atomistic_dir, atomistic_calculation_dir, filename):
-    cmap = {
-        "1": "tab:blue",
-        "2": "tab:orange",
-        "3": "tab:green",
-        "4": "tab:red",
-    }
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    founds = atomistic_calculation_dir.glob(f"c*{pair}*gulp2")
-
-    energies = {}
-    for path in sorted(founds):
-        if not path.is_dir():
-            continue
-        output_file = path / "gulp_opt.ginout"
-        with output_file.open("r") as f:
-            lines = f.readlines()
-
-        name = path.name
-        multi = path.name.split("_")[3]
-        for line in lines:
-            if "Total lattice energy       =" in line and "kJ/mol" in line:
-                energy = float(line.strip().split(" ")[-2]) / num_pds(pair, multi)
-
-        if multi not in energies:
-            energies[multi] = []
-
-        energies[multi].append((name.replace("_gulp2", ""), energy))
-
-    for multi in sorted(energies):
-        if len(energies[multi]) == 0:
-            continue
-
-        sorted_energies = sorted(energies[multi], key=lambda p: p[1])
-        min_energy = sorted_energies[0]
-
-        ax.plot(
-            [i[1] for i in energies[multi]],
-            marker="o",
-            c=cmap[multi],
-            markersize=4,
-            # s=40,
-            # alpha=0.3,
-            # ec="none",
-            label=f"{multi}: {round(min_energy[1],3)} @ {min_energy[0]}",
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_ylabel("UFF energy / Pd [kJmol-1]", fontsize=16)
-    ax.set_yscale("log")
-    ax.set_ylim(500, 1e5)
-    ax.legend(ncols=1, fontsize=16)
-    fig.tight_layout()
-    fig.savefig(
-        filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -306,195 +221,339 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="set to iterate through structure functions",
     )
-    parser.add_argument(
-        "--atomise",
-        action="store_true",
-        help="set to build atomistic structures",
-    )
 
     return parser.parse_args()
 
 
-def main():
+def main() -> None:  # noqa: PLR0915
+    """Run script."""
     args = _parse_args()
 
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "min_calculations"
+    calculation_dir = wd / "rerun_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "min_structures"
+    structure_dir = wd / "rerun_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "min_ligands"
+    ligand_dir = wd / "rerun_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "min_data"
+    data_dir = wd / "rerun_data"
     data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
-    atomistic_dir = wd / "atomistic"
-    atomistic_dir.mkdir(exist_ok=True)
-    atomistic_calculation_dir = wd / "atomistic_calculations"
-    atomistic_calculation_dir.mkdir(exist_ok=True)
 
-    database_path = data_dir / "min_run.db"
+    atomistic_calculation_dir = wd / "calculations"
+    atomistic_ligand_dir = wd / "ligands"
+
+    database_path = data_dir / "rerun.db"
 
     # Define bead libraries.
-    present_beads = (cbead_d, abead_d, cbead_c, abead_c, binder_bead, tetra_bead)
-    cgexplore.molecular.BeadLibrary(beads=present_beads)
+    present_beads = (
+        cbead_d,
+        abead_d,
+        cbead_c,
+        abead_c,
+        ebead_c,
+        ebead_d,
+        binder_bead,
+        tetra_bead,
+    )
+    cgexplore.molecular.BeadLibrary(present_beads)
 
     pairs = {
+        "la_c1": {
+            "converging_name": "la",
+            "diverging_name": "c1",
+            "converging_confid": 3,
+            "diverging_confid": 1,
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": FiveBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
         "lf_ls1": {
-            "forcefield": forcefield_lf_ls1,
+            "converging_name": "lf",
+            "diverging_name": "ls1",
+            "converging_confid": None,
+            "diverging_confid": None,
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
-            "diverging": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
-            "multipliers": (1, 2, 3),
+            "converging": FiveBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
         },
         "lf_ls9": {
-            "forcefield": forcefield_lf_ls9,
+            "converging_name": "lf",
+            "diverging_name": "ls9",
+            "converging_confid": None,
+            "diverging_confid": None,
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
-            "diverging": cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
-            "multipliers": (1, 2, 3),
+            "converging": FiveBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
         },
         "la_st5": {
-            "forcefield": forcefield_la_st5,
+            "converging_name": "la",
+            "diverging_name": "st5",
+            "converging_confid": None,
+            "diverging_confid": None,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
-            "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "converging": FiveBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": FiveBead(
+                bead=cbead_d,
+                abead1=abead_d,
+                abead2=ebead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
             "multipliers": (1, 2, 4),
         },
         "la_st52": {
-            "forcefield": forcefield_la_st52,
+            "converging_name": "la",
+            "diverging_name": "st52",
+            "converging_confid": None,
+            "diverging_confid": None,
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c),
-            "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            "converging": FiveBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": FiveBead(
+                bead=cbead_d,
+                abead1=abead_d,
+                abead2=ebead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
             "multipliers": (1, 2, 4),
-        },
-    }
-
-    lf_bb = get_ligand_bb(
-        path=wd / "ligands" / "lf_prep.mol",
-        optl_path=wd / "ligands" / "lf_optl.mol",
-    )
-    ls1_bb = get_ligand_bb(
-        path=wd / "ligands" / "ls1_prep.mol",
-        optl_path=wd / "ligands" / "ls1_optl.mol",
-    )
-    ls9_bb = get_ligand_bb(
-        path=wd / "ligands" / "ls9_prep.mol",
-        optl_path=wd / "ligands" / "ls9_optl.mol",
-    )
-    st5_bb = get_ligand_bb(
-        path=wd / "ligands" / "st5_prep.mol",
-        optl_path=wd / "ligands" / "st5_optl.mol",
-    )
-    la_bb = get_ligand_bb(
-        path=wd / "ligands" / "la_prep.mol",
-        optl_path=wd / "ligands" / "la_optl.mol",
-    )
-    pd_bb = stk.BuildingBlock(
-        smiles="[Pd+2]",
-        functional_groups=(stk.SingleAtom(stk.Pd(0, charge=2)) for i in range(4)),
-        position_matrix=[[0, 0, 0]],
-    )
-
-    bb_library = {
-        "lf_ls1": {
-            1: {
-                pd_bb: (0,),
-                lf_bb: (1,),
-                ls1_bb: (2,),
-            },
-            2: {
-                pd_bb: (0, 1),
-                lf_bb: (2, 3),
-                ls1_bb: (4, 5),
-            },
-            3: {
-                pd_bb: (0, 1, 2),
-                lf_bb: (3, 4, 5),
-                ls1_bb: (6, 7, 8),
-            },
-        },
-        "lf_ls9": {
-            1: {
-                pd_bb: (0,),
-                lf_bb: (1,),
-                ls9_bb: (2,),
-            },
-            2: {
-                pd_bb: (0, 1),
-                lf_bb: (2, 3),
-                ls9_bb: (4, 5),
-            },
-            3: {
-                pd_bb: (0, 1, 2),
-                lf_bb: (3, 4, 5),
-                ls9_bb: (6, 7, 8),
-            },
-        },
-        "la_st5": {
-            1: {
-                pd_bb: (0, 1, 2),
-                la_bb: (3, 4, 5, 6),
-                st5_bb: (7, 8),
-            },
-            2: {
-                pd_bb: (0, 1, 2, 3, 4, 5),
-                la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
-                st5_bb: (14, 15, 16, 17),
-            },
-            4: {
-                pd_bb: range(0, 12),
-                la_bb: range(12, 28),
-                st5_bb: range(28, 36),
-            },
-        },
-        "la_st52": {
-            1: {
-                pd_bb: (0, 1, 2),
-                la_bb: (3, 4, 5, 6),
-                st5_bb: (7, 8),
-            },
-            2: {
-                pd_bb: (0, 1, 2, 3, 4, 5),
-                la_bb: (6, 7, 8, 9, 10, 11, 12, 13),
-                st5_bb: (14, 15, 16, 17),
-            },
-            4: {
-                pd_bb: range(0, 12),
-                la_bb: range(12, 28),
-                st5_bb: range(28, 36),
-            },
         },
     }
 
     for pair in pairs:
-        forcefield = pairs[pair]["forcefield"]
+        converging_name = pairs[pair]["converging_name"]
+        diverging_name = pairs[pair]["diverging_name"]
         converging = pairs[pair]["converging"]
         diverging = pairs[pair]["diverging"]
+        converging_confid = pairs[pair]["converging_confid"]
+        diverging_confid = pairs[pair]["diverging_confid"]
+        if converging_confid is None or diverging_confid is None:
+            raise RuntimeError
         tetra = pairs[pair]["tetra"]
-        # Prepare ligands.
-        for i, precursor in enumerate((converging, diverging, tetra)):
-            raise SystemExit("think aout if this name is an issue wrt ff.idnet")
-            name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
-            building_block = cgexplore.utilities.optimise_ligand(
-                molecule=precursor.get_building_block(),
-                name=name,
-                output_dir=calculation_dir,
-                forcefield=forcefield,
-                platform=None,
-            )
-            building_block.write(str(ligand_dir / f"{name}_optl.mol"))
-            if i == 0:
-                converging_bb = building_block.clone()
-            elif i == 1:
-                diverging_bb = building_block.clone()
-            elif i == 2:
-                tetra_bb = building_block.clone()
+
+        constant_definer_dict = {
+            # Bonds.
+            "mb": ("bond", 1.0, 1e5),
+            "ab": ("bond", 1.0, 1e5),
+            "gb": ("bond", 0.7, 1e5),
+            "fb": ("bond", 0.7, 1e5),
+            "eg": ("bond", 0.7, 1e5),
+            "af": ("bond", 0.7, 1e5),
+            # Angles.
+            "bmb": ("pyramid", 90, 1e2),
+            "mba": ("angle", 180, 1e2),
+            "mbg": ("angle", 180, 1e2),
+            "mbf": ("angle", 180, 1e2),
+            "aca": ("angle", 180, 1e2),
+            "ede": ("angle", 180, 1e2),
+            # Torsions.
+            # Nonbondeds.
+            "m": ("nb", 10.0, 1.0),
+            "d": ("nb", 10.0, 1.0),
+            "e": ("nb", 10.0, 1.0),
+            "a": ("nb", 10.0, 1.0),
+            "b": ("nb", 10.0, 1.0),
+            "c": ("nb", 10.0, 1.0),
+            "g": ("nb", 10.0, 1.0),
+            "f": ("nb", 10.0, 1.0),
+        }
+        definer_dict = deepcopy(constant_definer_dict)
+
+        conf_data = extract_ensemble(
+            molecule=stk.BuildingBlock.init_from_file(
+                path=atomistic_ligand_dir / f"{converging_name}_optl.mol",
+                functional_groups=(
+                    stko.functional_groups.ThreeSiteFactory(
+                        "[#6]~[#7X2]~[#6]"
+                    ),
+                ),
+            ),
+            crest_run=atomistic_calculation_dir / f"{converging_name}_crest",
+        )[converging_confid]
+
+        if isinstance(converging, FiveBead):
+            bead1, bead2, bead3 = list(converging.get_bead_set())
+
+            # This angle is constant.
+            deg = 120
+            # Therefore, from trapezoid, so is this:
+            egg = (360 - deg * 2) / 2
+            definer_dict[f"{bead3}{bead2}{bead1}"] = ("angle", deg, 1e2)
+
+            bge = sum(conf_data["binder_angles"]) / 2
+            # Scale to cg, divide by 2.
+            bb = conf_data["binder_distance"] / 2
+            gb = definer_dict["gb"][1]
+            if bge / 2 < 90:  # noqa: PLR2004
+                gg = bb + (2 * gb * np.cos(np.radians(bge / 2)))
+            else:
+                theta = bge - 90 - egg
+                gg = bb - (2 * gb * np.sin(np.radians(theta)))
+
+            eg = definer_dict["eg"][1]
+            ee = gg - (2 * eg * np.sin(np.radians(deg - 90)))
+            ed = ee / 2
+
+            definer_dict[f"{bead2}{bead1}"] = ("bond", ed, 1e5)
+            definer_dict[f"b{bead3}{bead2}"] = ("angle", bge, 1e2)
+
+            # Define torsion as restricted.
+            tname = f"{bead3}{bead2}{bead1}{bead2}{bead3}"
+            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
+
+        elif isinstance(converging, cgexplore.molecular.TwoC1Arm):
+            bead1, bead2 = list(converging.get_bead_set())
+            if bead1 != "c" or bead2 != "a":
+                raise NotImplementedError
+            # Define bac by the average of the binder angles.
+            bac = sum(conf_data["binder_angles"]) / 2
+            definer_dict[f"b{bead2}{bead1}"] = ("angle", bac, 1e2)
+
+            # Defined by binder-binder distance /2 .
+            bb = conf_data["binder_distance"] / 2
+            ba = definer_dict["ab"][1]
+            aa = bb - (2 * ba * np.sin(np.radians(bac - 90)))
+            ac = aa / 2
+            definer_dict[f"{bead2}{bead1}"] = ("bond", ac, 1e5)
+
+            # Define torsion as restricted.
+            tname = f"b{bead2}{bead1}{bead2}b"
+            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
+
+        conf_data = extract_ensemble(
+            molecule=stk.BuildingBlock.init_from_file(
+                path=atomistic_ligand_dir / f"{diverging_name}_optl.mol",
+                functional_groups=(
+                    stko.functional_groups.ThreeSiteFactory(
+                        "[#6]~[#7X2]~[#6]"
+                    ),
+                ),
+            ),
+            crest_run=atomistic_calculation_dir / f"{diverging_name}_crest",
+        )[diverging_confid]
+
+        if isinstance(diverging, FiveBead):
+            bead1, bead2, bead3 = list(diverging.get_bead_set())
+
+            # This angle is constant.
+            deg = 120
+            # Therefore, from trapezoid, so is this:
+            egg = (360 - deg * 2) / 2
+            definer_dict[f"{bead3}{bead2}{bead1}"] = ("angle", deg, 1e2)
+
+            bge = sum(conf_data["binder_angles"]) / 2
+            # Scale to cg, divide by 2.
+            bb = conf_data["binder_distance"] / 2
+            gb = definer_dict["gb"][1]
+            if bge / 2 < 90:  # noqa: PLR2004
+                gg = bb + (2 * gb * np.cos(np.radians(bge / 2)))
+            else:
+                theta = bge - 90 - egg
+                gg = bb - (2 * gb * np.sin(np.radians(theta)))
+
+            eg = definer_dict["eg"][1]
+            ee = gg - (2 * eg * np.sin(np.radians(deg - 90)))
+            ed = ee / 2
+
+            definer_dict[f"{bead2}{bead1}"] = ("bond", ed, 1e5)
+            definer_dict[f"b{bead3}{bead2}"] = ("angle", bge, 1e2)
+
+            # Define torsion as restricted.
+            tname = f"{bead3}{bead2}{bead1}{bead2}{bead3}"
+            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
+
+        elif isinstance(diverging, cgexplore.molecular.TwoC1Arm):
+            bead1, bead2 = list(diverging.get_bead_set())
+            if bead1 != "c" or bead2 != "a":
+                raise NotImplementedError
+            # Define bac by the average of the binder angles.
+            bac = sum(conf_data["binder_angles"]) / 2
+            definer_dict[f"b{bead2}{bead1}"] = ("angle", bac, 1e2)
+
+            # Defined by binder-binder distance /2 .
+            bb = conf_data["binder_distance"] / 2
+            aa = bb - (2 * np.sin(np.radians(bac - 90)))
+            ac = aa / 2
+            definer_dict[f"{bead2}{bead1}"] = ("bond", ac, 1e5)
+
+            # Define torsion as restricted.
+            tname = f"b{bead2}{bead1}{bead2}b"
+            definer_dict[tname] = ("tors", "0134", 180, 50, 1)
+
+        forcefield = cgexplore.systems_optimisation.get_forcefield_from_dict(
+            identifier=f"{pair}ff",
+            prefix=f"{pair}ff",
+            vdw_bond_cutoff=2,
+            present_beads=present_beads,
+            definer_dict=definer_dict,
+        )
+
+        converging_bb = prepare_building_block(
+            precursor=converging,
+            forcefield=forcefield,
+            calculation_dir=calculation_dir,
+            ligand_dir=ligand_dir,
+        )
+        diverging_bb = prepare_building_block(
+            precursor=diverging,
+            forcefield=forcefield,
+            calculation_dir=calculation_dir,
+            ligand_dir=ligand_dir,
+        )
+        tetra_bb = prepare_building_block(
+            precursor=tetra,
+            forcefield=forcefield,
+            calculation_dir=calculation_dir,
+            ligand_dir=ligand_dir,
+        )
 
         for multiplier in pairs[pair]["multipliers"]:
             if args.run:
@@ -506,7 +565,7 @@ def main():
                     converging_bb=converging_bb,
                     diverging_bb=diverging_bb,
                 )
-                logging.info(f"doing: pair {pair}, multi {multiplier}")
+                logging.info("doing: pair %s, multi %s", pair, multiplier)
                 count = 0
                 for constructed in iterator.get_constructed_molecules():
                     idx = constructed.idx
@@ -523,7 +582,7 @@ def main():
                         continue
 
                     # Optimise and save.
-                    logging.info(f"building {name}")
+                    logging.info("building %s", name)
                     count += 1
 
                     try:
@@ -536,7 +595,7 @@ def main():
                             database_path=database_path,
                         )
                         if conformer is not None:
-                            conformer.molecule.write(
+                            conformer.molecule.with_centroid((0, 0, 0)).write(
                                 str(structure_dir / f"{name}_optc.mol")
                             )
 
@@ -557,55 +616,16 @@ def main():
 
                     except OpenMMException:
                         pass
-                logging.info(f"for: pair {pair}, multi {multiplier}, built {count}!")
+                    break
 
-            energies = make_plot(
+            _ = make_plot(
                 database_path=database_path,
                 pair=pair,
                 structure_dir=structure_dir,
                 figure_dir=figure_dir,
-                filename=figure_dir / f"min_1_{pair}.png",
+                filename=figure_dir / f"rerun_1_{pair}.png",
             )
-
-            top_ten_distinct = sorted(set([i[0] for i in energies[str(multiplier)]]))[
-                :10
-            ]
-
-            if args.atomise:
-                for energy in top_ten_distinct:
-                    options = energies[str(multiplier)]
-
-                    for o_energy, o_name in options:
-                        if o_energy == energy:
-                            chosen = o_name
-                            break
-
-                    entry = cgexplore.utilities.AtomliteDatabase(
-                        database_path
-                    ).get_entry(chosen)
-
-                    atomise(
-                        vertices=get_underyling_vertices(pair, multiplier),
-                        name=chosen,
-                        topology_code=TopologyCode(
-                            vertex_map=entry.properties["topology_code_vmap"],
-                            as_string=vmap_to_str(
-                                entry.properties["topology_code_vmap"]
-                            ),
-                        ),
-                        structure_dir=structure_dir,
-                        calculation_dir=calculation_dir,
-                        atomistic_dir=atomistic_dir,
-                        atomistic_calculation_dir=atomistic_calculation_dir,
-                        building_blocks=bb_library[pair][multiplier],
-                        optimizer=optimiser(pair, str(multiplier)),
-                    )
-            make_aa_plot(
-                pair=pair,
-                atomistic_dir=atomistic_dir,
-                atomistic_calculation_dir=atomistic_calculation_dir,
-                filename=figure_dir / f"min_3_{pair}.png",
-            )
+            raise SystemExit
 
 
 if __name__ == "__main__":
