@@ -1,14 +1,18 @@
 """analysis package."""
 
-from scram._internal.topologies.topologies import (
-    CGM4L8,
-    CGM12L24,
+from scram._internal.topologies.enumeration import (
     Constructed,
     CustomTopology,
     HomolepticTopologyIterator,
     TopologyCode,
     TopologyIterator,
+)
+from scram._internal.topologies.graphs import (
+    CGM4L8,
+    CGM12L24,
     UnalignedM1L2,
+)
+from scram._internal.topologies.utilities import (
     get_underyling_vertices,
     vmap_to_str,
 )
