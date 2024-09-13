@@ -1,6 +1,6 @@
 """analysis package."""
 
-from desymmetrised_scripts._internal.utilities.utilities import (
+from scram._internal.utilities.utilities import (
     atomise,
     extract_ensemble,
     get_ligand_bb,

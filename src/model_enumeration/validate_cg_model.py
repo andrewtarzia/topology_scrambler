@@ -12,7 +12,7 @@ import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
 
-import desymmetrised_scripts
+import scram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,8 +26,8 @@ def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
     name: str,
     forcefield: cgexplore.forcefields.ForceField,
-    iterator: desymmetrised_scripts.topologies.TopologyIterator,
-    topology_code: desymmetrised_scripts.topologies.TopologyCode,
+    iterator: scram.topologies.TopologyIterator,
+    topology_code: scram.topologies.TopologyCode,
 ) -> None:
     """Analyse toy model cage."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
@@ -148,10 +148,10 @@ def get_validation_forcefield(
 ) -> cgexplore.forcefields.ForceField:
     """Get forcefield."""
     present_beads = (
-        desymmetrised_scripts.toy.cbead_d,
-        desymmetrised_scripts.toy.abead_d,
-        desymmetrised_scripts.toy.binder_bead,
-        desymmetrised_scripts.toy.tetra_bead,
+        scram.toy.cbead_d,
+        scram.toy.abead_d,
+        scram.toy.binder_bead,
+        scram.toy.tetra_bead,
     )
     definer_dict = {
         # Bonds.
@@ -294,7 +294,7 @@ def make_plot(
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("target bite angle [deg]", fontsize=16)
-    ax.set_ylabel(desymmetrised_scripts.toy.eb_str(), fontsize=16)
+    ax.set_ylabel(scram.toy.eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.axhline(y=0.3, c="k", ls="--")
 
@@ -349,12 +349,12 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             ),
             "stoichiometry_L_M": (2, 1),
             "ditopic": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
         }
@@ -367,13 +367,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             ditopic = ligands[lig]["ditopic"]
             tetra = ligands[lig]["tetra"]
 
-            ditopic_bb = desymmetrised_scripts.toy.prepare_building_block(
+            ditopic_bb = scram.toy.prepare_building_block(
                 precursor=ditopic,
                 forcefield=forcefield,
                 calculation_dir=calculation_dir,
                 ligand_dir=ligand_dir,
             )
-            tetra_bb = desymmetrised_scripts.toy.prepare_building_block(
+            tetra_bb = scram.toy.prepare_building_block(
                 precursor=tetra,
                 forcefield=forcefield,
                 calculation_dir=calculation_dir,
@@ -381,7 +381,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             )
 
             for multiplier in ligands[lig]["multipliers"]:
-                iterator = desymmetrised_scripts.topologies.HomolepticTopologyIterator(
+                iterator = scram.topologies.HomolepticTopologyIterator(
                     multiplier=multiplier,
                     stoichiometry=ligands[lig]["stoichiometry_L_M"],
                     tetra_bb=tetra_bb,
@@ -407,7 +407,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     logging.info("building %s", name)
 
                     try:
-                        conformer = desymmetrised_scripts.toy.optimise_cage(
+                        conformer = scram.toy.optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,
@@ -431,7 +431,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     except OpenMMException:
                         pass
                     count += 1
-                    if count == 3:  # noqa: PLR2004
+                    if count == 2:  # noqa: PLR2004
                         break
 
                 make_plot(
@@ -468,7 +468,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
 
                     # Optimise and save.
                     try:
-                        conformer = desymmetrised_scripts.toy.optimise_cage(
+                        conformer = scram.toy.optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,

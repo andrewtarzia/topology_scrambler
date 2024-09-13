@@ -1,6 +1,6 @@
 """Module for handling desymmetrised structure prediction."""
 
-from desymmetrised_scripts import topologies, toy, utilities
+from scram import topologies, toy, utilities
 
 __all__ = [
     "toy",

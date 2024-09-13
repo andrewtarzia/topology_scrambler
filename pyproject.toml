@@ -38,7 +38,7 @@ dev = [
 github = "https://github.com/andrewtarzia/desymmetrised_scripts"
 
 [tool.setuptools_scm]
-write_to = "src/desymmetrised_scripts/_version.py"
+write_to = "src/scram/_version.py"
 
 [tool.setuptools.packages.find]
 where = [

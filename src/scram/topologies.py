@@ -1,6 +1,6 @@
 """analysis package."""
 
-from desymmetrised_scripts._internal.topologies.topologies import (
+from scram._internal.topologies.topologies import (
     CGM4L8,
     CGM12L24,
     Constructed,

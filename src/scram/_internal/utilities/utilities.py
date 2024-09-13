@@ -11,7 +11,7 @@ import numpy as np
 import stk
 import stko
 
-from desymmetrised_scripts._internal.topologies.topologies import (
+from scram._internal.topologies.topologies import (
     CustomTopology,
     TopologyCode,
 )

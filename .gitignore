@@ -159,5 +159,5 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-src/desymmetrised_scripts/_version.py
+src/scram/_version.py
 .ruff_cache/

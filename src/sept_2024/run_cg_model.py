@@ -10,7 +10,7 @@ import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
 
-import desymmetrised_scripts
+import scram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +23,8 @@ def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
     name: str,
     forcefield: cgexplore.forcefields.ForceField,
-    iterator: desymmetrised_scripts.topologies.TopologyIterator,
-    topology_code: desymmetrised_scripts.topologies.TopologyCode,
+    iterator: scram.topologies.TopologyIterator,
+    topology_code: scram.topologies.TopologyCode,
 ) -> None:
     """Analyse a toy model cage."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
@@ -191,7 +191,7 @@ def make_plot(
             f.write(f"{opt_file} ")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_ylabel(desymmetrised_scripts.toy.eb_str(), fontsize=16)
+    ax.set_ylabel(scram.toy.eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_ylim(0.01, 100)
     ax.axhline(y=0.3, c="k", ls="--")
@@ -254,18 +254,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c1",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -273,18 +273,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c12",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -292,18 +292,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c13",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -311,18 +311,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c14",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -330,18 +330,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c15",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -349,18 +349,18 @@ def main() -> None:
             "converging_name": "lf",
             "diverging_name": "ls1",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -368,18 +368,18 @@ def main() -> None:
             "converging_name": "lf",
             "diverging_name": "ls9",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -387,18 +387,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st5",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -406,18 +406,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st52",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": desymmetrised_scripts.toy.SixBead(
-                bead=desymmetrised_scripts.toy.cbead_c,
-                abead1=desymmetrised_scripts.toy.abead_c,
-                abead2=desymmetrised_scripts.toy.ebead_c,
+            "converging": scram.toy.SixBead(
+                bead=scram.toy.cbead_c,
+                abead1=scram.toy.abead_c,
+                abead2=scram.toy.ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=desymmetrised_scripts.toy.cbead_d,
-                abead1=desymmetrised_scripts.toy.abead_d,
+                bead=scram.toy.cbead_d,
+                abead1=scram.toy.abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=desymmetrised_scripts.toy.tetra_bead,
-                abead1=desymmetrised_scripts.toy.binder_bead,
+                bead=scram.toy.tetra_bead,
+                abead1=scram.toy.binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -430,7 +430,7 @@ def main() -> None:
         diverging = pairs[pair]["diverging"]
         tetra = pairs[pair]["tetra"]
 
-        forcefield = desymmetrised_scripts.toy.precursors_to_forcefield(
+        forcefield = scram.toy.precursors_to_forcefield(
             pair=pair,
             diverging=diverging,
             converging=converging,
@@ -438,19 +438,19 @@ def main() -> None:
             dive_meas=ligand_measures[diverging_name],
         )
 
-        converging_bb = desymmetrised_scripts.toy.prepare_building_block(
+        converging_bb = scram.toy.prepare_building_block(
             precursor=converging,
             forcefield=forcefield,
             calculation_dir=calculation_dir,
             ligand_dir=ligand_dir,
         )
-        diverging_bb = desymmetrised_scripts.toy.prepare_building_block(
+        diverging_bb = scram.toy.prepare_building_block(
             precursor=diverging,
             forcefield=forcefield,
             calculation_dir=calculation_dir,
             ligand_dir=ligand_dir,
         )
-        tetra_bb = desymmetrised_scripts.toy.prepare_building_block(
+        tetra_bb = scram.toy.prepare_building_block(
             precursor=tetra,
             forcefield=forcefield,
             calculation_dir=calculation_dir,
@@ -460,7 +460,7 @@ def main() -> None:
         for multiplier in pairs[pair]["multipliers"]:
             if args.run:
                 # Define a connectivity based on a multiplier.
-                iterator = desymmetrised_scripts.topologies.TopologyIterator(
+                iterator = scram.topologies.TopologyIterator(
                     multiplier=multiplier,
                     stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
                     tetra_bb=tetra_bb,
@@ -486,7 +486,7 @@ def main() -> None:
                     logging.info("building %s", name)
 
                     try:
-                        conformer = desymmetrised_scripts.toy.optimise_cage(
+                        conformer = scram.toy.optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,
@@ -499,7 +499,7 @@ def main() -> None:
                                 str(structure_dir / f"{name}_optc.mol")
                             )
 
-                        desymmetrised_scripts.toy.save_vertex_positions(
+                        scram.toy.save_vertex_positions(
                             name=name,
                             calculation_dir=calculation_dir,
                             structure_dir=structure_dir,

@@ -1,6 +1,6 @@
 """analysis package."""
 
-from desymmetrised_scripts._internal.toy.min_utilities import (
+from scram._internal.toy.min_utilities import (
     SixBead,
     abead_c,
     abead_d,
