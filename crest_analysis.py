@@ -1,9 +1,8 @@
 """Perform crest analysis on ligand."""
 
 import logging
-import pathlib
-import stko
 import os
+import pathlib
 import shutil
 import subprocess as sp
 import uuid
@@ -12,9 +11,9 @@ from collections import abc
 import matplotlib.pyplot as plt
 import numpy as np
 import stk
-from utilities import (
-    plot_xy,
-)
+import stko
+
+from utilities import extract_ensemble, get_ligand_bb, plot_xy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,7 +64,9 @@ class Crest(stko.Optimizer):
         self._gfn_method = (
             f"--gfn{gfn_method}" if gfn_method not in ("gfnff",) else "--gfnff"
         )
-        self._output_dir = None if output_dir is None else pathlib.Path(output_dir)
+        self._output_dir = (
+            None if output_dir is None else pathlib.Path(output_dir)
+        )
         self._additional_commands = additional_commands
         self._num_cores = str(num_cores)
         self._electronic_temperature = str(electronic_temperature)
@@ -132,13 +133,13 @@ class Crest(stko.Optimizer):
         with out_file.open("w") as f:
             # Note that sp.call will hold the program until completion
             # of the calculation.
-            sp.call(
+            sp.call(  # noqa: S602
                 cmd,
                 stdin=sp.PIPE,
                 stdout=f,
                 stderr=sp.PIPE,
                 # Shell is required to run complex arguments.
-                shell=True,  # noqa: S602
+                shell=True,
             )
 
     def optimize(self, molecule: stk.Molecule) -> stk.Molecule:
@@ -173,7 +174,9 @@ class Crest(stko.Optimizer):
 
             opt_complete = self._is_complete(out_file, output_xyzs)
 
-            molecule = molecule.with_structure_from_file(pathlib.Path("crest_best.xyz"))
+            molecule = molecule.with_structure_from_file(
+                pathlib.Path("crest_best.xyz")
+            )
 
         finally:
             os.chdir(init_dir)
@@ -195,11 +198,8 @@ def run_conformer_analysis(  # noqa: PLR0913
     xtb_path: pathlib.Path,
 ) -> dict:
     """Analyse conformers."""
-
     opt_file = ligand_dir / f"{ligand_name}_optl.mol"
     crest_run = calculation_dir / f"{ligand_name}_crest"
-    ensemble_dir = crest_run / "ensemble"
-    ensemble_dir.mkdir(exist_ok=True)
 
     molecule = stk.BuildingBlock.init_from_molecule(
         molecule=molecule,
@@ -234,56 +234,7 @@ def run_conformer_analysis(  # noqa: PLR0913
         opt_molecule = optimiser.optimize(molecule)
         opt_molecule.write(opt_file)
 
-    num_atoms = molecule.get_num_atoms()
-    ensemble = {}
-
-    # Calculate geometrical properties.
-    conformer_file = crest_run / "crest_conformers.xyz"
-    with conformer_file.open("r") as f:
-        linex = f.readlines()
-
-    split_line = linex[0].rstrip()
-    for i, conformers in enumerate("".join(linex).split(split_line)):
-        lines = conformers.split("\n")
-
-        if len(lines) != num_atoms + 3:
-            continue
-
-        energy = lines[1]
-        position_matrix = []
-        for line in lines[2:]:
-            splits = line.rstrip().split()
-            if len(splits) != 4:  # noqa: PLR2004
-                continue
-            symb, x, y, z = splits
-            x = float(x)
-            y = float(y)
-            z = float(z)
-
-            position_matrix.append(np.array((x, y, z)))
-
-        conf_molecule = molecule.with_position_matrix(np.array(position_matrix))
-
-        calc = stko.molecule_analysis.DitopicThreeSiteAnalyser()
-
-        adjacent_centroids = calc.get_adjacent_centroids(conf_molecule)
-        adjacent_distance = np.linalg.norm(
-            adjacent_centroids[0] - adjacent_centroids[1]
-        )
-
-        ensemble[i] = {
-            "energy": float(energy),
-            "molecule": conf_molecule,
-            "binder_angles": calc.get_binder_angles(conf_molecule),
-            "binder_binder_angle": calc.get_binder_binder_angle(conf_molecule),
-            "binder_distance": calc.get_binder_distance(conf_molecule),
-            "binder_adjacent_torsion": calc.get_binder_adjacent_torsion(conf_molecule),
-            "adjacent_distance": adjacent_distance,
-        }
-
-        ensemble[i]["molecule"].write(ensemble_dir / f"conf_{i}.mol")
-
-    return ensemble
+    return extract_ensemble(molecule, crest_run)
 
 
 def main() -> None:
@@ -296,7 +247,11 @@ def main() -> None:
     calculation_dir = wd / "calculations"
     calculation_dir.mkdir(exist_ok=True)
     crest_path = wd / "env" / "bin" / "crest"
-    xtb_path = wd / "env" / "bin" / "crest"
+    xtb_path = wd / "env" / "bin" / "xtb"
+
+    forcefield_info_file = figure_dir / "auto_ff_information.txt"
+    if forcefield_info_file.exists():
+        forcefield_info_file.unlink()
 
     ligands = {
         "ls1": {"smiles": "C1=CC(=CC(=C1)C2=CC=NC=C2)C3=CC=NC=C3"},
@@ -308,7 +263,15 @@ def main() -> None:
         },
         "ls9": {"smiles": "C1=CN=CC=C1C2=CC=C(S2)C3=CC=NC=C3"},
         "st5": {"input": ligand_dir / "st5_manual.mol"},
-        "la": {"smiles": "C1=C(C2C=CC3C4C=CC(C5=CC=CN=C5)=CC=4C(=O)C=3C=2)C=NC=C1"},
+        "la": {
+            "smiles": "C1=C(C2C=CC3C4C=CC(C5=CC=CN=C5)=CC=4C(=O)C=3C=2)C=NC=C1"
+        },
+        "c1": {
+            "smiles": (
+                "O=C(O[C@H]1CO[C@H]2[C@H](CO[C@@H]12)OC(=O)C3=CC=NC=C3)C4=C"
+                "C=NC=C4"
+            )
+        },
     }
 
     for ligand in ligands:
@@ -316,7 +279,9 @@ def main() -> None:
         if "smiles" in ligands[ligand]:
             molecule = stk.BuildingBlock(ligands[ligand]["smiles"])
         elif "input" in ligands[ligand]:
-            molecule = stk.BuildingBlock.init_from_file(ligands[ligand]["input"])
+            molecule = stk.BuildingBlock.init_from_file(
+                ligands[ligand]["input"]
+            )
 
         molecule.write(ligand_dir / f"{ligand}_unopt.mol")
 
@@ -377,6 +342,11 @@ def main() -> None:
                 figure_dir=figure_dir,
                 ligand_name=ligand,
             )
+
+        _ = get_ligand_bb(
+            path=wd / "ligands" / f"{ligand}_prep.mol",
+            optl_path=wd / "ligands" / f"{ligand}_optl.mol",
+        )
 
 
 if __name__ == "__main__":
