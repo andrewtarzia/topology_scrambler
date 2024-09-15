@@ -192,6 +192,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="set to build atomistic structures",
     )
+    parser.add_argument(
+        "--targetted",
+        action="store_true",
+        help="set to do non-naive tests",
+    )
     return parser.parse_args()
 
 
@@ -304,7 +309,9 @@ def make_plot(  # noqa: PLR0915
         list(countsx),
         [countsx[i] for i in countsx],
         c="tab:red",
+        marker="D",
         zorder=2,
+        markersize=3.0,
     )
     axx.tick_params(
         axis="both",
@@ -340,7 +347,7 @@ def make_plot(  # noqa: PLR0915
     plt.close()
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0912, C901, PLR0915
     """Run script."""
     args = _parse_args()
 
@@ -358,25 +365,48 @@ def main() -> None:
 
     database_path = data_dir / "validation_run.db"
 
-    ligands = {
-        str(bac_angle): {
-            "forcefield": get_validation_forcefield(
-                bac_angle=bac_angle,
-                identifier=str(i),
-            ),
-            "stoichiometry_L_M": (2, 1),
-            "ditopic": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
+    if args.targetted:
+        ligands = {
+            str(bac_angle): {
+                "forcefield": get_validation_forcefield(
+                    bac_angle=bac_angle,
+                    identifier=str(bac_angle),
+                ),
+                "stoichiometry_L_M": (2, 1),
+                "ditopic": cgexplore.molecular.TwoC1Arm(
+                    bead=scram.toy.cbead_d,
+                    abead1=scram.toy.abead_d,
+                ),
+                "tetra": cgexplore.molecular.FourC1Arm(
+                    bead=scram.toy.tetra_bead,
+                    abead1=scram.toy.binder_bead,
+                ),
+                "multipliers": (multi,),
+            }
+            for bac_angle, multi in zip(
+                (110, 120, 135, 150), (3, 4, 6, 12), strict=True
+            )
         }
-        for i, bac_angle in enumerate(range(40, 181, 5))
-    }
+    else:
+        ligands = {
+            str(bac_angle): {
+                "forcefield": get_validation_forcefield(
+                    bac_angle=bac_angle,
+                    identifier=str(i),
+                ),
+                "stoichiometry_L_M": (2, 1),
+                "ditopic": cgexplore.molecular.TwoC1Arm(
+                    bead=scram.toy.cbead_d,
+                    abead1=scram.toy.abead_d,
+                ),
+                "tetra": cgexplore.molecular.FourC1Arm(
+                    bead=scram.toy.tetra_bead,
+                    abead1=scram.toy.binder_bead,
+                ),
+                "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
+            }
+            for i, bac_angle in enumerate(range(40, 181, 5))
+        }
 
     if args.run:
         for lig in ligands:
@@ -445,11 +475,17 @@ def main() -> None:
                             topology_code=constructed.topology_code,
                         )
 
-                    except OpenMMException:
+                    except (OpenMMException, ValueError):
                         pass
                     count += 1
 
-                    if count == 40:  # noqa: PLR2004
+                    if args.targetted:
+                        maxc = 100
+                    elif lig in ("160", "165", "170", "175", "180"):
+                        maxc = 10
+                    else:
+                        maxc = 40
+                    if count == maxc:
                         break
 
                 make_plot(

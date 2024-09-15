@@ -984,24 +984,6 @@ class IHomolepticTopologyIterator:
             if i in self._vertex_types_by_fg[type1]
         ]
 
-        # for itera1, itera2 in it.product(
-        #     it.permutations(
-        #         [
-        #             i
-        #             for i in self._reactable_vertex_ids
-        #             if i in self._vertex_types_by_fg[type1]
-        #         ],
-        #         r=self._num_edges,
-        #     ),
-        #     it.permutations(
-        #         [
-        #             i
-        #             for i in self._reactable_vertex_ids
-        #             if i in self._vertex_types_by_fg[type2]
-        #         ],
-        #         r=self._num_edges,
-        #     ),
-        # ):
         to_save = []
         for itera2 in it.permutations(
             [
