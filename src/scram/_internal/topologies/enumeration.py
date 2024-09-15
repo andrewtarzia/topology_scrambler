@@ -1,6 +1,5 @@
 """Script to generate and optimise CG models."""
 
-import itertools as it
 import json
 import logging
 import pathlib
@@ -860,7 +859,7 @@ class IHomolepticTopologyIterator:
     ) -> None:
         """Initialize."""
         self._scale_multiplier = 5
-        self._num_mashes = 2
+        self._num_mashes = 10
 
         self._graphs_path = (
             pathlib.Path(__file__).resolve().parent / f"g_{graph_type}.json"
@@ -978,25 +977,35 @@ class IHomolepticTopologyIterator:
 
         type1, type2 = sorted(self._vertex_types_by_fg.keys(), reverse=True)
 
+        count = 0
         itera1 = [
             i
             for i in self._reactable_vertex_ids
             if i in self._vertex_types_by_fg[type1]
         ]
 
+        rng = np.random.default_rng(seed=100)
+        options = [
+            i
+            for i in self._reactable_vertex_ids
+            if i in self._vertex_types_by_fg[type2]
+        ]
+
         to_save = []
-        for itera2 in it.permutations(
-            [
-                i
-                for i in self._reactable_vertex_ids
-                if i in self._vertex_types_by_fg[type2]
-            ],
-            r=self._num_edges,
-        ):
+        # for itera2 in it.permutations(
+        #     [
+        #         i
+        #         for i in self._reactable_vertex_ids
+        #         if i in self._vertex_types_by_fg[type2]
+        #     ],
+        #     r=self._num_edges,
+        # ):
+        for itera2 in range(int(1e4)):
+            rng.shuffle(options)
             # Build an edge selection.
             combination = [
                 tuple(sorted((i, j)))
-                for i, j in zip(itera1, itera2, strict=True)
+                for i, j in zip(itera1, options, strict=True)
             ]
 
             # Need to check for nonsensical ones here.
@@ -1037,7 +1046,10 @@ class IHomolepticTopologyIterator:
 
             run_topology_codes.append(topology_code)
             to_save.append(combination)
-            print(itera2)
+            print(itera2, options)
+            count += 1
+            # if count > 1e5:
+            #     break
         et = time.time()
 
         with self._graphs_path.open("w") as f:
@@ -1113,11 +1125,16 @@ class IHomolepticTopologyIterator:
             # Scramble the vertex positions.
             rng = np.random.default_rng(seed=100)
             for i in range(self._num_mashes):
-                coordinates = rng.random(
-                    size=(len(self._vertex_prototypes), 3)
+                coordinates = self._points_on_sphere(
+                    sphere_radius=1,
+                    num_points=len(self._vertex_prototypes),
+                    angle_rotation=rng.random(1)[0] * 360,
                 )
+
+                rng.shuffle(coordinates)
+
                 new_vertex_positions = {
-                    j: coordinates[j] * 10
+                    j: coordinates[j]
                     for j, i in enumerate(self._vertex_prototypes)
                 }
 
