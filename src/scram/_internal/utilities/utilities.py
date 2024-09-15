@@ -11,7 +11,7 @@ import numpy as np
 import stk
 import stko
 
-from scram._internal.topologies.topologies import (
+from scram._internal.topologies.enumeration import (
     CustomTopology,
     TopologyCode,
 )

@@ -195,7 +195,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def make_plot(
+def make_plot(  # noqa: PLR0915
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
     structure_dir: pathlib.Path,
@@ -214,6 +214,7 @@ def make_plot(
     }
     fig, ax = plt.subplots(figsize=(8, 5))
     axi = ax.twiny()
+    axx = ax.twinx()
     energies = defaultdict(list)
     bacs = defaultdict(list)
 
@@ -267,6 +268,7 @@ def make_plot(
             zorder=1,
         )
 
+    countsx = {}
     with (figure_dir / "val_opt.txt").open("w") as f:
         bac_line = []
         for bac_angle in sorted(bacs):
@@ -274,7 +276,7 @@ def make_plot(
             opt_file = structure_dir / f"{min_energy[2]}_optc.mol"
             f.write(f"{opt_file} ")
             bac_line.append((bac_angle, min_energy[1]))
-
+            countsx[bac_angle] = len(bacs[bac_angle])
             ax.scatter(
                 bac_angle,
                 min_energy[1],
@@ -297,6 +299,21 @@ def make_plot(
     ax.set_ylabel(scram.toy.eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.axhline(y=0.3, c="k", ls="--")
+
+    axx.plot(
+        list(countsx),
+        [countsx[i] for i in countsx],
+        c="tab:red",
+        zorder=2,
+    )
+    axx.tick_params(
+        axis="both",
+        which="major",
+        labelsize=16,
+        labelcolor="tab:red",
+    )
+    axx.set_ylabel("num. structures", fontsize=16, color="tab:red")
+    axx.set_ylim(0, None)
 
     # set limits for shared axis
     axi.set_xlim(ax.get_xlim())
@@ -323,7 +340,7 @@ def make_plot(
     plt.close()
 
 
-def main() -> None:  # noqa: PLR0915, C901, PLR0912
+def main() -> None:
     """Run script."""
     args = _parse_args()
 
@@ -358,7 +375,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             ),
             "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
         }
-        for i, bac_angle in enumerate(range(45, 181, 5))
+        for i, bac_angle in enumerate(range(40, 181, 5))
     }
 
     if args.run:
@@ -431,7 +448,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     except OpenMMException:
                         pass
                     count += 1
-                    if count == 2:  # noqa: PLR2004
+
+                    if count == 40:  # noqa: PLR2004
                         break
 
                 make_plot(
@@ -440,66 +458,12 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     figure_dir=figure_dir,
                     filename="validation_1.png",
                 )
-                continue
-                raise SystemExit("figure out hwo to atomisse")
-                continue
-
-                for constructed in iterator.get_constructed_molecules():
-                    idx = constructed.idx
-                    acage = constructed.constructed_molecule
-                    # Initialise positions based on that connectivity.
-                    name = f"{lig}_{multiplier}_{idx}"
-                    logging.info(f"building {name}")
-                    mid = stko.molecule_analysis.GeometryAnalyser().get_min_centroid_distance(
-                        acage
-                    )
-                    if mid < 16:
-                        continue
-                    acage.write(str(structure_dir / f"{name}_unopt.mol"))
-
-                    num_components = len(
-                        stko.Network.init_from_molecule(
-                            acage
-                        ).get_connected_components()
-                    )
-
-                    if num_components != 1:
-                        continue
-
-                    # Optimise and save.
-                    try:
-                        conformer = scram.toy.optimise_cage(
-                            molecule=acage,
-                            name=name,
-                            output_dir=calculation_dir,
-                            forcefield=forcefield,
-                            platform=None,
-                            database_path=database_path,
-                        )
-                        if conformer is not None:
-                            conformer.molecule.write(
-                                str(structure_dir / f"{name}_optc.mol")
-                            )
-
-                        analyse_cage(
-                            database_path=database_path,
-                            name=name,
-                            forcefield=forcefield,
-                            iterator=iterator,
-                        )
-
-                    except OpenMMException:
-                        pass
 
     make_plot(
         database_path=database_path,
         structure_dir=structure_dir,
         figure_dir=figure_dir,
         filename="validation_1.png",
-    )
-    raise SystemExit(
-        "**paused this for now, I know it can work, but it is a matter of "
-        "thinking about the algorithm. Can revisit when we take this further**"
     )
 
 

@@ -4,8 +4,10 @@ from scram._internal.topologies.enumeration import (
     Constructed,
     CustomTopology,
     HomolepticTopologyIterator,
+    IHomolepticTopologyIterator,
     TopologyCode,
     TopologyIterator,
+    get_graph_type,
 )
 from scram._internal.topologies.graphs import (
     CGM4L8,
@@ -19,6 +21,7 @@ from scram._internal.topologies.utilities import (
 
 __all__ = [
     "get_underyling_vertices",
+    "get_graph_type",
     "vmap_to_str",
     "CustomTopology",
     "UnalignedM1L2",
@@ -28,4 +31,5 @@ __all__ = [
     "Constructed",
     "TopologyIterator",
     "HomolepticTopologyIterator",
+    "IHomolepticTopologyIterator",
 ]
