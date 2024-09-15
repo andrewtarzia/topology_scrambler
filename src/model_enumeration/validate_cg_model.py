@@ -177,6 +177,7 @@ def get_validation_forcefield(
         present_beads=present_beads,
         vdw_bond_cutoff=2,
         definer_dict=definer_dict,
+        verbose=False,
     )
 
 
