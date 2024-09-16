@@ -976,7 +976,6 @@ class IHomolepticTopologyIterator:
 
         type1, type2 = sorted(self._vertex_types_by_fg.keys(), reverse=True)
 
-        count = 0
         itera1 = [
             i
             for i in self._reactable_vertex_ids
@@ -991,15 +990,7 @@ class IHomolepticTopologyIterator:
         ]
 
         to_save = []
-        # for itera2 in it.permutations(
-        #     [
-        #         i
-        #         for i in self._reactable_vertex_ids
-        #         if i in self._vertex_types_by_fg[type2]
-        #     ],
-        #     r=self._num_edges,
-        # ):
-        for itera2 in range(int(1e4)):
+        for _ in range(int(1e4)):
             rng.shuffle(options)
             # Build an edge selection.
             combination = [
@@ -1045,10 +1036,7 @@ class IHomolepticTopologyIterator:
 
             run_topology_codes.append(topology_code)
             to_save.append(combination)
-            print(itera2, options)
-            count += 1
-            # if count > 1e5:
-            #     break
+
         et = time.time()
 
         with self._graphs_path.open("w") as f:
