@@ -349,7 +349,7 @@ def make_plot(  # noqa: PLR0915
     plt.close()
 
 
-def main() -> None:  # noqa: PLR0912, C901, PLR0915
+def main() -> None:
     """Run script."""
     args = _parse_args()
 
@@ -481,12 +481,7 @@ def main() -> None:  # noqa: PLR0912, C901, PLR0915
                         pass
                     count += 1
 
-                    if args.targetted:
-                        maxc = 100
-                    elif lig in ("160", "165", "170", "175", "180"):
-                        maxc = 10
-                    else:
-                        maxc = 40
+                    maxc = 100 if args.targetted else 40
                     if count == maxc:
                         break
 

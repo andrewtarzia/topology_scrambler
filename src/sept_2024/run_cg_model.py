@@ -277,6 +277,139 @@ def main() -> None:
     }
 
     pairs = {
+        "la_st5_11": {
+            "converging_name": "la",
+            "diverging_name": "st5",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
+        "la_st52_11": {
+            "converging_name": "la",
+            "diverging_name": "st52",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
+        "la_c1_11": {
+            "converging_name": "la",
+            "diverging_name": "c1",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
+        "la_c12_11": {
+            "converging_name": "la",
+            "diverging_name": "c12",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
+        "la_c13_11": {
+            "converging_name": "la",
+            "diverging_name": "c13",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
+        "la_c14_11": {
+            "converging_name": "la",
+            "diverging_name": "c14",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
+        "la_c15_11": {
+            "converging_name": "la",
+            "diverging_name": "c15",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3, 4),
+        },
         "la_c1": {
             "converging_name": "la",
             "diverging_name": "c1",
@@ -447,139 +580,6 @@ def main() -> None:
                 abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
-        },
-        "la_st5_11": {
-            "converging_name": "la",
-            "diverging_name": "st5",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_st52_11": {
-            "converging_name": "la",
-            "diverging_name": "st52",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c1_11": {
-            "converging_name": "la",
-            "diverging_name": "c1",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c12_11": {
-            "converging_name": "la",
-            "diverging_name": "c12",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c13_11": {
-            "converging_name": "la",
-            "diverging_name": "c13",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c14_11": {
-            "converging_name": "la",
-            "diverging_name": "c14",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c15_11": {
-            "converging_name": "la",
-            "diverging_name": "c15",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
         },
     }
 
