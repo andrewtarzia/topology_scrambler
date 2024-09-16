@@ -177,8 +177,13 @@ def optimise_cage(  # noqa: PLR0913
             if failed_md:
                 continue
             conformer = cgexplore.utilities.run_optimisation(
-                assigned_system=forcefield.assign_terms(
-                    md_conformer.molecule, name, output_dir
+                assigned_system=cgexplore.forcefields.AssignedSystem(
+                    molecule=md_conformer.molecule,
+                    forcefield_terms=assigned_system.forcefield_terms,
+                    system_xml=assigned_system.system_xml,
+                    topology_xml=assigned_system.topology_xml,
+                    bead_set=assigned_system.bead_set,
+                    vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
                 ),
                 name=name,
                 file_suffix="smd_mdc",
