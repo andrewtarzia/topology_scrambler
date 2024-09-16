@@ -859,7 +859,6 @@ class IHomolepticTopologyIterator:
     ) -> None:
         """Initialize."""
         self._scale_multiplier = 5
-        self._num_mashes = 10
 
         self._graphs_path = (
             pathlib.Path(__file__).resolve().parent / f"g_{graph_type}.json"
@@ -1056,7 +1055,7 @@ class IHomolepticTopologyIterator:
             json.dump(to_save, f)
 
         with timing_file.open("a") as f:
-            f.write(f"{self._vertex_prototypes},{et-st}\n")
+            f.write(f"{len(self._vertex_prototypes)},{et-st}\n")
 
     def get_constructed_molecules(self) -> abc.Generator[Constructed]:
         """Get constructed molecules from iteration."""
@@ -1121,65 +1120,3 @@ class IHomolepticTopologyIterator:
                     )
                 except ValueError:
                     pass
-
-            # Scramble the vertex positions.
-            rng = np.random.default_rng(seed=100)
-            for i in range(self._num_mashes):
-                coordinates = self._points_on_sphere(
-                    sphere_radius=1,
-                    num_points=len(self._vertex_prototypes),
-                    angle_rotation=rng.random(1)[0] * 360,
-                )
-
-                rng.shuffle(coordinates)
-
-                new_vertex_positions = {
-                    j: coordinates[j]
-                    for j, i in enumerate(self._vertex_prototypes)
-                }
-
-                try:
-                    # Try with aligning vertices.
-                    constructed = stk.ConstructedMolecule(
-                        CustomTopology(
-                            building_blocks=self._building_blocks,
-                            vertex_prototypes=self._vertex_prototypes,
-                            # Convert to edge prototypes.
-                            edge_prototypes=topology_code.edges_from_connection(
-                                self._vertex_prototypes
-                            ),
-                            vertex_alignments=None,
-                            vertex_positions=new_vertex_positions,
-                            scale_multiplier=self._scale_multiplier,
-                        )
-                    )
-                    yield Constructed(
-                        constructed_molecule=constructed,
-                        idx=idx,
-                        mash_idx=i + 1,
-                        topology_code=topology_code,
-                    )
-                except ValueError:
-                    # Try with unaligning.
-                    try:
-                        constructed = stk.ConstructedMolecule(
-                            CustomTopology(
-                                building_blocks=self._building_blocks,
-                                vertex_prototypes=self._unaligned_vertex_prototypes,
-                                # Convert to edge prototypes.
-                                edge_prototypes=topology_code.edges_from_connection(
-                                    self._unaligned_vertex_prototypes
-                                ),
-                                vertex_alignments=None,
-                                vertex_positions=new_vertex_positions,
-                                scale_multiplier=self._scale_multiplier,
-                            )
-                        )
-                        yield Constructed(
-                            constructed_molecule=constructed,
-                            idx=idx,
-                            mash_idx=i + 1,
-                            topology_code=topology_code,
-                        )
-                    except ValueError:
-                        pass
