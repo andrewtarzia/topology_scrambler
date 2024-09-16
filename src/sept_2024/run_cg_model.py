@@ -9,6 +9,19 @@ import matplotlib.pyplot as plt
 import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
+from utilities import (
+    SixBead,
+    abead_c,
+    abead_d,
+    binder_bead,
+    cbead_c,
+    cbead_d,
+    eb_str,
+    ebead_c,
+    precursors_to_forcefield,
+    save_vertex_positions,
+    tetra_bead,
+)
 
 import scram
 
@@ -19,7 +32,7 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def analyse_cage(  # noqa: C901
+def analyse_cage(  # noqa: C901, PLR0912
     database_path: pathlib.Path,
     name: str,
     forcefield: cgexplore.forcefields.ForceField,
@@ -122,6 +135,20 @@ def analyse_cage(  # noqa: C901
             ).get_connected_components()
         )
 
+        splits = name.split("_")[2]
+        if len(splits) == 3:  # noqa: PLR2004
+            multiplier = name.split("_")[2]
+            pairname = name.split("_")[0] + "_" + name.split("_")[1]
+        elif len(splits) == 4:  # noqa: PLR2004
+            multiplier = name.split("_")[3]
+            pairname = (
+                name.split("_")[0]
+                + "_"
+                + name.split("_")[1]
+                + "_"
+                + name.split("_")[2]
+            )
+
         database.add_properties(
             key=name,
             property_dict={
@@ -129,9 +156,9 @@ def analyse_cage(  # noqa: C901
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy
                 / iterator.get_num_building_blocks(),
-                "pair": name.split("_")[0] + "_" + name.split("_")[1],
+                "pair": pairname,
                 "num_components": num_components,
-                "multiplier": name.split("_")[2],
+                "multiplier": multiplier,
                 "topology_code_vmap": tuple(
                     (int(i[0]), int(i[1])) for i in topology_code.vertex_map
                 ),
@@ -191,7 +218,7 @@ def make_plot(
             f.write(f"{opt_file} ")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_ylabel(scram.toy.eb_str(), fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_ylim(0.01, 100)
     ax.axhline(y=0.3, c="k", ls="--")
@@ -254,18 +281,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c1",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -273,18 +300,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c12",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -292,18 +319,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c13",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -311,18 +338,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c14",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -330,18 +357,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c15",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -349,18 +376,18 @@ def main() -> None:
             "converging_name": "lf",
             "diverging_name": "ls1",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -368,18 +395,18 @@ def main() -> None:
             "converging_name": "lf",
             "diverging_name": "ls9",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -387,18 +414,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st5",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -406,18 +433,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st52",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 4),
         },
@@ -425,18 +452,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st5",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -444,18 +471,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st52",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -463,18 +490,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c1",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -482,18 +509,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c12",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -501,18 +528,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c13",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -520,18 +547,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c14",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -539,18 +566,18 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c15",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": scram.toy.SixBead(
-                bead=scram.toy.cbead_c,
-                abead1=scram.toy.abead_c,
-                abead2=scram.toy.ebead_c,
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
             ),
             "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
         },
@@ -563,7 +590,7 @@ def main() -> None:
         diverging = pairs[pair]["diverging"]
         tetra = pairs[pair]["tetra"]
 
-        forcefield = scram.toy.precursors_to_forcefield(
+        forcefield = precursors_to_forcefield(
             pair=pair,
             diverging=diverging,
             converging=converging,
@@ -632,7 +659,7 @@ def main() -> None:
                                 str(structure_dir / f"{name}_optc.mol")
                             )
 
-                        scram.toy.save_vertex_positions(
+                        save_vertex_positions(
                             name=name,
                             calculation_dir=calculation_dir,
                             structure_dir=structure_dir,
