@@ -136,10 +136,10 @@ def analyse_cage(  # noqa: C901, PLR0912
         )
 
         splits = name.split("_")
-        if len(splits) == 3:  # noqa: PLR2004
+        if len(splits) == 4:  # noqa: PLR2004
             multiplier = name.split("_")[2]
             pairname = name.split("_")[0] + "_" + name.split("_")[1]
-        elif len(splits) == 4:  # noqa: PLR2004
+        elif len(splits) == 5:  # noqa: PLR2004
             multiplier = name.split("_")[3]
             pairname = (
                 name.split("_")[0]
