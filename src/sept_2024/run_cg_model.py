@@ -135,7 +135,7 @@ def analyse_cage(  # noqa: C901, PLR0912
             ).get_connected_components()
         )
 
-        splits = name.split("_")[2]
+        splits = name.split("_")
         if len(splits) == 3:  # noqa: PLR2004
             multiplier = name.split("_")[2]
             pairname = name.split("_")[0] + "_" + name.split("_")[1]
