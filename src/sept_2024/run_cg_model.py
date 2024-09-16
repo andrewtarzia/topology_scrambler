@@ -538,7 +538,7 @@ def main() -> None:
         "la_c15_11": {
             "converging_name": "la",
             "diverging_name": "c15",
-            "stoichiometry_L_L_M": (4, 2, 3),
+            "stoichiometry_L_L_M": (1, 1, 1),
             "converging": scram.toy.SixBead(
                 bead=scram.toy.cbead_c,
                 abead1=scram.toy.abead_c,
@@ -552,7 +552,7 @@ def main() -> None:
                 bead=scram.toy.tetra_bead,
                 abead1=scram.toy.binder_bead,
             ),
-            "multipliers": (1, 2, 4),
+            "multipliers": (1, 2, 3, 4),
         },
     }
 
