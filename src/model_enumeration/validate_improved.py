@@ -12,6 +12,7 @@ import polars as pl
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
+from utilities import abead_d, binder_bead, cbead_d, tetra_bead
 from validate_cg_model import (
     analyse_cage,
     get_validation_forcefield,
@@ -145,17 +146,16 @@ def main() -> None:  # noqa: PLR0915
             ),
             "stoichiometry_L_M": (2, 1),
             "ditopic": cgexplore.molecular.TwoC1Arm(
-                bead=scram.toy.cbead_d,
-                abead1=scram.toy.abead_d,
+                bead=cbead_d,
+                abead1=abead_d,
             ),
             "tetra": cgexplore.molecular.FourC1Arm(
-                bead=scram.toy.tetra_bead,
-                abead1=scram.toy.binder_bead,
+                bead=tetra_bead,
+                abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3, 4, 6),  # , 8, 10, 12),
+            "multipliers": (1, 2, 3, 4, 6),  #  , 8, 10, 12),
         }
-        # for i, bac_angle in enumerate(range(40, 181, 5))
-        for i, bac_angle in enumerate([90, 110, 120, 135, 150])
+        for i, bac_angle in enumerate(range(40, 181, 5))
     }
 
     if args.run:
@@ -212,7 +212,7 @@ def main() -> None:  # noqa: PLR0915
                     logging.info("building %s", name)
                     try:
                         st1 = time.time()
-                        conformer = scram.toy.optimise_cage(
+                        conformer = scram.toy.graph_optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
+from utilities import abead_d, binder_bead, cbead_d, eb_str, tetra_bead
 
 import scram
 
@@ -148,10 +149,10 @@ def get_validation_forcefield(
 ) -> cgexplore.forcefields.ForceField:
     """Get forcefield."""
     present_beads = (
-        scram.toy.cbead_d,
-        scram.toy.abead_d,
-        scram.toy.binder_bead,
-        scram.toy.tetra_bead,
+        cbead_d,
+        abead_d,
+        binder_bead,
+        tetra_bead,
     )
     definer_dict = {
         # Bonds.
@@ -235,7 +236,7 @@ def make_plot(  # noqa: PLR0915
         if entry.properties["num_components"] > 1:
             continue
 
-        energies[multi].append((bite_angle, energy))
+        energies[multi].append((bite_angle, energy, entry.key))
         bacs[bite_angle].append((multi, energy, entry.key))
 
     for multi in sorted([int(i) for i in energies]):
@@ -252,7 +253,7 @@ def make_plot(  # noqa: PLR0915
             ec="none",
             label=(
                 f"M{idx}: {round(min_energy[1],2)} @ {min_energy[0]} "
-                f"({len(energies[idx])})"
+                f"({min_energy[2]})"
             ),
             zorder=2,
         )
@@ -302,7 +303,7 @@ def make_plot(  # noqa: PLR0915
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("target bite angle [deg]", fontsize=16)
-    ax.set_ylabel(scram.toy.eb_str(), fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.axhline(y=0.3, c="k", ls="--")
 
@@ -375,12 +376,12 @@ def main() -> None:  # noqa: PLR0912, C901, PLR0915
                 ),
                 "stoichiometry_L_M": (2, 1),
                 "ditopic": cgexplore.molecular.TwoC1Arm(
-                    bead=scram.toy.cbead_d,
-                    abead1=scram.toy.abead_d,
+                    bead=cbead_d,
+                    abead1=abead_d,
                 ),
                 "tetra": cgexplore.molecular.FourC1Arm(
-                    bead=scram.toy.tetra_bead,
-                    abead1=scram.toy.binder_bead,
+                    bead=tetra_bead,
+                    abead1=binder_bead,
                 ),
                 "multipliers": (multi,),
             }
@@ -397,12 +398,12 @@ def main() -> None:  # noqa: PLR0912, C901, PLR0915
                 ),
                 "stoichiometry_L_M": (2, 1),
                 "ditopic": cgexplore.molecular.TwoC1Arm(
-                    bead=scram.toy.cbead_d,
-                    abead1=scram.toy.abead_d,
+                    bead=cbead_d,
+                    abead1=abead_d,
                 ),
                 "tetra": cgexplore.molecular.FourC1Arm(
-                    bead=scram.toy.tetra_bead,
-                    abead1=scram.toy.binder_bead,
+                    bead=tetra_bead,
+                    abead1=binder_bead,
                 ),
                 "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
             }
