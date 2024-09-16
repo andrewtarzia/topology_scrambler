@@ -101,8 +101,13 @@ def optimise_cage(  # noqa: PLR0913
     )
 
     conformer = cgexplore.utilities.run_optimisation(
-        assigned_system=forcefield.assign_terms(
-            temp_molecule, name, output_dir
+        assigned_system=cgexplore.forcefields.AssignedSystem(
+            molecule=temp_molecule,
+            forcefield_terms=assigned_system.forcefield_terms,
+            system_xml=assigned_system.system_xml,
+            topology_xml=assigned_system.topology_xml,
+            bead_set=assigned_system.bead_set,
+            vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
         ),
         name=name,
         file_suffix="opt1",
@@ -117,8 +122,13 @@ def optimise_cage(  # noqa: PLR0913
         temp_molecule, forcefield, kicks=(1, 2, 3, 4)
     ):
         conformer = cgexplore.utilities.run_optimisation(
-            assigned_system=forcefield.assign_terms(
-                test_molecule, name, output_dir
+            assigned_system=cgexplore.forcefields.AssignedSystem(
+                molecule=test_molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
             ),
             name=name,
             file_suffix="sopt",
@@ -131,8 +141,13 @@ def optimise_cage(  # noqa: PLR0913
     traj_freq = 500
     soft_md_trajectory = cgexplore.utilities.run_soft_md_cycle(
         name=name,
-        assigned_system=forcefield.assign_terms(
-            ensemble.get_lowest_e_conformer().molecule, name, output_dir
+        assigned_system=cgexplore.forcefields.AssignedSystem(
+            molecule=ensemble.get_lowest_e_conformer().molecule,
+            forcefield_terms=assigned_system.forcefield_terms,
+            system_xml=assigned_system.system_xml,
+            topology_xml=assigned_system.topology_xml,
+            bead_set=assigned_system.bead_set,
+            vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
         ),
         output_dir=output_dir,
         suffix="smd",
