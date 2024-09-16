@@ -6,9 +6,11 @@ import pathlib
 from copy import deepcopy
 
 import cgexplore
+import networkx as nx
 import numpy as np
 import stk
-from openmm import openmm
+import stko
+from openmm import OpenMMException, openmm
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +35,196 @@ def prepare_building_block(
     )
     building_block.write(str(ligand_dir / f"{name}_optl.mol"))
     return building_block.clone()
+
+
+def graph_optimise_cage(  # noqa: PLR0913
+    molecule: stk.Molecule,
+    name: str,
+    output_dir: pathlib.Path,
+    forcefield: cgexplore.forcefields.ForceField,
+    platform: str | None,
+    database_path: pathlib.Path,
+) -> cgexplore.molecular.Conformer:
+    """Optimise a toy model cage."""
+    fina_mol_file = output_dir / f"{name}_wipfinal.mol"
+
+    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    # Do not rerun if database entry exists.
+    if database.has_molecule(key=name):
+        final_molecule = database.get_molecule(key=name)
+        final_molecule.write(fina_mol_file)
+        return cgexplore.molecular.Conformer(
+            molecule=final_molecule,
+            energy_decomposition=database.get_property(
+                key=name,
+                property_key="energy_decomposition",
+                property_type=dict,
+            ),
+        )
+
+    # Do not rerun if final mol exists.
+    if fina_mol_file.exists():
+        ensemble = cgexplore.molecular.Ensemble(
+            base_molecule=molecule,
+            base_mol_path=output_dir / f"{name}_base.mol",
+            conformer_xyz=output_dir / f"{name}_ensemble.xyz",
+            data_json=output_dir / f"{name}_ensemble.json",
+            overwrite=False,
+        )
+        conformer = ensemble.get_lowest_e_conformer()
+        database.add_molecule(molecule=conformer.molecule, key=name)
+        database.add_properties(
+            key=name,
+            property_dict={
+                "energy_decomposition": conformer.energy_decomposition,
+                "source": conformer.source,
+                "optimised": True,
+            },
+        )
+        return ensemble.get_lowest_e_conformer()
+
+    assigned_system = forcefield.assign_terms(molecule, name, output_dir)
+    if (output_dir / f"{name}_ensemblewip.xyz").exists():
+        (output_dir / f"{name}_ensemblewip.xyz").unlink()
+    ensemble = cgexplore.molecular.Ensemble(
+        base_molecule=molecule,
+        base_mol_path=output_dir / f"{name}_base.mol",
+        conformer_xyz=output_dir / f"{name}_ensemblewip.xyz",
+        data_json=output_dir / f"{name}_ensemble.json",
+        overwrite=True,
+    )
+    temp_molecule = cgexplore.utilities.run_constrained_optimisation(
+        assigned_system=assigned_system,
+        name=name,
+        output_dir=output_dir,
+        bond_ff_scale=10,
+        angle_ff_scale=10,
+        max_iterations=20,
+        platform=platform,
+    )
+
+    conformer = cgexplore.utilities.run_optimisation(
+        assigned_system=cgexplore.forcefields.AssignedSystem(
+            molecule=temp_molecule,
+            forcefield_terms=assigned_system.forcefield_terms,
+            system_xml=assigned_system.system_xml,
+            topology_xml=assigned_system.topology_xml,
+            bead_set=assigned_system.bead_set,
+            vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+        ),
+        name=name,
+        file_suffix="opt1",
+        output_dir=output_dir,
+        platform=platform,
+    )
+    ensemble.add_conformer(conformer=conformer, source="opt1")
+
+    # Run optimisations of series of conformers with shifted out
+    # building blocks.
+    for test_molecule in cgexplore.utilities.yield_shifted_models(
+        temp_molecule, forcefield, kicks=(1, 2, 3, 4)
+    ):
+        conformer = cgexplore.utilities.run_optimisation(
+            assigned_system=cgexplore.forcefields.AssignedSystem(
+                molecule=test_molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+            ),
+            name=name,
+            file_suffix="sopt",
+            output_dir=output_dir,
+            platform=platform,
+        )
+        ensemble.add_conformer(conformer=conformer, source="shifted")
+
+    stko_graph = stko.Network.init_from_molecule(conformer.molecule)
+    for i, nx_positions in enumerate(
+        (
+            nx.spectral_layout(stko_graph.get_graph(), dim=3),
+            nx.get_node_attributes(
+                nx.random_geometric_graph(
+                    n=conformer.molecule.get_num_atoms(), radius=1, dim=3
+                ),
+                "pos",
+            ),
+            nx.spring_layout(stko_graph.get_graph(), dim=3),
+            nx.kamada_kawai_layout(stko_graph.get_graph(), dim=3),
+        )
+    ):
+        try:
+            # We allow these to independantly failed because the nx graphs can
+            # be ridiculous.
+            pos_mat = np.array([nx_positions[i] for i in nx_positions])
+            if pos_mat.shape[1] != 3:  # noqa: PLR2004
+                msg = "built a non 3D graph"
+                raise RuntimeError(msg)
+
+            test_molecule = conformer.molecule.with_position_matrix(
+                pos_mat * 10
+            )
+            conformer = cgexplore.utilities.run_optimisation(
+                assigned_system=forcefield.assign_terms(
+                    test_molecule, name, output_dir
+                ),
+                name=name,
+                file_suffix="nopt",
+                output_dir=output_dir,
+                platform=platform,
+            )
+
+            ensemble.add_conformer(conformer=conformer, source=f"nx{i}")
+        except OpenMMException:
+            logging.info("failed graph opt of %s", name)
+
+    # Try with graph positions.
+    rng = np.random.default_rng(seed=100)
+    for attempt in range(10):
+        pos_mat = rng.random(size=(conformer.molecule.get_num_atoms(), 3))
+        test_molecule = conformer.molecule.with_position_matrix(pos_mat * 10)
+        conformer = cgexplore.utilities.run_optimisation(
+            assigned_system=cgexplore.forcefields.AssignedSystem(
+                molecule=test_molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+            ),
+            name=name,
+            file_suffix=f"ropt{attempt}",
+            output_dir=output_dir,
+            platform=platform,
+        )
+
+        ensemble.add_conformer(conformer=conformer, source="shifted")
+
+    ensemble.write_conformers_to_file()
+
+    min_energy_conformer = ensemble.get_lowest_e_conformer()
+    min_energy_conformerid = min_energy_conformer.conformer_id
+    min_energy = min_energy_conformer.energy_decomposition["total energy"][0]
+    logging.info(
+        "Min. energy conformer: %s from %s with energy: %s kJ.mol-1",
+        min_energy_conformerid,
+        min_energy_conformer.source,
+        min_energy,
+    )
+
+    # Add to atomlite database.
+    database.add_molecule(molecule=min_energy_conformer.molecule, key=name)
+    database.add_properties(
+        key=name,
+        property_dict={
+            "energy_decomposition": min_energy_conformer.energy_decomposition,
+            "source": min_energy_conformer.source,
+            "optimised": True,
+        },
+    )
+    min_energy_conformer.molecule.write(fina_mol_file)
+    return min_energy_conformer
 
 
 def optimise_cage(  # noqa: PLR0913
