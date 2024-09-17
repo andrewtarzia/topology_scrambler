@@ -153,7 +153,8 @@ def main() -> None:  # noqa: PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3, 4, 6),  #  , 8, 10, 12),
+            "multipliers": (1, 2, 3, 4, 6, 8),  # , 10, 12),
+            # "multipliers": (10, 12),
         }
         for i, bac_angle in enumerate(range(40, 181, 5))
     }

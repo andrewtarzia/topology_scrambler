@@ -220,7 +220,7 @@ def make_plot(
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_ylim(0.01, 100)
+    ax.set_ylim(0.01, 1000)
     ax.axhline(y=0.3, c="k", ls="--")
     ax.legend(ncols=1, fontsize=16)
     fig.tight_layout()
