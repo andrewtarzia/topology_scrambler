@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import stk
 import stko
+from atomistic_utilities import extract_ensemble, get_ligand_bb, plot_xy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -263,6 +264,11 @@ def main() -> None:
         "st5": {"input": ligand_dir / "st5_manual.mol"},
         "la": {
             "smiles": "C1=C(C2C=CC3C4C=CC(C5=CC=CN=C5)=CC=4C(=O)C=3C=2)C=NC=C1"
+        },
+        "las": {
+            "smiles": (
+                "C1=CC=C(C=C1)N2C3=C(C=CC(=C3)C4=CN=CC=C4)C5=C2C=C(C=C5)C6=CN=CC=C6"
+            ),
         },
         "c1": {
             "smiles": (
