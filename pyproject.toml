@@ -15,6 +15,7 @@ dependencies = [
   "CGExplore",
   "bbprepared",
   "atomlite",
+  "rustworkx",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
