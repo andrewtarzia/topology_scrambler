@@ -70,16 +70,20 @@ def make_timings_plot(
         has_header=False,
         new_columns=[
             "num_vertices",
+            "algtype",
+            "num_found",
             "gen-time/s",
         ],
     )
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    nx_graph_timings = graph_timings.filter(pl.col("algtype") == "nx")
+    rx_graph_timings = graph_timings.filter(pl.col("algtype") == "rx")
+    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(16, 5))
     ax.scatter(
         timings["num_vertices"],
         timings["opt-time/s"],
         c="tab:blue",
-        s=50,
+        s=80,
         alpha=1,
         label="optimisation time",
         ec="k",
@@ -88,19 +92,30 @@ def make_timings_plot(
         timings["num_vertices"],
         timings["ana-time/s"],
         c="tab:orange",
-        s=50,
+        s=80,
         alpha=1,
         label="analysis time",
         ec="k",
     )
-    ax.scatter(
-        graph_timings["num_vertices"],
-        graph_timings["gen-time/s"],
+    ax.plot(
+        nx_graph_timings["num_vertices"],
+        nx_graph_timings["gen-time/s"],
         c="tab:green",
-        s=50,
+        marker="o",
+        markersize=10,
         alpha=1,
-        label="graph time",
-        ec="k",
+        label="nx-graph time",
+        mec="k",
+    )
+    ax.plot(
+        rx_graph_timings["num_vertices"],
+        rx_graph_timings["gen-time/s"],
+        c="tab:purple",
+        marker="o",
+        markersize=10,
+        alpha=1,
+        label="rx-graph time",
+        mec="k",
     )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -108,6 +123,32 @@ def make_timings_plot(
     ax.set_ylabel("time [s]", fontsize=16)
     ax.set_yscale("log")
     ax.legend(fontsize=16)
+
+    ax1.plot(
+        nx_graph_timings["num_vertices"],
+        nx_graph_timings["num_found"],
+        c="tab:green",
+        marker="o",
+        markersize=10,
+        alpha=1,
+        label="nx-graph time",
+        mec="k",
+    )
+    ax1.plot(
+        rx_graph_timings["num_vertices"],
+        rx_graph_timings["num_found"],
+        c="tab:purple",
+        marker="o",
+        markersize=10,
+        alpha=1,
+        label="rx-graph time",
+        mec="k",
+    )
+
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel("num. vertices", fontsize=16)
+    ax1.set_ylabel("num. graphs found", fontsize=16)
+    ax1.set_yscale("log")
 
     fig.tight_layout()
     fig.savefig(
@@ -153,8 +194,7 @@ def main() -> None:  # noqa: PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3, 4, 6, 8),  # , 10, 12),
-            # "multipliers": (10, 12),
+            "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
         }
         for i, bac_angle in enumerate(range(40, 181, 5))
     }
@@ -194,6 +234,7 @@ def main() -> None:  # noqa: PLR0915
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
                 for constructed in iterator.get_constructed_molecules():
+                    break
                     idx = constructed.idx
                     mash_idx = constructed.mash_idx
                     acage = constructed.constructed_molecule
