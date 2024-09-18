@@ -69,7 +69,7 @@ def main() -> None:
     pairs = (("la", "st5"), ("la", "c1"), ("las", "st5"))
     topology_graphs = {
         "3P6": stk.cage.M3L6,
-        # "4P8": scram.topologies.CGM4L8,
+        # "4P8": scram.topologies.CGM4L8,  # noqa: ERA001
         "4P82": scram.topologies.M4L82,
     }
 
