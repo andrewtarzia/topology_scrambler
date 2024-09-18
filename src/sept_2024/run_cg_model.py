@@ -5,6 +5,7 @@ import logging
 import pathlib
 
 import cgexplore
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import stko
 from openmm import OpenMMException, openmm
@@ -186,8 +187,12 @@ def make_plot(
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
     ).get_entries():
+        if "pair" not in entry.properties:
+            continue
+
         if pair != entry.properties["pair"]:
             continue
+
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
 
@@ -229,8 +234,227 @@ def make_plot(
         dpi=360,
         bbox_inches="tight",
     )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
     plt.close()
+
     return energies
+
+
+def make_summary_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+    energies = {}
+
+    xs = ["1", "2", "4"]
+    ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_c13", "la_c14", "la_c15"]
+
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
+        if "pair" not in entry.properties:
+            continue
+
+        multi = entry.properties["multiplier"]
+        pair = entry.properties["pair"]
+        if "lf_ls" in pair or "_11" in pair:
+            continue
+
+        vstr = entry.key.split("_")[-1]
+        energy = entry.properties["energy_per_bb"]
+
+        if (pair, multi) not in energies:
+            energies[(pair, multi)] = []
+
+        if entry.properties["num_components"] > 1:
+            continue
+        energies[(pair, multi)].append((round(energy, 4), vstr))
+
+    vmin = 0
+    vmax = 1
+    for pair, multi in energies:
+        sorted_energies = sorted(energies[(pair, multi)], key=lambda p: p[0])
+        min_energy = sorted_energies[0]
+
+        x = xs.index(multi)
+        y = ys.index(pair)
+
+        ax.scatter(
+            x,
+            y,
+            c=min_energy[0],
+            vmin=vmin,
+            vmax=vmax,
+            alpha=1.0,
+            edgecolor="k",
+            s=200,
+            marker="s",
+            cmap="Blues_r",
+        )
+        ax.text(
+            x=x,
+            y=y,
+            s=min_energy[1],
+            horizontalalignment="center",
+            verticalalignment="center_baseline",
+            color="w" if min_energy[0] < 0.5 else "k",  # noqa: PLR2004
+            fontsize=16,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("multiplier", fontsize=16)
+    ax.set_xticks(list(range(len(xs))))
+    ax.set_xticklabels(xs)
+    ax.set_yticks(list(range(len(ys))))
+    ax.set_yticklabels(ys)
+
+    cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
+    cmap = mpl.cm.Blues_r
+    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+    cbar = fig.colorbar(
+        mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+        cax=cbar_ax,
+        orientation="vertical",
+    )
+    cbar.ax.tick_params(labelsize=16)
+    cbar.set_label(f"4:2:3 {eb_str()}", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+    raise SystemExit
+
+
+def make_parity_plot(  # noqa: PLR0912, C901, PLR0915
+    database_path: pathlib.Path,
+    steric_database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+    energies = {}
+    steric_energies = {}
+
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
+        if "pair" not in entry.properties:
+            continue
+
+        multi = entry.properties["multiplier"]
+        pair = entry.properties["pair"]
+        if "lf_ls" in pair:
+            continue
+        vstr = entry.key.split("_")[-1]
+        energy = entry.properties["energy_per_bb"]
+
+        if pair not in energies:
+            energies[pair] = []
+
+        if entry.properties["num_components"] > 1:
+            continue
+        energies[pair].append((round(energy, 4), vstr, multi))
+
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        steric_database_path
+    ).get_entries():
+        if "pair" not in entry.properties:
+            continue
+
+        multi = entry.properties["multiplier"]
+        pair = entry.properties["pair"]
+        if "lf_ls" in pair:
+            continue
+        vstr = entry.key.split("_")[-1]
+        energy = entry.properties["energy_per_bb"]
+
+        if pair not in steric_energies:
+            steric_energies[pair] = []
+
+        if entry.properties["num_components"] > 1:
+            continue
+        steric_energies[pair].append((round(energy, 4), vstr, multi))
+
+    for pair in energies:
+        if "_11" in pair:
+            continue
+        sorted_energies = sorted(energies[pair], key=lambda p: p[0])
+        min_energy = sorted_energies[0]
+
+        pair11 = pair + "_11"
+        sorted_energies11 = sorted(energies[pair11], key=lambda p: p[0])
+        min_energy11 = sorted_energies11[0]
+        ec = "k" if min_energy[0] < 0.3 else "none"  # noqa: PLR2004
+
+        ax.scatter(
+            min_energy[0],
+            min_energy11[0],
+            c="tab:blue",
+            ec=ec,
+            s=60,
+        )
+        ax.text(
+            x=6,
+            y=min_energy11[0],
+            s=(
+                f"{pair}: {min_energy[2]}|{min_energy[1]} vs. "
+                f"{min_energy11[2]}|{min_energy11[1]}"
+            ),
+        )
+
+    for pair in steric_energies:
+        if "_11" in pair:
+            continue
+
+        sorted_energies = sorted(steric_energies[pair], key=lambda p: p[0])
+        min_energy = sorted_energies[0]
+
+        pair11 = pair + "_11"
+        sorted_energies11 = sorted(steric_energies[pair11], key=lambda p: p[0])
+        min_energy11 = sorted_energies11[0]
+        ec = "k" if min_energy[0] < 0.3 else "none"  # noqa: PLR2004
+
+        ax.scatter(
+            min_energy[0],
+            min_energy11[0],
+            c="tab:orange",
+            ec=ec,
+            s=60,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(f"4:2:3 {eb_str()}", fontsize=16)
+    ax.set_ylabel(f"1:1:1 {eb_str()}", fontsize=16)
+
+    ax.set_xlim(0.0, 10)
+    ax.set_ylim(0.0, 10)
+
+    ax.plot((0, 10), (0, 10), c="k")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
 
 
 def _parse_args() -> argparse.Namespace:
@@ -261,6 +485,7 @@ def main() -> None:
     figure_dir.mkdir(exist_ok=True)
 
     database_path = data_dir / "rerun.db"
+    steric_database_path = wd / "steric_data" / "steric.db"
 
     ligand_measures = {
         "la": {"dd": 7.0, "de": 1.5, "dde": 170, "eg": 1.4, "gb": 1.4},
@@ -277,6 +502,25 @@ def main() -> None:
     }
 
     pairs = {
+        "la_c1": {
+            "converging_name": "la",
+            "diverging_name": "c1",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
         "la_st5_11": {
             "converging_name": "la",
             "diverging_name": "st5",
@@ -409,25 +653,6 @@ def main() -> None:
                 abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
-        },
-        "la_c1": {
-            "converging_name": "la",
-            "diverging_name": "c1",
-            "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 4),
         },
         "la_c12": {
             "converging_name": "la",
@@ -583,42 +808,42 @@ def main() -> None:
         },
     }
 
-    for pair in pairs:
-        converging_name = pairs[pair]["converging_name"]
-        diverging_name = pairs[pair]["diverging_name"]
-        converging = pairs[pair]["converging"]
-        diverging = pairs[pair]["diverging"]
-        tetra = pairs[pair]["tetra"]
+    if args.run:
+        for pair in pairs:
+            converging_name = pairs[pair]["converging_name"]
+            diverging_name = pairs[pair]["diverging_name"]
+            converging = pairs[pair]["converging"]
+            diverging = pairs[pair]["diverging"]
+            tetra = pairs[pair]["tetra"]
 
-        forcefield = precursors_to_forcefield(
-            pair=pair,
-            diverging=diverging,
-            converging=converging,
-            conv_meas=ligand_measures[converging_name],
-            dive_meas=ligand_measures[diverging_name],
-        )
+            forcefield = precursors_to_forcefield(
+                pair=pair,
+                diverging=diverging,
+                converging=converging,
+                conv_meas=ligand_measures[converging_name],
+                dive_meas=ligand_measures[diverging_name],
+            )
 
-        converging_bb = scram.toy.prepare_building_block(
-            precursor=converging,
-            forcefield=forcefield,
-            calculation_dir=calculation_dir,
-            ligand_dir=ligand_dir,
-        )
-        diverging_bb = scram.toy.prepare_building_block(
-            precursor=diverging,
-            forcefield=forcefield,
-            calculation_dir=calculation_dir,
-            ligand_dir=ligand_dir,
-        )
-        tetra_bb = scram.toy.prepare_building_block(
-            precursor=tetra,
-            forcefield=forcefield,
-            calculation_dir=calculation_dir,
-            ligand_dir=ligand_dir,
-        )
+            converging_bb = scram.toy.prepare_building_block(
+                precursor=converging,
+                forcefield=forcefield,
+                calculation_dir=calculation_dir,
+                ligand_dir=ligand_dir,
+            )
+            diverging_bb = scram.toy.prepare_building_block(
+                precursor=diverging,
+                forcefield=forcefield,
+                calculation_dir=calculation_dir,
+                ligand_dir=ligand_dir,
+            )
+            tetra_bb = scram.toy.prepare_building_block(
+                precursor=tetra,
+                forcefield=forcefield,
+                calculation_dir=calculation_dir,
+                ligand_dir=ligand_dir,
+            )
 
-        for multiplier in pairs[pair]["multipliers"]:
-            if args.run:
+            for multiplier in pairs[pair]["multipliers"]:
                 # Define a connectivity based on a multiplier.
                 iterator = scram.topologies.TopologyIterator(
                     multiplier=multiplier,
@@ -677,13 +902,33 @@ def main() -> None:
                     except OpenMMException:
                         pass
 
-            _ = make_plot(
-                database_path=database_path,
-                pair=pair,
-                structure_dir=structure_dir,
-                figure_dir=figure_dir,
-                filename=f"rerun_1_{pair}.png",
-            )
+        _ = make_plot(
+            database_path=database_path,
+            pair=pair,
+            structure_dir=structure_dir,
+            figure_dir=figure_dir,
+            filename=f"rerun_1_{pair}.png",
+        )
+
+    make_summary_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="rerun_3.png",
+    )
+    for pair in pairs:
+        make_plot(
+            database_path=database_path,
+            pair=pair,
+            structure_dir=structure_dir,
+            figure_dir=figure_dir,
+            filename=f"rerun_1_{pair}.png",
+        )
+    make_parity_plot(
+        database_path=database_path,
+        steric_database_path=steric_database_path,
+        figure_dir=figure_dir,
+        filename="rerun_2.png",
+    )
 
 
 if __name__ == "__main__":
