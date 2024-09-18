@@ -1,11 +1,8 @@
 """Utilities module."""
 
-import itertools as it
 import logging
 import pathlib
-from collections import Counter, abc, defaultdict
-from copy import deepcopy
-from typing import assert_never
+from collections import defaultdict
 
 import cgexplore
 import numpy as np
@@ -13,76 +10,11 @@ import openmm
 import stk
 import stko
 from rmsd import check_reflections, int_atom, kabsch_rmsd, reorder_hungarian
-from topologies import (
-    length_2_heteroleptic_bb_dicts,
-    length_3_heteroleptic_bb_dicts,
-    length_4_heteroleptic_bb_dicts,
-)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
-
-
-def get_potential_bb_dicts(
-    tstr: str,
-    ratio: tuple[int, int],
-    bb_type: str,
-) -> abc.Sequence[dict[int, abc.Sequence[int]]]:
-    """Get potential building block dictionaries."""
-    match bb_type:
-        case "ditopic":
-            possibilities, count_to_add = length_2_heteroleptic_bb_dicts(tstr)
-            current_counter = max(
-                [
-                    max(possibilities[i])
-                    for i in possibilities
-                    if len(possibilities[i]) != 0
-                ]
-            )
-
-        case "tritopic":
-            possibilities, count_to_add = length_3_heteroleptic_bb_dicts(tstr)
-            # Use minus one because of the +1 later on needed for other states.
-            current_counter = -1
-
-        case "tetratopic":
-            possibilities, count_to_add = length_4_heteroleptic_bb_dicts(tstr)
-            # Use minus one because of the +1 later on needed for other states.
-            current_counter = -1
-
-        case _ as unreachable:
-            assert_never(unreachable)
-
-    modifiable = [i for i in possibilities if len(possibilities[i]) == 0]
-
-    saved = set()
-    possible_dicts = []
-    for combo in it.product(modifiable, repeat=count_to_add):
-        counted = Counter(combo).values()
-        current_ratio = [i / min(counted) for i in counted]
-        if len(current_ratio) != len(ratio):
-            continue
-
-        if tuple(i for i in current_ratio) != ratio:
-            continue
-        if combo in saved:
-            continue
-        saved.add(combo)
-
-        new_possibility = deepcopy(possibilities)
-        for idx, bb in enumerate(combo):
-            new_possibility[bb].append(current_counter + idx + 1)
-
-        possible_dicts.append((len(possible_dicts), new_possibility))
-
-    msg = "bring rmsd checker in here"
-    logging.info(msg)
-    msg = "use symmetry corrected RMSD on single-bead repr of tstr"
-    logging.info(msg)
-
-    return tuple(possible_dicts)
 
 
 def create_zone(dmin: float, dmax: float, resolution: int) -> list[float]:
@@ -188,7 +120,7 @@ def rmsd_checker(
 
 
 def get_binder_vector_angles(
-    conformer: cgexplore.molecular.Conformer
+    conformer: cgexplore.molecular.Conformer,
 ) -> dict[str, list[float]]:
     """Extract the binder vector angles for each ligand."""
     ligands = stko.molecule_analysis.DecomposeMOC().decompose(
