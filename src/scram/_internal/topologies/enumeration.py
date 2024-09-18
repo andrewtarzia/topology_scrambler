@@ -8,8 +8,8 @@ from collections import Counter, abc, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 
-import networkx as nx
 import numpy as np
+import rustworkx as rx
 import stk
 from rdkit import RDLogger
 
@@ -76,13 +76,21 @@ class TopologyCode:
     vertex_map: abc.Sequence[tuple[int, int]]
     as_string: str
 
-    def get_graph(self) -> nx.Graph:
+    def get_graph(self) -> rx.PyGraph:
         """Convert TopologyCode to a graph."""
-        g = nx.MultiGraph()
-        for vert in self.vertex_map:
-            g.add_edge(vert[0], vert[1])
+        graph = rx.PyGraph()
 
-        return g
+        vertices = {
+            vi: graph.add_node(vi)
+            for vi in sorted({i for j in self.vertex_map for i in j})
+        }
+
+        for vert in self.vertex_map:
+            nodea = graph[vertices[vert[0]]]
+            nodeb = graph[vertices[vert[1]]]
+            graph.add_edge(nodea, nodeb, None)
+
+        return graph
 
     def edges_from_connection(
         self,
@@ -861,7 +869,7 @@ class IHomolepticTopologyIterator:
         self._scale_multiplier = 5
 
         self._graphs_path = (
-            pathlib.Path(__file__).resolve().parent / f"g_{graph_type}.json"
+            pathlib.Path(__file__).resolve().parent / f"rx_{graph_type}.json"
         )
 
         # Use an angle rotation of points on a sphere for each building block
@@ -956,7 +964,7 @@ class IHomolepticTopologyIterator:
         """Get number of building blocks."""
         return len(self._vertex_prototypes)
 
-    def _define_all_graphs(self) -> None:
+    def _define_all_graphs(self) -> None:  # noqa: C901
         combinations_tested = set()
         run_topology_codes = []
 
@@ -1027,7 +1035,7 @@ class IHomolepticTopologyIterator:
             for tc in run_topology_codes:
                 test_graph = tc.get_graph()
 
-                if nx.is_isomorphic(current_graph, test_graph):
+                if rx.is_isomorphic(current_graph, test_graph):
                     passed_iso = False
                     break
 
@@ -1036,14 +1044,23 @@ class IHomolepticTopologyIterator:
 
             run_topology_codes.append(topology_code)
             to_save.append(combination)
+            logging.info("found one at %s", _)
 
         et = time.time()
 
         with self._graphs_path.open("w") as f:
             json.dump(to_save, f)
 
+        if "rx_" in self._graphs_path.name:
+            algtype = "rx"
+        elif "g_" in self._graphs_path.name:
+            algtype = "nx"
+
         with timing_file.open("a") as f:
-            f.write(f"{len(self._vertex_prototypes)},{et-st}\n")
+            f.write(
+                f"{len(self._vertex_prototypes)},{algtype},"
+                f"{len(to_save)},{et-st}\n"
+            )
 
     def get_constructed_molecules(self) -> abc.Generator[Constructed]:
         """Get constructed molecules from iteration."""
