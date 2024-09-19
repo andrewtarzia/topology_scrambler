@@ -99,25 +99,25 @@ def make_timings_plot(
         label="analysis time",
         ec="k",
     )
-    ax.plot(
+    ax.scatter(
         nx_graph_timings["num_vertices"],
         nx_graph_timings["gen-time/s"],
         c="tab:green",
         marker="s",
-        markersize=12,
+        s=100,
         alpha=1,
         label="nx-graph time",
-        mec="k",
+        ec="k",
     )
-    ax.plot(
+    ax.scatter(
         rx_graph_timings["num_vertices"],
         rx_graph_timings["gen-time/s"],
         c="tab:purple",
         marker="o",
-        markersize=10,
+        s=100,
         alpha=1,
         label="rx-graph time",
-        mec="k",
+        ec="k",
     )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -281,9 +281,10 @@ def main() -> None:  # noqa: PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+            "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9),  # , 10, 11, 12),
         }
         for i, bac_angle in enumerate(range(40, 181, 5))
+        # for i, bac_angle in enumerate([90])
     }
 
     if args.run:
@@ -323,6 +324,7 @@ def main() -> None:  # noqa: PLR0915
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
                 for constructed in iterator.get_constructed_molecules():
+                    break
                     idx = constructed.idx
                     mash_idx = constructed.mash_idx
                     acage = constructed.constructed_molecule

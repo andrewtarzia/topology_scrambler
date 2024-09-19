@@ -214,9 +214,13 @@ def make_plot(  # noqa: PLR0915
         "2": "tab:orange",
         "3": "tab:green",
         "4": "tab:red",
+        "5": "tab:gray",
         "6": "tab:purple",
+        "7": "tab:gray",
         "8": "tab:pink",
+        "9": "tab:gray",
         "10": "tab:cyan",
+        "11": "tab:gray",
         "12": "tab:brown",
     }
     fig, ax = plt.subplots(figsize=(8, 5))
