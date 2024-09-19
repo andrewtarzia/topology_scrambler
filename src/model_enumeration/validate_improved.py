@@ -324,7 +324,6 @@ def main() -> None:  # noqa: PLR0915
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
                 for constructed in iterator.get_constructed_molecules():
-                    break
                     idx = constructed.idx
                     mash_idx = constructed.mash_idx
                     acage = constructed.constructed_molecule
