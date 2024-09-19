@@ -5,14 +5,16 @@ import logging
 import pathlib
 import time
 import warnings
+from collections import defaultdict
 
 import cgexplore
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import polars as pl
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
-from utilities import abead_d, binder_bead, cbead_d, tetra_bead
+from utilities import abead_d, binder_bead, cbead_d, eb_str, tetra_bead
 from validate_cg_model import (
     analyse_cage,
     get_validation_forcefield,
@@ -83,7 +85,7 @@ def make_timings_plot(
         timings["num_vertices"],
         timings["opt-time/s"],
         c="tab:blue",
-        s=80,
+        s=100,
         alpha=1,
         label="optimisation time",
         ec="k",
@@ -92,7 +94,7 @@ def make_timings_plot(
         timings["num_vertices"],
         timings["ana-time/s"],
         c="tab:orange",
-        s=80,
+        s=100,
         alpha=1,
         label="analysis time",
         ec="k",
@@ -101,8 +103,8 @@ def make_timings_plot(
         nx_graph_timings["num_vertices"],
         nx_graph_timings["gen-time/s"],
         c="tab:green",
-        marker="o",
-        markersize=10,
+        marker="s",
+        markersize=12,
         alpha=1,
         label="nx-graph time",
         mec="k",
@@ -128,8 +130,8 @@ def make_timings_plot(
         nx_graph_timings["num_vertices"],
         nx_graph_timings["num_found"],
         c="tab:green",
-        marker="o",
-        markersize=10,
+        marker="s",
+        markersize=12,
         alpha=1,
         label="nx-graph time",
         mec="k",
@@ -153,6 +155,91 @@ def make_timings_plot(
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def make_summary_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+    energies = defaultdict(list)
+
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
+        multi = entry.properties["multiplier"]
+        energy = entry.properties["energy_per_bb"]
+        bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
+        bite_angle = (bac_angle - 90) * 2
+
+        vstr = entry.key.split("_")[2]
+
+        if entry.properties["num_components"] > 1:
+            continue
+        energies[(multi, bite_angle)].append((round(energy, 4), vstr))
+
+    vmin = 0
+    vmax = 1
+    for multi, bite_angle in energies:
+        sorted_energies = sorted(
+            energies[(multi, bite_angle)], key=lambda p: p[0]
+        )
+        min_energy = sorted_energies[0]
+
+        x = int(bite_angle)
+        y = int(multi)
+
+        ax.scatter(
+            x,
+            y,
+            c=min_energy[0],
+            vmin=vmin,
+            vmax=vmax,
+            alpha=1.0,
+            edgecolor="k",
+            s=200,
+            marker="s",
+            cmap="Blues_r",
+        )
+        ax.text(
+            x=x,
+            y=y,
+            s=min_energy[1],
+            horizontalalignment="center",
+            verticalalignment="center_baseline",
+            color="w" if min_energy[0] < 0.5 else "k",  # noqa: PLR2004
+            fontsize=6,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("target bite angle [deg]", fontsize=16)
+    ax.set_ylabel("multiplier", fontsize=16)
+
+    cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
+    cmap = mpl.cm.Blues_r
+    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+    cbar = fig.colorbar(
+        mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+        cax=cbar_ax,
+        orientation="vertical",
+    )
+    cbar.ax.tick_params(labelsize=16)
+    cbar.set_label(eb_str(), fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
         dpi=360,
         bbox_inches="tight",
     )
@@ -194,7 +281,7 @@ def main() -> None:  # noqa: PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
+            "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
         }
         for i, bac_angle in enumerate(range(40, 181, 5))
     }
@@ -219,6 +306,8 @@ def main() -> None:  # noqa: PLR0915
             )
 
             for multiplier in ligands[lig]["multipliers"]:
+                if int(lig) < 90 and multiplier > 8:  # noqa: PLR2004
+                    continue
                 iterator = scram.topologies.IHomolepticTopologyIterator(
                     building_blocks={
                         tetra_bb: ligands[lig]["stoichiometry_L_M"][1]
@@ -234,7 +323,6 @@ def main() -> None:  # noqa: PLR0915
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
                 for constructed in iterator.get_constructed_molecules():
-                    break
                     idx = constructed.idx
                     mash_idx = constructed.mash_idx
                     acage = constructed.constructed_molecule
@@ -306,6 +394,11 @@ def main() -> None:  # noqa: PLR0915
         graph_timing_file=graph_timing_file,
         figure_dir=figure_dir,
         filename="validation_times.png",
+    )
+    make_summary_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationi_2.png",
     )
 
 
