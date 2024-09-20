@@ -6,6 +6,7 @@ import pathlib
 from collections import Counter, abc, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import rustworkx as rx
@@ -859,17 +860,41 @@ class IHomolepticTopologyIterator:
 
         return np.array(new_points, dtype=np.float64)
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         building_blocks: dict[stk.BuildingBlock, int],
         graph_type: str,
+        graph_set: Literal["rx", "nx", "rx100"] = "rx",
     ) -> None:
         """Initialize."""
         self._scale_multiplier = 5
 
-        self._graphs_path = (
-            pathlib.Path(__file__).resolve().parent / f"rx_{graph_type}.json"
-        )
+        match graph_set:
+            case "rx":
+                self._graphs_path = (
+                    pathlib.Path(__file__).resolve().parent
+                    / f"rx_{graph_type}.json"
+                )
+                self._num_samples = int(1e4)
+
+            case "nx":
+                self._graphs_path = (
+                    pathlib.Path(__file__).resolve().parent
+                    / f"g_{graph_type}.json"
+                )
+                if not self._graphs_path.exists():
+                    msg = "building graphs with nx no longer available"
+                    raise RuntimeError(msg)
+
+            case "rx100":
+                self._graphs_path = (
+                    pathlib.Path(__file__).resolve().parent
+                    / f"rx100_{graph_type}.json"
+                )
+                self._num_samples = 100
+
+            case _:
+                raise RuntimeError
 
         # Use an angle rotation of points on a sphere for each building block
         # type to avoid overlap of distinct building block spheres with the
@@ -902,7 +927,9 @@ class IHomolepticTopologyIterator:
                 angle_rotation=angle_rotation,
             )
             for _, position in zip(
-                range(num_instances), type_positions, strict=True
+                range(num_instances),
+                type_positions,
+                strict=True,
             ):
                 vertex_id = len(vertex_prototypes)
 
@@ -988,7 +1015,7 @@ class IHomolepticTopologyIterator:
         ]
 
         to_save = []
-        for _ in range(int(1e4)):
+        for _ in range(self._num_samples):
             rng.shuffle(options)
             # Build an edge selection.
             combination = [
