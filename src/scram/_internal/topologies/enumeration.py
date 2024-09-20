@@ -3,7 +3,6 @@
 import json
 import logging
 import pathlib
-import time
 from collections import Counter, abc, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
@@ -964,19 +963,10 @@ class IHomolepticTopologyIterator:
         """Get number of building blocks."""
         return len(self._vertex_prototypes)
 
-    def _define_all_graphs(self) -> None:  # noqa: C901
+    def _define_all_graphs(self) -> None:
         combinations_tested = set()
         run_topology_codes = []
 
-        logging.info("temporary timing")
-        timing_file = (
-            pathlib.Path(
-                "/home/atarzia/workingspace/clever_challenge/ivalidation_data/"
-            )
-            / "graph_times.csv"
-        )
-
-        st = time.time()
         num_types = len(self._vertex_types_by_fg.keys())
         if num_types != 2:  # noqa: PLR2004
             msg = "not implemented for other types yet"
@@ -1046,21 +1036,8 @@ class IHomolepticTopologyIterator:
             to_save.append(combination)
             logging.info("found one at %s", _)
 
-        et = time.time()
-
         with self._graphs_path.open("w") as f:
             json.dump(to_save, f)
-
-        if "rx_" in self._graphs_path.name:
-            algtype = "rx"
-        elif "g_" in self._graphs_path.name:
-            algtype = "nx"
-
-        with timing_file.open("a") as f:
-            f.write(
-                f"{len(self._vertex_prototypes)},{algtype},"
-                f"{len(to_save)},{et-st}\n"
-            )
 
     def get_constructed_molecules(self) -> abc.Generator[Constructed]:
         """Get constructed molecules from iteration."""
