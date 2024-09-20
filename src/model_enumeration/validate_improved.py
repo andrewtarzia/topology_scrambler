@@ -203,7 +203,7 @@ def make_summary_plot(
             vmax=vmax,
             alpha=1.0,
             edgecolor="k",
-            s=200,
+            s=100,
             marker="s",
             cmap="Blues_r",
         )
@@ -281,10 +281,9 @@ def main() -> None:  # noqa: PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9),  # , 10, 11, 12),
+            "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
         }
         for i, bac_angle in enumerate(range(40, 181, 5))
-        # for i, bac_angle in enumerate([90])
     }
 
     if args.run:
