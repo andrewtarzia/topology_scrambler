@@ -86,6 +86,8 @@ def main() -> None:
                         buildingblocks[bb2]: (7, 8),
                     }
                     charge = 2 * 3
+                    optimiser = stk.MCHammer(target_bond_length=2.0)
+                    scale = 1
 
                 case "4P8":
                     building_block_dict = {
@@ -94,6 +96,8 @@ def main() -> None:
                         buildingblocks[bb2]: (5, 6, 7, 8),
                     }
                     charge = 2 * 4
+                    optimiser = stk.MCHammer(target_bond_length=2.0)
+                    scale = 1
 
                 case "4P82":
                     building_block_dict = {
@@ -102,6 +106,8 @@ def main() -> None:
                         buildingblocks[bb2]: (4, 9, 10, 11),
                     }
                     charge = 2 * 4
+                    optimiser = stk.MCHammer(target_bond_length=5.0)
+                    scale = 2
 
                 case _:
                     raise RuntimeError
@@ -112,8 +118,9 @@ def main() -> None:
             cage_molecule = stk.ConstructedMolecule(
                 topology_graph=topology_graphs[tstr](
                     building_blocks=building_block_dict,
-                    optimizer=stk.MCHammer(target_bond_length=2.0),
+                    optimizer=optimiser,
                     reaction_factory=react_factory,
+                    scale_multiplier=scale,
                 )
             )
             cage_molecule.write(structure_dir / f"{name}_unopt.mol")
