@@ -27,7 +27,7 @@ react_factory = stk.DativeReactionFactory(
 )
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """Run script."""
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     calculation_dir = wd / "ratom_calculations"

@@ -1,6 +1,5 @@
 """Script to generate and optimise CG models."""
 
-import argparse
 import itertools as it
 import logging
 import pathlib
@@ -10,7 +9,7 @@ import mchammer as mch
 import numpy as np
 import stk
 import stko
-from openmm import OpenMMException, openmm
+from openmm import OpenMMException
 from rdkit import RDLogger
 from run_cg_model import make_aa_plot, make_plot
 
@@ -45,135 +44,6 @@ def optimiser(pair, multi):
         },
     }
     return opts[pair][multi]
-
-
-def analyse_cage(database_path, name, forcefield, iterator, topology_code):
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
-    properties = database.get_entry(key=name).properties
-    if "num_components" not in properties:
-        energy_decomp = {}
-        for component in properties["energy_decomposition"]:
-            component_tup = properties["energy_decomposition"][component]
-            if component == "total energy":
-                energy_decomp[f"{component}_{component_tup[1]}"] = float(
-                    component_tup[0]
-                )
-            else:
-                just_name = component.split("'")[1]
-                key = f"{just_name}_{component_tup[1]}"
-                value = float(component_tup[0])
-                if key in energy_decomp:
-                    energy_decomp[key] += value
-                else:
-                    energy_decomp[key] = value
-        fin_energy = energy_decomp["total energy_kJ/mol"]
-        if (
-            sum(
-                energy_decomp[i]
-                for i in energy_decomp
-                if "total energy" not in i
-            )
-            != fin_energy
-        ):
-            msg = (
-                "energy decompisition does not sum to total energy for"
-                f" {name}: {energy_decomp}"
-            )
-            raise RuntimeError(msg)
-
-        # This is matched to the existing analysis code. I recommend
-        # generalising in the future.
-        ff_targets = forcefield.get_targets()
-        k_dict = {}
-        v_dict = {}
-
-        for bt in ff_targets["bonds"]:
-            cp = (bt.type1, bt.type2)
-            k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule
-                / openmm.unit.mole
-                / openmm.unit.nanometer**2
-            )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
-                openmm.unit.angstrom
-            )
-
-        for at in ff_targets["angles"]:
-            cp = (at.type1, at.type2, at.type3)
-            try:
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule
-                    / openmm.unit.mole
-                    / openmm.unit.radian**2
-                )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(
-                    openmm.unit.degrees
-                )
-            except TypeError:
-                # Handle different angle types.
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole
-                )
-                v_dict["_".join(cp)] = (at.n, at.b)
-
-        for at in ff_targets["torsions"]:
-            cp = at.search_string
-            k_dict["_".join(cp)] = at.torsion_k.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-            v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
-        for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(
-                openmm.unit.angstrom
-            )
-            k_dict[at.bead_class] = at.epsilon.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-
-        forcefield_dict = {
-            "ff_id": forcefield.get_identifier(),
-            "ff_prefix": forcefield.get_prefix(),
-            "k_dict": k_dict,
-            "v_dict": v_dict,
-        }
-
-        num_components = len(
-            stko.Network.init_from_molecule(
-                database.get_molecule(key=name)
-            ).get_connected_components()
-        )
-
-        database.add_properties(
-            key=name,
-            property_dict={
-                "forcefield_dict": forcefield_dict,
-                "strain_energy": fin_energy,
-                "energy_per_bb": fin_energy
-                / iterator.get_num_building_blocks(),
-                "pair": name.split("_")[0] + "_" + name.split("_")[1],
-                "num_components": num_components,
-                "multiplier": name.split("_")[2],
-                "topology_code_vmap": tuple(
-                    (int(i[0]), int(i[1])) for i in topology_code.vertex_map
-                ),
-            },
-        )
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run",
-        action="store_true",
-        help="set to iterate through structure functions",
-    )
-    parser.add_argument(
-        "--atomise",
-        action="store_true",
-        help="set to build atomistic structures",
-    )
-
-    return parser.parse_args()
 
 
 def main():

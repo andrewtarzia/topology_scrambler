@@ -1,4 +1,4 @@
-"""analysis package."""
+"""Utilities package."""
 
 from scram._internal.utilities.utilities import (
     atomise,
