@@ -252,20 +252,29 @@ def main() -> None:  # noqa: PLR0915
     args = _parse_args()
 
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "ivalidation_calculations"
-    calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "ivalidation_structures"
-    structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "ivalidation_ligands"
-    ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "ivalidation_data"
-    data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
-    figure_dir.mkdir(exist_ok=True)
+    if not args.nodoubles:
+        calculation_dir = wd / "ivalidation_calculations"
+        structure_dir = wd / "ivalidation_structures"
+        ligand_dir = wd / "ivalidation_ligands"
+        data_dir = wd / "ivalidation_data"
+        database_path = data_dir / "ivalidation_run.db"
+        timing_file = data_dir / "ivalidation_times.csv"
 
-    database_path = data_dir / "ivalidation_run.db"
-    timing_file = data_dir / "ivalidation_times.csv"
+    else:
+        calculation_dir = wd / "dvalidation_calculations"
+        structure_dir = wd / "dvalidation_structures"
+        ligand_dir = wd / "dvalidation_ligands"
+        data_dir = wd / "dvalidation_data"
+        database_path = data_dir / "dvalidation_run.db"
+        timing_file = data_dir / "dvalidation_times.csv"
+
     graph_timing_file = data_dir / "graph_times.csv"
+    calculation_dir.mkdir(exist_ok=True)
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir.mkdir(exist_ok=True)
+    figure_dir.mkdir(exist_ok=True)
 
     ligands = {
         str(bac_angle): {
