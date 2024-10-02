@@ -39,10 +39,11 @@ def _parse_args() -> argparse.Namespace:
         help="set to iterate through structure functions",
     )
     parser.add_argument(
-        "--atomise",
+        "--nodoubles",
         action="store_true",
-        help="set to build atomistic structures",
+        help="set to only study no double-walleds",
     )
+
     return parser.parse_args()
 
 
@@ -309,7 +310,7 @@ def main() -> None:  # noqa: PLR0915
                 if int(lig) < 90 and multiplier > 8:  # noqa: PLR2004
                     continue
                 iterator = scram.topologies.IHomolepticTopologyIterator(
-                    building_blocks={
+                    building_block_counts={
                         tetra_bb: ligands[lig]["stoichiometry_L_M"][1]
                         * multiplier,
                         ditopic_bb: ligands[lig]["stoichiometry_L_M"][0]
@@ -322,20 +323,8 @@ def main() -> None:  # noqa: PLR0915
                 )
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
-                for constructed in iterator.get_constructed_molecules():
-                    idx = constructed.idx
-                    mash_idx = constructed.mash_idx
-                    acage = constructed.constructed_molecule
-                    name = f"{lig}_{multiplier}_{idx}_{mash_idx}"
-                    acage.write(structure_dir / f"{name}_unopt.mol")
-                    num_vertices = iterator.get_num_building_blocks()
-
-                    num_components = len(
-                        stko.Network.init_from_molecule(
-                            acage
-                        ).get_connected_components()
-                    )
-                    if num_components != 1:
+                for idx, topology_code in enumerate(iterator.get_graphs()):
+                    if args.nodoubles and topology_code.contains_doubles():
                         continue
 
                     # Optimise and save.
