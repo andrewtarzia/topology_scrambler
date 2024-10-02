@@ -10,6 +10,13 @@ import stk
 import stko
 from openmm import OpenMMException, openmm
 
+from scram._internal.topologies.custom_topology import CustomTopology
+from scram._internal.topologies.enumeration import (
+    IHomolepticTopologyIterator,
+    TopologyIterator,
+)
+from scram._internal.topologies.topology_code import TopologyCode
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -205,10 +212,10 @@ def graph_optimise_cage(  # noqa: PLR0913
     min_energy_conformerid = min_energy_conformer.conformer_id
     min_energy = min_energy_conformer.energy_decomposition["total energy"][0]
     logging.info(
-        "Min. energy conformer: %s from %s with energy: %s kJ.mol-1",
+        "%s from %s with energy: %s kJ.mol-1",
         min_energy_conformerid,
         min_energy_conformer.source,
-        min_energy,
+        round(min_energy, 2),
     )
 
     # Add to atomlite database.
@@ -280,6 +287,7 @@ def optimise_cage(  # noqa: PLR0913
         data_json=output_dir / f"{name}_ensemble.json",
         overwrite=True,
     )
+
     temp_molecule = cgexplore.utilities.run_constrained_optimisation(
         assigned_system=assigned_system,
         name=name,
@@ -381,16 +389,17 @@ def optimise_cage(  # noqa: PLR0913
                 platform=platform,
             )
             ensemble.add_conformer(conformer=conformer, source="smd")
+
     ensemble.write_conformers_to_file()
 
     min_energy_conformer = ensemble.get_lowest_e_conformer()
     min_energy_conformerid = min_energy_conformer.conformer_id
     min_energy = min_energy_conformer.energy_decomposition["total energy"][0]
     logging.info(
-        "Min. energy conformer: %s from %s with energy: %s kJ.mol-1",
+        "%s from %s with energy: %s kJ.mol-1",
         min_energy_conformerid,
         min_energy_conformer.source,
-        min_energy,
+        round(min_energy, 2),
     )
 
     # Add to atomlite database.
@@ -405,3 +414,47 @@ def optimise_cage(  # noqa: PLR0913
     )
     min_energy_conformer.molecule.write(fina_mol_file)
     return min_energy_conformer
+
+
+def try_except_construction(
+    iterator: TopologyIterator | IHomolepticTopologyIterator,
+    topology_code: TopologyCode,
+    vertex_positions: dict[int, np.ndarray] | None = None,
+) -> stk.ConstructedMolecule:
+    """Try construction with alignment, then without."""
+    try:
+        # Try with aligning vertices.
+        constructed_molecule = stk.ConstructedMolecule(
+            CustomTopology(
+                building_blocks=iterator.building_blocks,
+                vertex_prototypes=iterator.get_vertex_prototypes(
+                    unaligning=False
+                ),
+                # Convert to edge prototypes.
+                edge_prototypes=topology_code.edges_from_connection(
+                    iterator.get_vertex_prototypes(unaligning=False)
+                ),
+                vertex_alignments=None,
+                vertex_positions=vertex_positions,
+                scale_multiplier=iterator.scale_multiplier,
+            )
+        )
+
+    except ValueError:
+        # Try with unaligning.
+        constructed_molecule = stk.ConstructedMolecule(
+            CustomTopology(
+                building_blocks=iterator.building_blocks,
+                vertex_prototypes=iterator.get_vertex_prototypes(
+                    unaligning=True
+                ),
+                # Convert to edge prototypes.
+                edge_prototypes=topology_code.edges_from_connection(
+                    iterator.get_vertex_prototypes(unaligning=True)
+                ),
+                vertex_alignments=None,
+                vertex_positions=vertex_positions,
+                scale_multiplier=iterator.scale_multiplier,
+            )
+        )
+    return constructed_molecule
