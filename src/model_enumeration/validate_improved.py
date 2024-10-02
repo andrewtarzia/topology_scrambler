@@ -327,67 +327,113 @@ def main() -> None:  # noqa: PLR0915
                     if args.nodoubles and topology_code.contains_doubles():
                         continue
 
-                    # Optimise and save.
-                    logging.info("building %s", name)
-                    try:
-                        st1 = time.time()
-                        conformer = scram.toy.graph_optimise_cage(
-                            molecule=acage,
-                            name=name,
-                            output_dir=calculation_dir,
-                            forcefield=forcefield,
-                            platform=None,
-                            database_path=database_path,
+                    # Do the construction.
+                    nx_graph = topology_code.get_nx_graph()
+                    for mash_idx, nx_positions in enumerate(
+                        (
+                            nx.spectral_layout(nx_graph, dim=3),
+                            nx.spring_layout(nx_graph, dim=3),
+                            nx.kamada_kawai_layout(nx_graph, dim=3),
+                            None,
                         )
-                        et1 = time.time()
-                        if conformer is not None:
-                            conformer.molecule.with_centroid((0, 0, 0)).write(
-                                str(structure_dir / f"{name}_optc.mol")
-                            )
+                    ):
+                        if nx_positions is not None:
+                            vertex_positions = {
+                                idx: np.array(nx_positions[idx]) * 10
+                                for idx in topology_code.get_nx_graph().nodes
+                            }
+                            opt_function = scram.toy.optimise_cage
+                        else:
+                            vertex_positions = None
+                            opt_function = scram.toy.graph_optimise_cage
 
-                        st2 = time.time()
-                        analyse_cage(
-                            database_path=database_path,
-                            name=name,
-                            forcefield=forcefield,
-                            iterator=iterator,
-                            topology_code=constructed.topology_code,
+                        # Do the construction.
+                        constructed_molecule = (
+                            scram.toy.try_except_construction(
+                                iterator=iterator,
+                                topology_code=topology_code,
+                                vertex_positions=vertex_positions,
+                            )
                         )
-                        et2 = time.time()
 
-                        with timing_file.open("a") as f:
-                            f.write(
-                                f"{lig},{multiplier},{num_vertices},{idx},"
-                                f"{mash_idx},{et1-st1},{et2-st2}\n"
+                        name = f"{lig}_{multiplier}_{idx}_{mash_idx}"
+                        constructed_molecule.write(
+                            structure_dir / f"{name}_unopt.mol"
+                        )
+                        num_vertices = iterator.get_num_building_blocks()
+
+                        # Optimise and save.
+                        logging.info("building %s", name)
+                        try:
+                            st1 = time.time()
+                            conformer = opt_function(
+                                molecule=constructed_molecule,
+                                name=name,
+                                output_dir=calculation_dir,
+                                forcefield=forcefield,
+                                platform=None,
+                                database_path=database_path,
                             )
+                            et1 = time.time()
+                            if conformer is not None:
+                                conformer.molecule.with_centroid(
+                                    (0, 0, 0)
+                                ).write(
+                                    str(structure_dir / f"{name}_optc.mol")
+                                )
 
-                    except OpenMMException:
-                        logging.info("failed optimisation of %s", name)
+                            st2 = time.time()
+                            analyse_cage(
+                                database_path=database_path,
+                                name=name,
+                                forcefield=forcefield,
+                                iterator=iterator,
+                                topology_code=topology_code,
+                            )
+                            et2 = time.time()
+
+                            with timing_file.open("a") as f:
+                                f.write(
+                                    f"{lig},{multiplier},{num_vertices},{idx},"
+                                    f"{mash_idx},{et1-st1},{et2-st2}\n"
+                                )
+
+                        except OpenMMException:
+                            logging.info("failed optimisation of %s", name)
 
                 make_plot(
                     database_path=database_path,
-                    structure_dir=structure_dir,
                     figure_dir=figure_dir,
-                    filename="validationi_1.png",
+                    filename="validationd_1.png"
+                    if args.nodoubles
+                    else "validationi_1.png",
                 )
 
-    make_plot(
+    make_summary_plot(
         database_path=database_path,
         structure_dir=structure_dir,
         figure_dir=figure_dir,
-        filename="validationi_1.png",
+        filename="validationd_2.png"
+        if args.nodoubles
+        else "validationi_2.png",
     )
 
+    make_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationd_1.png"
+        if args.nodoubles
+        else "validationi_1.png",
+    )
     make_timings_plot(
         timing_file=timing_file,
         graph_timing_file=graph_timing_file,
         figure_dir=figure_dir,
-        filename="validation_times.png",
+        filename="validationd_times.png"
+        if args.nodoubles
+        else "validation_times.png",
     )
-    make_summary_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="validationi_2.png",
+
     )
 
 
