@@ -1,4 +1,4 @@
-"""Script to generate and optimise CG models."""
+"""Define classes for enumeration of graphs."""
 
 import json
 import logging
@@ -13,108 +13,16 @@ import rustworkx as rx
 import stk
 from rdkit import RDLogger
 
+from .custom_topology import CustomTopology
 from .graphs import CGM4L8, CGM12L24, UnalignedM1L2
-from .utilities import vmap_to_str
+from .topology_code import Constructed, TopologyCode
+from .utilities import points_on_sphere, vmap_to_str
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
-
-
-def get_graph_type(stoichiometry: tuple[int, ...], multiplier: int) -> str:
-    """Get underlying graph type."""
-    if stoichiometry == (2, 1):
-        return f"{1*multiplier}P{2*multiplier}"
-    return None
-
-
-class CustomTopology:
-    """Container for a custom topology graph."""
-
-    def __init__(  # noqa: PLR0913
-        self,
-        building_blocks: (
-            abc.Iterable[stk.BuildingBlock]
-            | dict[stk.BuildingBlock, tuple[int, ...]]
-        ),
-        vertex_prototypes: list[stk.Vertex],
-        edge_prototypes: list[stk.Edge],
-        vertex_alignments: dict[int, int] | None = None,
-        vertex_positions: dict[int, np.ndarray] | None = None,
-        reaction_factory: stk.ReactionFactory = stk.GenericReactionFactory(),  # noqa: B008
-        num_processes: int = 1,
-        optimizer: stk.Optimizer = stk.NullOptimizer(),  # noqa: B008
-        scale_multiplier: float = 1.0,
-    ) -> None:
-        """Initialize."""
-
-        class InternalTopology(stk.cage.Cage):
-            _vertex_prototypes = vertex_prototypes
-            _edge_prototypes = edge_prototypes
-
-        self._topology_graph = InternalTopology(
-            building_blocks=building_blocks,
-            vertex_alignments=vertex_alignments,
-            vertex_positions=vertex_positions,
-            reaction_factory=reaction_factory,
-            num_processes=num_processes,
-            scale_multiplier=scale_multiplier,
-            optimizer=optimizer,
-        )
-
-    def construct(self) -> stk.ConstructionResult:
-        """Construct topology."""
-        return self._topology_graph.construct()
-
-
-@dataclass
-class TopologyCode:
-    """Naming convention for topology graphs."""
-
-    vertex_map: abc.Sequence[tuple[int, int]]
-    as_string: str
-
-    def get_graph(self) -> rx.PyGraph:
-        """Convert TopologyCode to a graph."""
-        graph = rx.PyGraph()
-
-        vertices = {
-            vi: graph.add_node(vi)
-            for vi in sorted({i for j in self.vertex_map for i in j})
-        }
-
-        for vert in self.vertex_map:
-            nodea = graph[vertices[vert[0]]]
-            nodeb = graph[vertices[vert[1]]]
-            graph.add_edge(nodea, nodeb, None)
-
-        return graph
-
-    def edges_from_connection(
-        self,
-        vertex_prototypes: list[stk.Vertex],
-    ) -> list[stk.Edge]:
-        """Get stk Edges from topology code."""
-        return [
-            stk.Edge(
-                id=i,
-                vertex1=vertex_prototypes[pair[0]],
-                vertex2=vertex_prototypes[pair[1]],
-            )
-            for i, pair in enumerate(self.vertex_map)
-        ]
-
-
-@dataclass
-class Constructed:
-    """Container for constructed molecule and topology graph."""
-
-    constructed_molecule: stk.ConstructedMolecule
-    idx: int | None
-    topology_code: TopologyCode
-    mash_idx: int | None = None
 
 
 class TopologyIterator:
@@ -826,72 +734,35 @@ class HomolepticTopologyIterator(TopologyIterator):
         self._define_underlying()
 
 
+@dataclass
 class IHomolepticTopologyIterator:
     """Iterate over topology graphs."""
 
-    @staticmethod
-    def _points_on_sphere(
-        sphere_radius: float,
-        num_points: int,
-        angle_rotation: float,
-    ) -> np.ndarray:
-        golden_angle = np.pi * (3 - np.sqrt(5))
-        theta = golden_angle * np.arange(num_points)
-        z = np.linspace(
-            1 - 1.0 / num_points,
-            1.0 / num_points - 1.0,
-            num_points,
-        )
-        radius = np.sqrt(1 - z * z)
-        points = np.zeros((3, num_points))
-        points[0, :] = sphere_radius * np.cos(theta) * radius
-        points[1, :] = sphere_radius * np.sin(theta) * radius
-        points[2, :] = z * sphere_radius
+    building_block_counts: dict[stk.BuildingBlock, int]
+    graph_type: str
+    graph_set: Literal["rx", "nx"] = "rx"
+    scale_multiplier = 5
 
-        axis = np.array((1.0, 0.0, 0.0))
-        moving_points = points.T
-
-        rot_mat = stk.rotation_matrix_arbitrary_axis(
-            angle=np.radians(angle_rotation),
-            axis=axis,
-        )
-        new_points = rot_mat @ moving_points.T
-        new_points = new_points.T
-
-        return np.array(new_points, dtype=np.float64)
-
-    def __init__(  # noqa: PLR0915
-        self,
-        building_blocks: dict[stk.BuildingBlock, int],
-        graph_type: str,
-        graph_set: Literal["rx", "nx", "rx100"] = "rx",
-    ) -> None:
+    def __post_init__(self) -> None:
         """Initialize."""
-        self._scale_multiplier = 5
-
-        match graph_set:
+        match self.graph_set:
             case "rx":
-                self._graphs_path = (
+                self.graphs_path = (
                     pathlib.Path(__file__).resolve().parent
-                    / f"rx_{graph_type}.json"
+                    / "known_graphs"
+                    / f"rx_{self.graph_type}.json"
                 )
-                self._num_samples = int(1e4)
+                self.num_samples = int(1e4)
 
             case "nx":
-                self._graphs_path = (
+                self.graphs_path = (
                     pathlib.Path(__file__).resolve().parent
-                    / f"g_{graph_type}.json"
+                    / "known_graphs"
+                    / f"g_{self.graph_type}.json"
                 )
-                if not self._graphs_path.exists():
+                if not self.graphs_path.exists():
                     msg = "building graphs with nx no longer available"
                     raise RuntimeError(msg)
-
-            case "rx100":
-                self._graphs_path = (
-                    pathlib.Path(__file__).resolve().parent
-                    / f"rx100_{graph_type}.json"
-                )
-                self._num_samples = 100
 
             case _:
                 raise RuntimeError
@@ -899,7 +770,9 @@ class IHomolepticTopologyIterator:
         # Use an angle rotation of points on a sphere for each building block
         # type to avoid overlap of distinct building block spheres with the
         # same number of instances.
-        angle_rotations = range(0, 360, int(360 / len(building_blocks)))
+        angle_rotations = range(
+            0, 360, int(360 / len(self.building_block_counts))
+        )
 
         # Write vertex prototypes as a function of number of functional groups
         # and position them on spheres.
@@ -912,16 +785,16 @@ class IHomolepticTopologyIterator:
         vertex_types_by_fg = defaultdict(list)
         building_block_dict = {}
         for building_block, angle_rotation in zip(
-            building_blocks,
+            self.building_block_counts,
             angle_rotations,
             strict=True,
         ):
             building_block_dict[building_block] = []
 
             num_functional_groups = building_block.get_num_functional_groups()
-            num_instances = building_blocks[building_block]
+            num_instances = self.building_block_counts[building_block]
 
-            type_positions = self._points_on_sphere(
+            type_positions = points_on_sphere(
                 sphere_radius=1,
                 num_points=num_instances,
                 angle_rotation=angle_rotation,
@@ -973,49 +846,54 @@ class IHomolepticTopologyIterator:
                     )
                 )
 
-        self._building_blocks = {
+        self.building_blocks = {
             i: tuple(building_block_dict[i]) for i in building_block_dict
         }
-        self._vertex_map = vertex_map
-        self._vertex_counts = vertex_counts
-        self._vertex_types_by_fg = {
+        self.vertex_map = vertex_map
+        self.vertex_counts = vertex_counts
+        self.vertex_types_by_fg = {
             i: tuple(vertex_types_by_fg[i]) for i in vertex_types_by_fg
         }
-        self._reactable_vertex_ids = reactable_vertex_ids
-        self._vertex_prototypes = vertex_prototypes
-        self._unaligned_vertex_prototypes = unaligned_vertex_prototypes
-        self._num_edges = int(num_edges / 2)
+        self.reactable_vertex_ids = reactable_vertex_ids
+        self.vertex_prototypes = vertex_prototypes
+        self.unaligned_vertex_prototypes = unaligned_vertex_prototypes
 
     def get_num_building_blocks(self) -> int:
         """Get number of building blocks."""
-        return len(self._vertex_prototypes)
+        return len(self.vertex_prototypes)
+
+    def get_vertex_prototypes(self, unaligning: bool) -> list[stk.Vertex]:
+        """Get vertex prototypes."""
+        if unaligning:
+            return self.unaligned_vertex_prototypes
+        return self.vertex_prototypes
 
     def _define_all_graphs(self) -> None:
         combinations_tested = set()
         run_topology_codes = []
 
-        num_types = len(self._vertex_types_by_fg.keys())
+        num_types = len(self.vertex_types_by_fg.keys())
         if num_types != 2:  # noqa: PLR2004
             msg = "not implemented for other types yet"
             raise RuntimeError(msg)
 
-        type1, type2 = sorted(self._vertex_types_by_fg.keys(), reverse=True)
+        type1, type2 = sorted(self.vertex_types_by_fg.keys(), reverse=True)
 
         itera1 = [
             i
-            for i in self._reactable_vertex_ids
-            if i in self._vertex_types_by_fg[type1]
+            for i in self.reactable_vertex_ids
+            if i in self.vertex_types_by_fg[type1]
         ]
 
         rng = np.random.default_rng(seed=100)
         options = [
             i
-            for i in self._reactable_vertex_ids
-            if i in self._vertex_types_by_fg[type2]
+            for i in self.reactable_vertex_ids
+            if i in self.vertex_types_by_fg[type2]
         ]
 
         to_save = []
-        for _ in range(self._num_samples):
+        for _ in range(self.num_samples):
             rng.shuffle(options)
             # Build an edge selection.
             combination = [
@@ -1026,7 +904,7 @@ class IHomolepticTopologyIterator:
             # Need to check for nonsensical ones here.
             # Check the number of egdes per vertex is correct.
             counter = Counter([i for j in combination for i in j])
-            if counter != self._vertex_counts:
+            if counter != self.vertex_counts:
                 continue
 
             # If are any self-reactions.
@@ -1063,69 +941,32 @@ class IHomolepticTopologyIterator:
             to_save.append(combination)
             logging.info("found one at %s", _)
 
-        with self._graphs_path.open("w") as f:
+        with self.graphs_path.open("w") as f:
             json.dump(to_save, f)
 
-    def get_constructed_molecules(self) -> abc.Generator[Constructed]:
-        """Get constructed molecules from iteration."""
-        if not self._graphs_path.exists():
+    def get_graphs(self) -> abc.Generator[TopologyCode]:
+        """Get constructed molecules from iteration.
+
+        Yields only completely connected graphs.
+        """
+        if not self.graphs_path.exists():
             self._define_all_graphs()
 
-        with self._graphs_path.open("r") as f:
+        with self.graphs_path.open("r") as f:
             all_graphs = json.load(f)
 
-        logging.info("there are %s graphs", len(all_graphs))
+        logging.info(
+            "there are %s graphs, %s", len(all_graphs), self.graph_type
+        )
 
-        for idx, combination in enumerate(all_graphs):
+        for combination in all_graphs:
             topology_code = TopologyCode(
                 vertex_map=combination,
                 as_string=vmap_to_str(combination),
             )
 
-            # Do the construction.
-            try:
-                # Try with aligning vertices.
-                constructed = stk.ConstructedMolecule(
-                    CustomTopology(
-                        building_blocks=self._building_blocks,
-                        vertex_prototypes=self._vertex_prototypes,
-                        # Convert to edge prototypes.
-                        edge_prototypes=topology_code.edges_from_connection(
-                            self._vertex_prototypes
-                        ),
-                        vertex_alignments=None,
-                        vertex_positions=None,
-                        scale_multiplier=self._scale_multiplier,
-                    )
-                )
-                yield Constructed(
-                    constructed_molecule=constructed,
-                    idx=idx,
-                    mash_idx=0,
-                    topology_code=topology_code,
-                )
-
-            except ValueError:
-                # Try with unaligning.
-                try:
-                    constructed = stk.ConstructedMolecule(
-                        CustomTopology(
-                            building_blocks=self._building_blocks,
-                            vertex_prototypes=self._unaligned_vertex_prototypes,
-                            # Convert to edge prototypes.
-                            edge_prototypes=topology_code.edges_from_connection(
-                                self._unaligned_vertex_prototypes
-                            ),
-                            vertex_alignments=None,
-                            vertex_positions=None,
-                            scale_multiplier=self._scale_multiplier,
-                        )
-                    )
-                    yield Constructed(
-                        constructed_molecule=constructed,
-                        idx=idx,
-                        mash_idx=0,
-                        topology_code=topology_code,
-                    )
-                except ValueError:
-                    pass
+            num_components = rx.number_connected_components(
+                topology_code.get_graph()
+            )
+            if num_components == 1:
+                yield topology_code

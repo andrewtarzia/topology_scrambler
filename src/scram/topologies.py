@@ -3,14 +3,11 @@
 from scram._internal.topologies.building_block_enum import (
     get_potential_bb_dicts,
 )
+from scram._internal.topologies.custom_topology import CustomTopology
 from scram._internal.topologies.enumeration import (
-    Constructed,
-    CustomTopology,
     HomolepticTopologyIterator,
     IHomolepticTopologyIterator,
-    TopologyCode,
     TopologyIterator,
-    get_graph_type,
 )
 from scram._internal.topologies.graphs import (
     CGM4L8,
@@ -21,7 +18,9 @@ from scram._internal.topologies.graphs import (
     UnalignedM1L2,
     stoich_map,
 )
+from scram._internal.topologies.topology_code import Constructed, TopologyCode
 from scram._internal.topologies.utilities import (
+    get_graph_type,
     get_underyling_vertices,
     vmap_to_str,
 )
