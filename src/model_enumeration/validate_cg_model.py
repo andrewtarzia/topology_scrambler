@@ -22,6 +22,21 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
 
+multi_cmap = {
+    "1": "#ff0000",
+    "2": "#fe800a",
+    "3": "#fffe04",
+    "4": "#7cff17",
+    "5": "#07ff1a",
+    "6": "#00ff7e",
+    "7": "#0cfeff",
+    "8": "#107eff",
+    "9": "#0014ff",
+    "10": "#7f00ff",
+    "11": "#fe00fd",
+    "12": "#ff0080",
+}
+
 
 def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
@@ -190,11 +205,6 @@ def _parse_args() -> argparse.Namespace:
         help="set to iterate through structure functions",
     )
     parser.add_argument(
-        "--atomise",
-        action="store_true",
-        help="set to build atomistic structures",
-    )
-    parser.add_argument(
         "--targetted",
         action="store_true",
         help="set to do non-naive tests",
@@ -202,48 +212,40 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def make_plot(  # noqa: PLR0915
+def make_plot(
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
-    structure_dir: pathlib.Path,
     filename: str,
 ) -> None:
     """Plot energies."""
-    cmap = {
-        "1": "tab:blue",
-        "2": "tab:orange",
-        "3": "tab:green",
-        "4": "tab:red",
-        "5": "tab:gray",
-        "6": "tab:purple",
-        "7": "tab:gray",
-        "8": "tab:pink",
-        "9": "tab:gray",
-        "10": "tab:cyan",
-        "11": "tab:gray",
-        "12": "tab:brown",
-    }
-    fig, ax = plt.subplots(figsize=(8, 5))
-    axi = ax.twiny()
-    axx = ax.twinx()
     energies = defaultdict(list)
     bacs = defaultdict(list)
-
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
     ).get_entries():
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
-        bite_angle = (bac_angle - 90) * 2
 
         if entry.properties["num_components"] > 1:
             continue
 
-        energies[multi].append((bite_angle, energy, entry.key))
-        bacs[bite_angle].append((multi, energy, entry.key))
+        energies[multi].append((bac_angle, energy, entry.key))
+        bacs[bac_angle].append((multi, energy, entry.key))
 
-    for multi in sorted([int(i) for i in energies]):
+    fig, axs = plt.subplots(
+        nrows=len(energies),
+        sharey=True,
+        sharex=True,
+        figsize=(8, 10),
+    )
+    flat_axs = [axs] if len(energies) == 1 else axs.flatten()
+
+    for i, (ax, multi) in enumerate(
+        zip(flat_axs, sorted([int(i) for i in energies]), strict=True)
+    ):
+        axx = ax.twinx()
+
         idx = str(multi)
         min_energy = min(energies[idx], key=lambda p: p[1])
 
@@ -251,7 +253,7 @@ def make_plot(  # noqa: PLR0915
             [i[0] for i in energies[idx]],
             [i[1] for i in energies[idx]],
             marker="o",
-            c=cmap[idx],
+            c="tab:blue",
             s=20,
             alpha=0.4,
             ec="none",
@@ -262,6 +264,7 @@ def make_plot(  # noqa: PLR0915
             zorder=2,
         )
 
+        countsx = {}
         bac_line = []
         for bac_angle in sorted(bacs):
             rel_energies = [i[1] for i in energies[idx] if i[0] == bac_angle]
@@ -270,79 +273,46 @@ def make_plot(  # noqa: PLR0915
             min_energy = min(rel_energies)
             bac_line.append((bac_angle, min_energy))
 
+            countsx[bac_angle] = len(rel_energies)
+
         ax.plot(
             [i[0] for i in bac_line],
             [i[1] for i in bac_line],
-            c=cmap[idx],
+            c="tab:blue",
             ls="--",
-            alpha=0.6,
-            zorder=1,
+            alpha=1.0,
+            zorder=2,
         )
 
-    countsx = {}
-    with (figure_dir / "val_opt.txt").open("w") as f:
-        bac_line = []
-        for bac_angle in sorted(bacs):
-            min_energy = min(bacs[bac_angle], key=lambda p: p[1])
-            opt_file = structure_dir / f"{min_energy[2]}_optc.mol"
-            f.write(f"{opt_file} ")
-            bac_line.append((bac_angle, min_energy[1]))
-            countsx[bac_angle] = len(bacs[bac_angle])
-            ax.scatter(
-                bac_angle,
-                min_energy[1],
-                c=cmap[min_energy[0]],
-                marker="o",
-                s=60,
-                ec="k",
-                zorder=3,
-            )
+        ax.tick_params(axis="both", which="major", labelsize=16)
 
-    ax.plot(
-        [i[0] for i in bac_line],
-        [i[1] for i in bac_line],
-        c="k",
-        zorder=2,
-    )
+        ax.set_yscale("log")
+        ax.axhline(y=0.3, c="k", ls="--")
 
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel("target bite angle [deg]", fontsize=16)
-    ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_yscale("log")
-    ax.axhline(y=0.3, c="k", ls="--")
+        axx.plot(
+            list(countsx),
+            [countsx[i] for i in countsx],
+            c="tab:red",
+            marker="D",
+            zorder=2,
+            markersize=3.0,
+        )
+        axx.tick_params(
+            axis="both",
+            which="major",
+            labelsize=16,
+            labelcolor="tab:red",
+        )
+        if i == 4:  # noqa: PLR2004
+            ax.set_ylabel(eb_str(), fontsize=16)
+            axx.set_ylabel("num. structures", fontsize=16, color="tab:red")
+        axx.set_ylim(0, None)
 
-    axx.plot(
-        list(countsx),
-        [countsx[i] for i in countsx],
-        c="tab:red",
-        marker="D",
-        zorder=2,
-        markersize=3.0,
-    )
-    axx.tick_params(
-        axis="both",
-        which="major",
-        labelsize=16,
-        labelcolor="tab:red",
-    )
-    axx.set_ylabel("num. structures", fontsize=16, color="tab:red")
-    axx.set_ylim(0, None)
+        leg = ax.legend(ncols=1, fontsize=12)
+        for lh in leg.legend_handles:
+            lh.set_alpha(1)
 
-    # set limits for shared axis
-    axi.set_xlim(ax.get_xlim())
-
-    # set ticks for shared axis
-    axi.tick_params(axis="both", which="major", labelsize=16)
-    inverse_ticks = []
-    for tick in ax.get_xticks():
-        newtick = (tick / 2) + 90
-        inverse_ticks.append(int(newtick))
-    axi.set_xticklabels(inverse_ticks)
-    axi.set_xlabel("target $bac$ angle [deg]", fontsize=16)
-
-    leg = ax.legend(ncols=1, fontsize=12)
-    for lh in leg.legend_handles:
-        lh.set_alpha(1)
+    ax.set_xlabel("target $bac$ angle [deg]", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -491,14 +461,12 @@ def main() -> None:
 
                 make_plot(
                     database_path=database_path,
-                    structure_dir=structure_dir,
                     figure_dir=figure_dir,
                     filename="validation_1.png",
                 )
 
     make_plot(
         database_path=database_path,
-        structure_dir=structure_dir,
         figure_dir=figure_dir,
         filename="validation_1.png",
     )
