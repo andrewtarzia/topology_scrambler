@@ -5,10 +5,6 @@ import pathlib
 
 import stk
 import stko
-from atomistic_utilities import (
-    desymm_optimisation_sequence,
-    get_ligand_bb,
-)
 from rdkit import RDLogger
 
 import scram
@@ -41,19 +37,19 @@ def main() -> None:  # noqa: PLR0915
     figure_dir.mkdir(exist_ok=True)
 
     buildingblocks = {
-        "la": get_ligand_bb(
+        "la": scram.atomistic.get_ligand_bb(
             path=ligand_dir / "la_prep.mol",
             optl_path=ligand_dir / "la_optl.mol",
         ),
-        "las": get_ligand_bb(
+        "las": scram.atomistic.get_ligand_bb(
             path=ligand_dir / "las_prep.mol",
             optl_path=ligand_dir / "las_optl.mol",
         ),
-        "c1": get_ligand_bb(
+        "c1": scram.atomistic.get_ligand_bb(
             path=ligand_dir / "c1_prep.mol",
             optl_path=ligand_dir / "c1_optl.mol",
         ),
-        "st5": get_ligand_bb(
+        "st5": scram.atomistic.get_ligand_bb(
             path=ligand_dir / "st5_prep.mol",
             optl_path=ligand_dir / "st5_optl.mol",
         ),
@@ -125,7 +121,7 @@ def main() -> None:  # noqa: PLR0915
             )
             cage_molecule.write(structure_dir / f"{name}_unopt.mol")
 
-            cage_molecule = desymm_optimisation_sequence(
+            cage_molecule = scram.atomistic.desymm_optimisation_sequence(
                 mol=cage_molecule,
                 name=name,
                 charge=charge,
@@ -153,7 +149,7 @@ def main() -> None:  # noqa: PLR0915
                 )
             )
             cage_molecule.write(structure_dir / f"{name}_unopt.mol")
-            cage_molecule = desymm_optimisation_sequence(
+            cage_molecule = scram.atomistic.desymm_optimisation_sequence(
                 mol=cage_molecule,
                 name=name,
                 calc_dir=calculation_dir,

@@ -19,6 +19,7 @@ logging.basicConfig(
 
 def main() -> None:
     """Run script."""
+    raise SystemExit("update directories")
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     ligand_dir = wd / "ligands"
     ligand_dir.mkdir(exist_ok=True)
@@ -34,21 +35,14 @@ def main() -> None:
         forcefield_info_file.unlink()
 
     ligands = {
-        "st5": {"input": ligand_dir / "st5_manual.mol"},
-        "la": {
-            "smiles": "C1=C(C2C=CC3C4C=CC(C5=CC=CN=C5)=CC=4C(=O)C=3C=2)C=NC=C1"
-        },
-        "las": {
+        "ls1": {"smiles": "C1=CC(=CC(=C1)C2=CC=NC=C2)C3=CC=NC=C3"},
+        "lf": {
             "smiles": (
-                "C1=CC=C(C=C1)N2C3=C(C=CC(=C3)C4=CN=CC=C4)C5=C2C=C(C=C5)C6=CN=CC=C6"
+                "C1=C(C2=CC=C(C3C=CC4C(=O)C5C=CC(C6=CC=C(C7=CC=CN=C7)C=C6)=CC"
+                "=5C=4C=3)C=C2)C=NC=C1"
             ),
         },
-        "c1": {
-            "smiles": (
-                "O=C(O[C@H]1CO[C@H]2[C@H](CO[C@@H]12)OC(=O)C3=CC=NC=C3)C4=C"
-                "C=NC=C4"
-            )
-        },
+        "ls9": {"smiles": "C1=CN=CC=C1C2=CC=C(S2)C3=CC=NC=C3"},
     }
 
     for ligand in ligands:
