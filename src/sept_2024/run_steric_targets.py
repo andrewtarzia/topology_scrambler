@@ -6,10 +6,9 @@ import pathlib
 import cgexplore
 import matplotlib.pyplot as plt
 import stk
-from openmm import OpenMMException, openmm
+from openmm import openmm
 from rdkit import RDLogger
 from utilities import (
-    SixBead,
     StericSixBead,
     abead_c,
     abead_d,
@@ -36,14 +35,12 @@ def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
     name: str,
     forcefield: cgexplore.forcefields.ForceField,
+    num_building_blocks: int,
 ) -> None:
     """Analyse a toy model cage."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
-
-    pair1, pair2, tstr, bbstr = name.split("_")
-    pair = f"{pair1}_{pair2}"
-    if "topology" not in properties:
+    if "topology_code_vmap" not in properties:
         energy_decomp = {}
         for component in properties["energy_decomposition"]:
             component_tup = properties["energy_decomposition"][component]
@@ -135,130 +132,59 @@ def analyse_cage(  # noqa: C901
             property_dict={
                 "forcefield_dict": forcefield_dict,
                 "strain_energy": fin_energy,
-                "topology": tstr,
-                "bbstr": bbstr,
-                "pair": pair,
-                "energy_per_bb": fin_energy
-                / scram.topologies.stoich_map(tstr),
+                "energy_per_bb": fin_energy / num_building_blocks,
+                "tstr": name.split("_")[1],
             },
         )
 
 
 def make_plot(
-    pair: str,
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, axs = plt.subplots(ncols=3, nrows=2, figsize=(16, 10))
-    flat_axs = axs.flatten()
-    energies = {}
+    fig, ax = plt.subplots(figsize=(8, 5))
 
-    pairs = ("la_st50", "la_st5", "la_st52", "la2_st5", "la2_st52")
-    axmap = dict(zip(pairs, flat_axs, strict=False))
-
+    datas = {}
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
     ).get_entries():
-        energy = entry.properties["energy_per_bb"]
-        bbstr = entry.properties["bbstr"]
-        tstr = entry.properties["topology"]
-        pair = entry.properties["pair"]
+        tstr = entry.properties["tstr"]
+        # x = 0.5 * (
+        #     entry.properties["forcefield_dict"]["v_dict"]["a"]
+        #     + entry.properties["forcefield_dict"]["v_dict"]["s"]
+        # )
+        x = entry.properties["forcefield_dict"]["v_dict"]["s"]
+        y = entry.properties["energy_per_bb"]
+        if tstr not in datas:
+            datas[tstr] = []
+        datas[tstr].append((x, y))
 
-        if (pair, tstr) not in energies:
-            energies[(pair, tstr)] = []
-
-        energies[(pair, tstr)].append((round(energy, 4), bbstr))
-
-    for pair, tstr in energies:
-        sorted_energies = sorted(energies[(pair, tstr)], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-        ax = axmap[pair]
+    for tstr in datas:
         ax.plot(
-            [i[0] for i in sorted_energies],
+            [i[0] for i in datas[tstr]],
+            [i[1] for i in datas[tstr]],
+            alpha=1.0,
             marker="o",
-            markersize=4,
-            label=(f"{tstr}: {round(min_energy[0],3)}" f" @ {min_energy[1]}"),
+            mec="k",
+            markersize=8,
+            label=tstr,
         )
-        ax.set_title(f"{pair}", fontsize=16)
 
-        ax.tick_params(axis="both", which="major", labelsize=16)
-        ax.set_yscale("log")
-        ax.set_ylim(0.01, 50)
-        ax.set_xticks([])
-        ax.axhline(y=0.3, c="k", ls="--")
-        ax.legend(ncols=1, fontsize=16)
-        if pair in ("la_st50", "la2_st5"):
-            ax.set_ylabel(eb_str(), fontsize=16)
-
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(r"$s \sigma$  [\AA]", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.axhline(y=0.3, c="k", ls="--")
+    ax.legend(fontsize=16)
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
         dpi=360,
         bbox_inches="tight",
     )
-    plt.close()
-
-
-def make_parity_plot(
-    pair: str,
-    database_path: pathlib.Path,
-    figure_dir: pathlib.Path,
-    filename: str,
-) -> dict:
-    """Visualise energies."""
-    fig, axs = plt.subplots(ncols=3, figsize=(16, 5))
-    energies = {}
-
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
-        energy = entry.properties["energy_per_bb"]
-        bbstr = entry.properties["bbstr"]
-        tstr = entry.properties["topology"]
-        pair = entry.properties["pair"]
-
-        if (pair, tstr) not in energies:
-            energies[(pair, tstr)] = []
-
-        energies[(pair, tstr)].append((round(energy, 4), bbstr))
-
-    for ax, tstr in zip(axs, ("3P6", "4P8", "4P82"), strict=False):
-        opt1 = energies[("la_st50", tstr)]
-        for p2, string in zip(
-            ("la2_st5", "la2_st52", "la_st5", "la_st52"),
-            (
-                r"$c$|$\sigma=1$",
-                r"$o$|$\sigma=1$",
-                r"$c$|$\sigma=2$",
-                r"$o$|$\sigma=2$",
-            ),
-            strict=False,
-        ):
-            opt2 = energies[(p2, tstr)]
-            ax.scatter(
-                [i[0] for i in opt1],
-                [i[0] for i in opt2],
-                ec="k",
-                s=40,
-                label=f"$vs$ {string}",
-            )
-
-        ax.tick_params(axis="both", which="major", labelsize=16)
-        ax.set_xlabel(f"{eb_str()}", fontsize=16)
-        ax.set_ylabel(f"+sterics {eb_str()}", fontsize=16)
-        ax.set_xlim(0.01, 100)
-        ax.set_ylim(0.01, 100)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.plot((0, 100), (0, 100), c="k")
-        ax.legend(fontsize=16)
-        ax.set_title(tstr)
-
-    fig.tight_layout()
     fig.savefig(
-        figure_dir / filename,
+        figure_dir / filename.replace(".png", ".pdf"),
         dpi=360,
         bbox_inches="tight",
     )
@@ -267,6 +193,7 @@ def make_parity_plot(
 
 def main() -> None:
     """Run script."""
+    raise SystemExit("there is something wrong with this force.")
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     calculation_dir = wd / "tsteric_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -281,125 +208,59 @@ def main() -> None:
 
     database_path = data_dir / "tsteric.db"
 
-    ligand_measures = {
-        "la": {"dd": 7.0, "de": 1.5, "dde": 170, "eg": 1.4, "gb": 1.4, "s": 2},
-        "la2": {
-            "dd": 7.0,
-            "de": 1.5,
-            "dde": 170,
-            "eg": 1.4,
-            "gb": 1.4,
-            "s": 1,
-        },
-        "st5": {"ba": 2.8, "aa": 3.9, "bac": 120, "bacab": 180},
-        "st52": {"ba": 2.8, "aa": 5.0, "bac": 110, "bacab": 180},
-    }
-
-    pairs = {
-        "la_st50": {
-            "converging_name": "la",
-            "diverging_name": "st5",
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-        },
-        "la_st5": {
-            "converging_name": "la",
-            "diverging_name": "st5",
-            "converging": StericSixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-                sbead=steric_bead,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-        },
-        "la_st52": {
-            "converging_name": "la",
-            "diverging_name": "st52",
-            "converging": StericSixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-                sbead=steric_bead,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-        },
-        "la2_st5": {
-            "converging_name": "la2",
-            "diverging_name": "st5",
-            "converging": StericSixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-                sbead=steric_bead,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-        },
-        "la2_st52": {
-            "converging_name": "la2",
-            "diverging_name": "st52",
-            "converging": StericSixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-                sbead=steric_bead,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-        },
-    }
+    pair = "la_st5"
+    converging = StericSixBead(
+        bead=cbead_c,
+        abead1=abead_c,
+        abead2=ebead_c,
+        sbead=steric_bead,
+    )
+    converging_name = "la"
+    diverging = cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
+    diverging_name = "st5"
+    tetra = cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead)
 
     topologies = (
         ("3P6", stk.cage.M3L6, (2, 1)),
-        ("4P8", scram.topologies.CGM4L8, (1, 1)),
-        ("4P82", scram.topologies.M4L82, (1, 1)),
+        # ("4P8", scram.topologies.CGM4L8, (1, 1)),
+        # ("4P82", scram.topologies.M4L82, (1, 1)),
     )
 
-    for pair in pairs:
-        break
-        converging_name = pairs[pair]["converging_name"]
-        diverging_name = pairs[pair]["diverging_name"]
-        converging = pairs[pair]["converging"]
-        diverging = pairs[pair]["diverging"]
-        tetra = pairs[pair]["tetra"]
+    s_range = [
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        # 1.0,
+        # 1.25,
+        # 1.5,
+        # 1.75,
+        # 2.0,
+        # 2.25,
+        # 2.5,
+        # 2.75,
+        # 3.0,
+        # 3.25,
+        # 3.5,
+        # 3.75,
+        # 4.0,
+    ]
+
+    logging.info("building %s structures", len(s_range) * len(topologies))
+    for i, s_value in enumerate(s_range):
+        ligand_measures = {
+            "la": {
+                "dd": 7.0,
+                "de": 1.5,
+                "dde": 170,
+                "eg": 1.4,
+                "gb": 1.4,
+                "s": s_value,
+                "se": 10.0,
+            },
+            "st5": {"ba": 2.8, "aa": 3.9, "bac": 120, "bacab": 180},
+        }
 
         forcefield = precursors_to_forcefield(
             pair=pair,
@@ -408,7 +269,6 @@ def main() -> None:
             conv_meas=ligand_measures[converging_name],
             dive_meas=ligand_measures[diverging_name],
         )
-
         converging_bb = scram.toy.prepare_building_block(
             precursor=converging,
             forcefield=forcefield,
@@ -428,69 +288,74 @@ def main() -> None:
             ligand_dir=ligand_dir,
         )
 
-        for tstr, tfunction, ratio in topologies:
-            possible_bbdicts = scram.topologies.get_potential_bb_dicts(
-                tstr=tstr,
-                ratio=ratio,
-                bb_type="ditopic",
+        for tstr, tfunction, _ in topologies:
+            name = f"ts_{tstr}_{i}"
+            logging.info("building %s", name)
+            if tstr == "3P6":
+                cage = stk.ConstructedMolecule(
+                    tfunction(
+                        building_blocks={
+                            tetra_bb: (0, 1, 2),
+                            converging_bb: (3, 4, 5, 6),
+                            diverging_bb: (7, 8),
+                        },
+                        vertex_positions=None,
+                    )
+                )
+                num_bbs = 9
+
+            if tstr == "4P8":
+                cage = stk.ConstructedMolecule(
+                    tfunction(
+                        building_blocks={
+                            tetra_bb: (0, 1, 2, 3),
+                            converging_bb: (4, 6, 8, 10),
+                            diverging_bb: (5, 7, 9, 11),
+                        },
+                        vertex_positions=None,
+                    )
+                )
+                num_bbs = 12
+
+            if tstr == "4P82":
+                cage = stk.ConstructedMolecule(
+                    tfunction(
+                        building_blocks={
+                            tetra_bb: (0, 1, 2, 3),
+                            converging_bb: (5, 6, 7, 8),
+                            diverging_bb: (4, 9, 10, 11),
+                        },
+                        vertex_positions=None,
+                    )
+                )
+                num_bbs = 12
+
+            cage.write(structure_dir / f"{name}_unopt.mol")
+
+            conformer = scram.toy.optimise_cage(
+                molecule=cage,
+                name=name,
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+                database_path=database_path,
             )
-            logging.info(
-                "there are %s possible BB dicts for %s, %s",
-                len(possible_bbdicts),
-                tstr,
-                pair,
+            if conformer is not None:
+                conformer.molecule.with_centroid((0, 0, 0)).write(
+                    str(structure_dir / f"{name}_optc.mol")
+                )
+
+            analyse_cage(
+                database_path=database_path,
+                name=name,
+                forcefield=forcefield,
+                num_building_blocks=num_bbs,
             )
-
-            for bbdict in possible_bbdicts:
-                bbs = {
-                    bb: tuple(bbdict[1][idx])
-                    for idx, bb in enumerate(
-                        (tetra_bb, converging_bb, diverging_bb)
-                    )
-                }
-
-                name = f"{pair}_{tstr}_b{bbdict[0]}"
-
-                acage = stk.ConstructedMolecule(tfunction(building_blocks=bbs))
-                acage.write(structure_dir / f"{name}_unopt.mol")
-                # Optimise and save.
-                logging.info("building %s", name)
-
-                try:
-                    conformer = scram.toy.optimise_cage(
-                        molecule=acage,
-                        name=name,
-                        output_dir=calculation_dir,
-                        forcefield=forcefield,
-                        platform=None,
-                        database_path=database_path,
-                    )
-                    if conformer is not None:
-                        conformer.molecule.with_centroid((0, 0, 0)).write(
-                            str(structure_dir / f"{name}_optc.mol")
-                        )
-
-                    analyse_cage(
-                        database_path=database_path,
-                        name=name,
-                        forcefield=forcefield,
-                    )
-
-                except OpenMMException:
-                    pass
 
     make_plot(
         database_path=database_path,
-        pair=pair,
         figure_dir=figure_dir,
-        filename="sterics_2.png",
-    )
-
-    make_parity_plot(
-        database_path=database_path,
-        pair=pair,
-        figure_dir=figure_dir,
-        filename="sterics_3.png",
+        filename="sterics_1.png",
     )
 
 

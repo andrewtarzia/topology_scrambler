@@ -156,7 +156,7 @@ def precursors_to_forcefield(
         ):
             raise RuntimeError
         definer_dict["dd"] = ("bond", conv_meas["dd"] / cg_scale / 2, 1e5)
-        definer_dict["ds"] = ("bond", 1.0, 1e5)
+        definer_dict["ds"] = ("bond", 1.5, 1e5)
         definer_dict["de"] = ("bond", conv_meas["de"] / cg_scale, 1e5)
         definer_dict["eg"] = ("bond", conv_meas["eg"] / cg_scale, 1e5)
         definer_dict["gb"] = ("bond", conv_meas["gb"] / cg_scale, 1e5)
@@ -166,7 +166,7 @@ def precursors_to_forcefield(
         definer_dict["eddde"] = ("tors", "0134", 180, 50, 1)
         definer_dict["edds"] = ("tors", "0123", 180, 50, 1)
         definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
-        definer_dict["s"] = ("nb", 10.0, conv_meas["s"])
+        definer_dict["s"] = ("nb", conv_meas["se"], conv_meas["s"])
 
     else:
         raise NotImplementedError
