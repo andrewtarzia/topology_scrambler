@@ -7,6 +7,7 @@ import pathlib
 import cgexplore
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
@@ -241,8 +242,6 @@ def make_plot(
     )
     plt.close()
 
-    return energies
-
 
 def make_summary_plot(
     database_path: pathlib.Path,
@@ -255,6 +254,7 @@ def make_summary_plot(
 
     xs = ["1", "2", "4"]
     ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_c13", "la_c14", "la_c15"]
+    ys.reverse()
 
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
@@ -338,7 +338,108 @@ def make_summary_plot(
         bbox_inches="tight",
     )
     plt.close()
-    raise SystemExit
+
+
+def make_summary_plot2(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    systems = {
+        ("la_st5", "1"): {"name": "st5-1-1", "data": []},
+        ("la_st5", "2"): {"name": "st5-1-2", "data": []},
+        ("la_st5", "4"): {"name": "st5-1-4", "data": []},
+        ("la_st52", "1"): {"name": "st5-2-1", "data": []},
+        ("la_st52", "2"): {"name": "st5-2-2", "data": []},
+        ("la_st52", "4"): {"name": "st5-2-4", "data": []},
+        ("la_c1", "1"): {"name": "c1-1-1", "data": []},
+        ("la_c1", "2"): {"name": "c1-1-2", "data": []},
+        ("la_c1", "4"): {"name": "c1-1-4", "data": []},
+        ("la_c12", "1"): {"name": "c1-2-1", "data": []},
+        ("la_c12", "2"): {"name": "c1-2-2", "data": []},
+        ("la_c12", "4"): {"name": "c1-2-4", "data": []},
+        ("la_c13", "1"): {"name": "c1-3-1", "data": []},
+        ("la_c13", "2"): {"name": "c1-3-2", "data": []},
+        ("la_c13", "4"): {"name": "c1-3-4", "data": []},
+        ("la_c14", "1"): {"name": "c1-4-1", "data": []},
+        ("la_c14", "2"): {"name": "c1-4-2", "data": []},
+        ("la_c14", "4"): {"name": "c1-4-4", "data": []},
+        ("la_c15", "1"): {"name": "c1-5-1", "data": []},
+        ("la_c15", "2"): {"name": "c1-5-2", "data": []},
+        ("la_c15", "4"): {"name": "c1-5-4", "data": []},
+    }
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
+        if "pair" not in entry.properties:
+            continue
+
+        multi = entry.properties["multiplier"]
+        pair = entry.properties["pair"]
+        if (pair, multi) not in systems:
+            continue
+        energy = entry.properties["energy_per_bb"]
+
+        if entry.properties["num_components"] > 1:
+            continue
+
+        systems[(pair, multi)]["data"].append(energy)
+
+    rng = np.random.default_rng(seed=2)
+
+    for i, (pair, multi) in enumerate(systems):
+        min_energy = min(systems[(pair, multi)]["data"])
+
+        ax.scatter(
+            [
+                i + (2 * rng.random() - 1) * 0.3
+                for j in range(len(systems[(pair, multi)]["data"]))
+            ],
+            systems[(pair, multi)]["data"],
+            c="tab:blue",
+            alpha=0.3,
+            edgecolor="none",
+            s=30,
+            marker="o",
+            zorder=1,
+        )
+        ax.scatter(
+            i,
+            min_energy,
+            c="tab:orange",
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
+            marker="o",
+            zorder=2,
+        )
+
+        if multi == "4" and pair != "la_c15":
+            ax.axvline(x=i + 0.5, c="gray")
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xticks(list(range(len(systems))))
+    ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.set_ylim(0.01, 1000)
+    ax.axhline(y=0.3, c="k", ls="--")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
 
 
 def make_parity_plot(  # noqa: PLR0912, C901, PLR0915
@@ -489,9 +590,6 @@ def main() -> None:
 
     ligand_measures = {
         "la": {"dd": 7.0, "de": 1.5, "dde": 170, "eg": 1.4, "gb": 1.4},
-        "lf": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "ls1": {"ba": 2.8, "aa": 4.9, "bac": 150, "bacab": 180},
-        "ls9": {"ba": 2.8, "aa": 5.5, "bac": 165, "bacab": 180},
         "st5": {"ba": 2.8, "aa": 3.9, "bac": 120, "bacab": 180},
         "st52": {"ba": 2.8, "aa": 5.0, "bac": 110, "bacab": 180},
         "c1": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 180},
@@ -502,6 +600,25 @@ def main() -> None:
     }
 
     pairs = {
+        "la_st5": {
+            "converging_name": "la",
+            "diverging_name": "st5",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
         "la_c1": {
             "converging_name": "la",
             "diverging_name": "c1",
@@ -730,25 +847,6 @@ def main() -> None:
             ),
             "multipliers": (1, 2, 4),
         },
-        "la_st5": {
-            "converging_name": "la",
-            "diverging_name": "st5",
-            "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 4),
-        },
         "la_st52": {
             "converging_name": "la",
             "diverging_name": "st52",
@@ -876,6 +974,11 @@ def main() -> None:
         database_path=database_path,
         figure_dir=figure_dir,
         filename="rerun_3.png",
+    )
+    make_summary_plot2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="rerun_4.png",
     )
     for pair in pairs:
         make_plot(
