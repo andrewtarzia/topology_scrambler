@@ -113,11 +113,9 @@ def optimisation_sequence(
     cage: stk.Molecule,
     name: str,
     calculation_dir: pathlib.Path,
+    gulp_path: pathlib.Path,
 ) -> stk.Molecule:
     """Cage optimisation sequence."""
-    raise SystemExit("generalise dirs")
-    gulp_dir = pathlib.Path("/home/atarzia/software/gulp-6.1.2/Src/gulp")
-
     gulp1_output = calculation_dir / f"{name}_gulp1.mol"
     gulp2_output = calculation_dir / f"{name}_gulp2.mol"
 
@@ -126,7 +124,7 @@ def optimisation_sequence(
 
         logging.info("    UFF4MOF optimisation 1 of %s", name)
         gulp_opt = stko.GulpUFFOptimizer(
-            gulp_path=gulp_dir,
+            gulp_path=gulp_path,
             maxcyc=1000,
             metal_FF={46: "Pd4+2"},
             metal_ligand_bond_order="",
@@ -144,7 +142,7 @@ def optimisation_sequence(
         output_dir = calculation_dir / f"{name}_gulp2"
         logging.info("    UFF4MOF optimisation 2 of %s", name)
         gulp_opt = stko.GulpUFFOptimizer(
-            gulp_path=gulp_dir,
+            gulp_path=gulp_path,
             maxcyc=1000,
             metal_FF={46: "Pd4+2"},
             metal_ligand_bond_order="",
@@ -161,18 +159,16 @@ def optimisation_sequence(
     return cage.with_structure_from_file(gulp2_output)
 
 
-def desymm_optimisation_sequence(  # noqa: PLR0915
+def desymm_optimisation_sequence(  # noqa: PLR0915, PLR0913, PLR0912
     mol: stk.Molecule,
     name: str,
     charge: int,
     calc_dir: pathlib.Path,
+    gulp_path: pathlib.Path,
+    xtb_path: pathlib.Path,
+    solvent_str: str | None,
 ) -> stk.Molecule:
     """Cage optimisation sequence."""
-    raise SystemExit("generalise dirs")
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    gulp_path = pathlib.Path("/home/atarzia/software/gulp-6.1.2/Src/gulp")
-    xtb_path = wd / "env" / "bin" / "xtb"
-
     gulp1_output = calc_dir / f"{name}_gulp1.mol"
     gulp2_output = calc_dir / f"{name}_gulp2.mol"
     gulpmd_output = calc_dir / f"{name}_gulpmd.mol"
@@ -289,9 +285,14 @@ def desymm_optimisation_sequence(  # noqa: PLR0915
         logging.info("    loading %s", xtbopt_output)
         xtbopt_mol = mol.with_structure_from_file(str(xtbopt_output))
 
+    if solvent_str is None:
+        return mol.with_structure_from_file(str(xtbopt_output))
+
     if not xtbsolvopt_output.exists():
         output_dir = calc_dir / f"{name}_xtbsolvopt"
-        logging.info("    solvated xtb optimisation of %s", name)
+        logging.info(
+            "    solvated xtb optimisation of %s with %s", name, solvent_str
+        )
         xtb_opt = stko.XTB(
             xtb_path=xtb_path,
             output_dir=output_dir,
@@ -304,7 +305,7 @@ def desymm_optimisation_sequence(  # noqa: PLR0915
             calculate_hessian=False,
             unlimited_memory=True,
             solvent_model="alpb",
-            solvent="dmso",
+            solvent=solvent_str,
             solvent_grid="verytight",
         )
         xtbsolvopt_mol = xtb_opt.optimize(mol=xtbopt_mol)
