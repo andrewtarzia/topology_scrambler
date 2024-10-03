@@ -10,8 +10,9 @@ from collections import defaultdict
 import cgexplore
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
 import polars as pl
-import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
 from utilities import abead_d, binder_bead, cbead_d, eb_str, tetra_bead
@@ -164,13 +165,19 @@ def make_timings_plot(
 
 def make_summary_plot(
     database_path: pathlib.Path,
+    structure_dir: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, ax = plt.subplots(figsize=(8, 5))
     energies = defaultdict(list)
 
+    tops = figure_dir / "ivalidation_tops.txt"
+    if tops.exists():
+        tops.unlink()
+
+    to_save = []
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
     ).get_entries():
@@ -184,6 +191,14 @@ def make_summary_plot(
         if entry.properties["num_components"] > 1:
             continue
         energies[(multi, bite_angle)].append((round(energy, 4), vstr))
+        if energy < 0.3:  # noqa: PLR2004
+            to_save.append(entry.key)
+
+    with tops.open("w") as f:
+        for ts in sorted(to_save):
+            file_ = structure_dir / f"{ts}_optc.mol"
+            if file_.exists():
+                f.write(f"{file_} ")
 
     vmin = 0
     vmax = 1
@@ -247,7 +262,7 @@ def make_summary_plot(
     plt.close()
 
 
-def main() -> None:  # noqa: PLR0915
+def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
 
@@ -260,6 +275,7 @@ def main() -> None:  # noqa: PLR0915
         data_dir = wd / "ivalidation_data"
         database_path = data_dir / "ivalidation_run.db"
         timing_file = data_dir / "ivalidation_times.csv"
+        max_num = 1000
 
     else:
         calculation_dir = wd / "dvalidation_calculations"
@@ -268,8 +284,8 @@ def main() -> None:  # noqa: PLR0915
         data_dir = wd / "dvalidation_data"
         database_path = data_dir / "dvalidation_run.db"
         timing_file = data_dir / "dvalidation_times.csv"
+        max_num = None
 
-    graph_timing_file = data_dir / "graph_times.csv"
     calculation_dir.mkdir(exist_ok=True)
     structure_dir.mkdir(exist_ok=True)
     ligand_dir.mkdir(exist_ok=True)
@@ -293,7 +309,7 @@ def main() -> None:  # noqa: PLR0915
             ),
             "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
         }
-        for i, bac_angle in enumerate(range(40, 181, 5))
+        for i, bac_angle in enumerate(range(90, 181, 5))
     }
 
     if args.run:
@@ -336,15 +352,24 @@ def main() -> None:  # noqa: PLR0915
                     if args.nodoubles and topology_code.contains_doubles():
                         continue
 
+                    if max_num is not None and idx > max_num:
+                        break
+
                     # Do the construction.
                     nx_graph = topology_code.get_nx_graph()
-                    for mash_idx, nx_positions in enumerate(
-                        (
+                    # Handle problems with small topologies.
+                    try:
+                        vertex_position_setters = (
+                            None,
                             nx.spectral_layout(nx_graph, dim=3),
                             nx.spring_layout(nx_graph, dim=3),
                             nx.kamada_kawai_layout(nx_graph, dim=3),
-                            None,
                         )
+                    except ValueError:
+                        vertex_position_setters = (None,)
+
+                    for mash_idx, nx_positions in enumerate(
+                        vertex_position_setters
                     ):
                         if nx_positions is not None:
                             vertex_positions = {
@@ -373,6 +398,7 @@ def main() -> None:  # noqa: PLR0915
 
                         # Optimise and save.
                         logging.info("building %s", name)
+
                         try:
                             st1 = time.time()
                             conformer = opt_function(
@@ -436,14 +462,19 @@ def main() -> None:  # noqa: PLR0915
     )
     make_timings_plot(
         timing_file=timing_file,
-        graph_timing_file=graph_timing_file,
         figure_dir=figure_dir,
         filename="validationd_times.png"
         if args.nodoubles
         else "validation_times.png",
     )
 
+    raise SystemExit("plot parity of energy from validationd and validationi")
+    raise SystemExit("Search for m12 stk combo in jaon")
+    raise SystemExit(
+        "convert get_all_graphs to a db usage that allows you to contain "
+        "the information better, like types"
     )
+    raise SystemExit("rerun graph times")
 
 
 if __name__ == "__main__":

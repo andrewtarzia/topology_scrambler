@@ -306,7 +306,8 @@ def make_plot(
         if i == 4:  # noqa: PLR2004
             ax.set_ylabel(eb_str(), fontsize=16)
             axx.set_ylabel("num. structures", fontsize=16, color="tab:red")
-        axx.set_ylim(0, None)
+        axx.set_yticks([max([countsx[i] for i in countsx])])
+        # axx.set_ylim(0, None)  # noqa: ERA001
 
         leg = ax.legend(ncols=1, fontsize=12)
         for lh in leg.legend_handles:
