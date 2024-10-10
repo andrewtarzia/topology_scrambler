@@ -26,12 +26,8 @@ def main() -> None:
     figure_dir.mkdir(exist_ok=True)
     calculation_dir = wd / "calculations"
     calculation_dir.mkdir(exist_ok=True)
-    crest_path = wd / "env" / "bin" / "crest"
-    xtb_path = wd / "env" / "bin" / "xtb"
-
-    forcefield_info_file = figure_dir / "auto_ff_information.txt"
-    if forcefield_info_file.exists():
-        forcefield_info_file.unlink()
+    crest_path = pathlib.Path("/home/atarzia/software/crest_301/crest")
+    xtb_path = pathlib.Path("/home/atarzia/miniforge3/envs/tscram/bin/xtb")
 
     ligands = {
         "st5": {"input": ligand_dir / "st5_manual.mol"},
