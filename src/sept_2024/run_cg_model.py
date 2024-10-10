@@ -252,8 +252,8 @@ def make_summary_plot(
     fig, ax = plt.subplots(figsize=(5, 5))
     energies = {}
 
-    xs = ["1", "2", "4"]
-    ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_c13", "la_c14", "la_c15"]
+    xs = ["1", "2", "3", "4"]
+    ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_st5_11", "la_st52_11"]
     ys.reverse()
 
     for entry in cgexplore.utilities.AtomliteDatabase(
@@ -346,31 +346,39 @@ def make_summary_plot2(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(5, 5))
 
     systems = {
-        ("la_st5", "1"): {"name": "st5-1-1", "data": []},
-        ("la_st5", "2"): {"name": "st5-1-2", "data": []},
-        ("la_st5", "4"): {"name": "st5-1-4", "data": []},
-        ("la_st52", "1"): {"name": "st5-2-1", "data": []},
-        ("la_st52", "2"): {"name": "st5-2-2", "data": []},
-        ("la_st52", "4"): {"name": "st5-2-4", "data": []},
-        ("la_c1", "1"): {"name": "c1-1-1", "data": []},
-        ("la_c1", "2"): {"name": "c1-1-2", "data": []},
-        ("la_c1", "4"): {"name": "c1-1-4", "data": []},
-        ("la_c12", "1"): {"name": "c1-2-1", "data": []},
-        ("la_c12", "2"): {"name": "c1-2-2", "data": []},
-        ("la_c12", "4"): {"name": "c1-2-4", "data": []},
-        ("la_c13", "1"): {"name": "c1-3-1", "data": []},
-        ("la_c13", "2"): {"name": "c1-3-2", "data": []},
-        ("la_c13", "4"): {"name": "c1-3-4", "data": []},
-        ("la_c14", "1"): {"name": "c1-4-1", "data": []},
-        ("la_c14", "2"): {"name": "c1-4-2", "data": []},
-        ("la_c14", "4"): {"name": "c1-4-4", "data": []},
-        ("la_c15", "1"): {"name": "c1-5-1", "data": []},
-        ("la_c15", "2"): {"name": "c1-5-2", "data": []},
-        ("la_c15", "4"): {"name": "c1-5-4", "data": []},
+        ("la_st5", "1"): {"name": "st5-s-1", "data": []},
+        ("la_st5", "2"): {"name": "st5-s-2", "data": []},
+        ("la_st5", "4"): {"name": "st5-s-4", "data": []},
+        ("la_st52", "1"): {"name": "st5-l-1", "data": []},
+        ("la_st52", "2"): {"name": "st5-l-2", "data": []},
+        ("la_st52", "4"): {"name": "st5-l-4", "data": []},
+        ("la_c1", "1"): {"name": "st1-t0-1", "data": []},
+        ("la_c1", "2"): {"name": "st1-t0-2", "data": []},
+        ("la_c1", "4"): {"name": "st1-t0-4", "data": []},
+        ("la_c12", "1"): {"name": "st1-t60-1", "data": []},
+        ("la_c12", "2"): {"name": "st1-t60-2", "data": []},
+        ("la_c12", "4"): {"name": "st1-t60-4", "data": []},
+        # ("la_c13", "1"): {"name": "st1-3-1", "data": []},
+        # ("la_c13", "2"): {"name": "st1-3-2", "data": []},
+        # ("la_c13", "4"): {"name": "st1-3-4", "data": []},
+        # ("la_c14", "1"): {"name": "st1-4-1", "data": []},
+        # ("la_c14", "2"): {"name": "st1-4-2", "data": []},
+        # ("la_c14", "4"): {"name": "st1-4-4", "data": []},
+        # ("la_c15", "1"): {"name": "st1-5-1", "data": []},
+        # ("la_c15", "2"): {"name": "st1-5-2", "data": []},
+        # ("la_c15", "4"): {"name": "st1-5-4", "data": []},
+        ("la_st5_11", "1"): {"name": "st5-s,1:1-1", "data": []},
+        ("la_st5_11", "2"): {"name": "st5-s,1:1-2", "data": []},
+        ("la_st5_11", "3"): {"name": "st5-s,1:1-3", "data": []},
+        ("la_st52_11", "1"): {"name": "st5-l,1:1-1", "data": []},
+        ("la_st52_11", "2"): {"name": "st5-l,1:1-2", "data": []},
+        ("la_st52_11", "3"): {"name": "st5-l,1:1-3", "data": []},
     }
+    count_423 = 0
+    count_111 = 0
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
     ).get_entries():
@@ -388,9 +396,17 @@ def make_summary_plot2(
 
         systems[(pair, multi)]["data"].append(energy)
 
+        if "_11" in pair:
+            count_111 += 1
+        else:
+            count_423 += 1
+
+    logging.info("structures built, 4:2:3 %s, 1:1:1 %s", count_423, count_111)
     rng = np.random.default_rng(seed=2)
 
     for i, (pair, multi) in enumerate(systems):
+        if len(systems[(pair, multi)]["data"]) == 0:
+            continue
         min_energy = min(systems[(pair, multi)]["data"])
 
         ax.scatter(
@@ -400,7 +416,7 @@ def make_summary_plot2(
             ],
             systems[(pair, multi)]["data"],
             c="tab:blue",
-            alpha=0.3,
+            alpha=0.1,
             edgecolor="none",
             s=30,
             marker="o",
@@ -417,15 +433,18 @@ def make_summary_plot2(
             zorder=2,
         )
 
-        if multi == "4" and pair != "la_c15":
-            ax.axvline(x=i + 0.5, c="gray")
+    ax.axvline(x=2 + 0.5, c="gray")
+    ax.axvline(x=5 + 0.5, c="gray")
+    ax.axvline(x=8 + 0.5, c="gray")
+    ax.axvline(x=11 + 0.5, c="gray")
+    ax.axvline(x=14 + 0.5, c="gray")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks(list(range(len(systems))))
     ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_ylim(0.01, 1000)
+    ax.set_ylim(0.01, 200)
     ax.axhline(y=0.3, c="k", ls="--")
 
     fig.tight_layout()
@@ -436,122 +455,6 @@ def make_summary_plot2(
     )
     fig.savefig(
         figure_dir / filename.replace(".png", ".pdf"),
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
-def make_parity_plot(  # noqa: PLR0912, C901, PLR0915
-    database_path: pathlib.Path,
-    steric_database_path: pathlib.Path,
-    figure_dir: pathlib.Path,
-    filename: str,
-) -> dict:
-    """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 5))
-    energies = {}
-    steric_energies = {}
-
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
-        if "pair" not in entry.properties:
-            continue
-
-        multi = entry.properties["multiplier"]
-        pair = entry.properties["pair"]
-        if "lf_ls" in pair:
-            continue
-        vstr = entry.key.split("_")[-1]
-        energy = entry.properties["energy_per_bb"]
-
-        if pair not in energies:
-            energies[pair] = []
-
-        if entry.properties["num_components"] > 1:
-            continue
-        energies[pair].append((round(energy, 4), vstr, multi))
-
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        steric_database_path
-    ).get_entries():
-        if "pair" not in entry.properties:
-            continue
-
-        multi = entry.properties["multiplier"]
-        pair = entry.properties["pair"]
-        if "lf_ls" in pair:
-            continue
-        vstr = entry.key.split("_")[-1]
-        energy = entry.properties["energy_per_bb"]
-
-        if pair not in steric_energies:
-            steric_energies[pair] = []
-
-        if entry.properties["num_components"] > 1:
-            continue
-        steric_energies[pair].append((round(energy, 4), vstr, multi))
-
-    for pair in energies:
-        if "_11" in pair:
-            continue
-        sorted_energies = sorted(energies[pair], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-
-        pair11 = pair + "_11"
-        sorted_energies11 = sorted(energies[pair11], key=lambda p: p[0])
-        min_energy11 = sorted_energies11[0]
-        ec = "k" if min_energy[0] < 0.3 else "none"  # noqa: PLR2004
-
-        ax.scatter(
-            min_energy[0],
-            min_energy11[0],
-            c="tab:blue",
-            ec=ec,
-            s=60,
-        )
-        ax.text(
-            x=6,
-            y=min_energy11[0],
-            s=(
-                f"{pair}: {min_energy[2]}|{min_energy[1]} vs. "
-                f"{min_energy11[2]}|{min_energy11[1]}"
-            ),
-        )
-
-    for pair in steric_energies:
-        if "_11" in pair:
-            continue
-
-        sorted_energies = sorted(steric_energies[pair], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-
-        pair11 = pair + "_11"
-        sorted_energies11 = sorted(steric_energies[pair11], key=lambda p: p[0])
-        min_energy11 = sorted_energies11[0]
-        ec = "k" if min_energy[0] < 0.3 else "none"  # noqa: PLR2004
-
-        ax.scatter(
-            min_energy[0],
-            min_energy11[0],
-            c="tab:orange",
-            ec=ec,
-            s=60,
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(f"4:2:3 {eb_str()}", fontsize=16)
-    ax.set_ylabel(f"1:1:1 {eb_str()}", fontsize=16)
-
-    ax.set_xlim(0.0, 10)
-    ax.set_ylim(0.0, 10)
-
-    ax.plot((0, 10), (0, 10), c="k")
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
         dpi=360,
         bbox_inches="tight",
     )
@@ -586,7 +489,6 @@ def main() -> None:
     figure_dir.mkdir(exist_ok=True)
 
     database_path = data_dir / "rerun.db"
-    steric_database_path = wd / "steric_data" / "steric.db"
 
     ligand_measures = {
         "la": {"dd": 7.0, "de": 1.5, "dde": 170, "eg": 1.4, "gb": 1.4},
@@ -594,15 +496,31 @@ def main() -> None:
         "st52": {"ba": 2.8, "aa": 5.0, "bac": 110, "bacab": 180},
         "c1": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 180},
         "c12": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 120},
-        "c13": {"ba": 2.8, "aa": 3.4, "bac": 100, "bacab": 180},
-        "c14": {"ba": 2.8, "aa": 3.4, "bac": 110, "bacab": 180},
-        "c15": {"ba": 2.8, "aa": 3.4, "bac": 120, "bacab": 180},
     }
 
     pairs = {
         "la_st5": {
             "converging_name": "la",
             "diverging_name": "st5",
+            "stoichiometry_L_L_M": (4, 2, 3),
+            "converging": SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "diverging": cgexplore.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgexplore.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 4),
+        },
+        "la_st52": {
+            "converging_name": "la",
+            "diverging_name": "st52",
             "stoichiometry_L_L_M": (4, 2, 3),
             "converging": SixBead(
                 bead=cbead_c,
@@ -638,139 +556,6 @@ def main() -> None:
             ),
             "multipliers": (1, 2, 4),
         },
-        "la_st5_11": {
-            "converging_name": "la",
-            "diverging_name": "st5",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_st52_11": {
-            "converging_name": "la",
-            "diverging_name": "st52",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c1_11": {
-            "converging_name": "la",
-            "diverging_name": "c1",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c12_11": {
-            "converging_name": "la",
-            "diverging_name": "c12",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c13_11": {
-            "converging_name": "la",
-            "diverging_name": "c13",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c14_11": {
-            "converging_name": "la",
-            "diverging_name": "c14",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
-        "la_c15_11": {
-            "converging_name": "la",
-            "diverging_name": "c15",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
         "la_c12": {
             "converging_name": "la",
             "diverging_name": "c12",
@@ -790,10 +575,10 @@ def main() -> None:
             ),
             "multipliers": (1, 2, 4),
         },
-        "la_c13": {
+        "la_st5_11": {
             "converging_name": "la",
-            "diverging_name": "c13",
-            "stoichiometry_L_L_M": (4, 2, 3),
+            "diverging_name": "st5",
+            "stoichiometry_L_L_M": (1, 1, 1),
             "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
@@ -807,50 +592,12 @@ def main() -> None:
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 4),
+            "multipliers": (1, 2, 3),
         },
-        "la_c14": {
-            "converging_name": "la",
-            "diverging_name": "c14",
-            "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 4),
-        },
-        "la_c15": {
-            "converging_name": "la",
-            "diverging_name": "c15",
-            "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 4),
-        },
-        "la_st52": {
+        "la_st52_11": {
             "converging_name": "la",
             "diverging_name": "st52",
-            "stoichiometry_L_L_M": (4, 2, 3),
+            "stoichiometry_L_L_M": (1, 1, 1),
             "converging": SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
@@ -864,7 +611,7 @@ def main() -> None:
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 4),
+            "multipliers": (1, 2, 3),
         },
     }
 
@@ -962,13 +709,13 @@ def main() -> None:
                     except OpenMMException:
                         pass
 
-        _ = make_plot(
-            database_path=database_path,
-            pair=pair,
-            structure_dir=structure_dir,
-            figure_dir=figure_dir,
-            filename=f"rerun_1_{pair}.png",
-        )
+                make_plot(
+                    database_path=database_path,
+                    pair=pair,
+                    structure_dir=structure_dir,
+                    figure_dir=figure_dir,
+                    filename=f"rerun_1_{pair}.png",
+                )
 
     make_summary_plot(
         database_path=database_path,
@@ -988,12 +735,6 @@ def main() -> None:
             figure_dir=figure_dir,
             filename=f"rerun_1_{pair}.png",
         )
-    make_parity_plot(
-        database_path=database_path,
-        steric_database_path=steric_database_path,
-        figure_dir=figure_dir,
-        filename="rerun_2.png",
-    )
 
 
 if __name__ == "__main__":
