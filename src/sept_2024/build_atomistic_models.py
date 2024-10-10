@@ -23,7 +23,47 @@ react_factory = stk.DativeReactionFactory(
 )
 
 
-def main() -> None:  # noqa: PLR0915
+def calculate_xtb_energy(  # noqa: PLR0913
+    molecule: stk.Molecule,
+    name: str,
+    charge: int,
+    solvent: str,
+    calc_dir: pathlib.Path,
+    xtb_path: pathlib.Path,
+) -> float:
+    """Calculate energy."""
+    output_dir = calc_dir / f"{name}_xtbey"
+    output_file = calc_dir / f"{name}_xtb.ey"
+
+    if output_file.exists():
+        with output_file.open("r") as f:
+            lines = f.readlines()
+        for line in lines:
+            energy = float(line.rstrip())
+            break
+    else:
+        logging.info("xtb energy calculation of %s", name)
+        xtb = stko.XTBEnergy(
+            xtb_path=xtb_path,
+            output_dir=output_dir,
+            gfn_version=2,
+            num_cores=6,
+            charge=charge,
+            num_unpaired_electrons=0,
+            unlimited_memory=True,
+            solvent_model="alpb",
+            solvent=solvent,
+            solvent_grid="verytight",
+        )
+        energy = xtb.get_energy(mol=molecule)
+        with output_file.open("w") as f:
+            f.write(f"{energy}\n")
+
+    # In a.u.
+    return energy
+
+
+def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     calculation_dir = wd / "ratom_calculations"
@@ -77,6 +117,16 @@ def main() -> None:  # noqa: PLR0915
     }
 
     for tstr in topology_graphs:
+        match tstr:
+            case "3P6":
+                charge = 2 * 3
+            case "4P8":
+                charge = 2 * 4
+            case "4P82":
+                charge = 2 * 4
+            case _:
+                raise RuntimeError
+
         for pair in pairs:
             bb1, bb2 = pair
             name = f"p_{tstr}_{bb1}_{bb2}"
@@ -88,7 +138,6 @@ def main() -> None:  # noqa: PLR0915
                         buildingblocks[bb1]: (3, 4, 5, 6),
                         buildingblocks[bb2]: (7, 8),
                     }
-                    charge = 2 * 3
                     optimiser = stk.MCHammer(target_bond_length=2.0)
                     scale = 1
 
@@ -98,7 +147,6 @@ def main() -> None:  # noqa: PLR0915
                         buildingblocks[bb1]: (5, 7, 9, 11),
                         buildingblocks[bb2]: (4, 6, 8, 10),
                     }
-                    charge = 2 * 4
                     optimiser = stk.MCHammer(target_bond_length=2.0)
                     scale = 1
 
@@ -108,7 +156,6 @@ def main() -> None:  # noqa: PLR0915
                         buildingblocks[bb1]: (5, 6, 7, 8),
                         buildingblocks[bb2]: (4, 9, 10, 11),
                     }
-                    charge = 2 * 4
                     optimiser = stk.MCHammer(target_bond_length=5.0)
                     scale = 2
 
@@ -171,6 +218,57 @@ def main() -> None:  # noqa: PLR0915
             )
             cage_molecule = cage_molecule.with_centroid((0, 0, 0))
             cage_molecule.write(optc_file)
+
+    # Get all energies.
+    logging.info("system energies:")
+    for tstr in topology_graphs:
+        match tstr:
+            case "3P6":
+                charge = 2 * 3
+            case "4P8":
+                charge = 2 * 4
+            case "4P82":
+                charge = 2 * 4
+            case _:
+                raise RuntimeError
+
+        for buildingblock in buildingblocks:
+            if buildingblock == "pd":
+                continue
+            name = f"h_{tstr}_{buildingblock}"
+            optc_file = structure_dir / f"{name}_optc.mol"
+            if not optc_file.exists():
+                raise RuntimeError
+
+            logging.info(
+                "Extb/acetonitrile/au: %s",
+                calculate_xtb_energy(
+                    molecule=stk.BuildingBlock.init_from_file(optc_file),
+                    name=name,
+                    charge=charge,
+                    calc_dir=calculation_dir,
+                    solvent="acetonitrile",
+                ),
+            )
+
+        for pair in pairs:
+            bb1, bb2 = pair
+            name = f"p_{tstr}_{bb1}_{bb2}"
+            optc_file = structure_dir / f"{name}_optc.mol"
+
+            if not optc_file.exists():
+                raise RuntimeError
+
+            logging.info(
+                "Extb/acetonitrile/au: %s",
+                calculate_xtb_energy(
+                    molecule=stk.BuildingBlock.init_from_file(optc_file),
+                    name=name,
+                    charge=charge,
+                    calc_dir=calculation_dir,
+                    solvent="acetonitrile",
+                ),
+            )
 
 
 if __name__ == "__main__":
