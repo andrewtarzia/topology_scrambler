@@ -147,12 +147,15 @@ def make_plot(
     fig, ax = plt.subplots(figsize=(8, 5))
     vmin = 0
     vmax = 1.0
+    min_energy = float("inf")
     for entry in cgexplore.utilities.AtomliteDatabase(
         database_path
     ).get_entries():
         x = entry.properties["forcefield_dict"]["v_dict"]["a_c"]
         y = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
         c = entry.properties["energy_per_bb"]
+        logging.info("%s: x:%s, y:%s, e:%s", entry.key, x, y, c)
+        min_energy = min(c, min_energy)
 
         ax.scatter(
             x,
@@ -168,13 +171,13 @@ def make_plot(
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(r"$a$-$c$  [\AA]", fontsize=16)
-    ax.set_ylabel(r"$b$-$a$-$c$  [\deg]", fontsize=16)
+    ax.set_xlabel(r"$a$-$c$  [$\mathrm{\AA}$]", fontsize=16)
+    ax.set_ylabel("$b$-$a$-$c$  [$^\\circ$]", fontsize=16)
 
-    ax.axhline(y=110, c="k", ls="--")
-    ax.axhline(y=120, c="k", ls="--")
-    ax.axvline(x=3.9 / 4, c="k", ls="--")
-    ax.axvline(x=5.0 / 4, c="k", ls="--")
+    ax.axhline(y=90, c="k", ls="--", alpha=0.5)
+    ax.axhline(y=120, c="k", ls="--", alpha=0.5)
+    ax.axvline(x=3.4 / 4, c="k", ls="--", alpha=0.5)
+    ax.axvline(x=5.0 / 4, c="k", ls="--", alpha=0.5)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
     cmap = mpl.cm.Blues_r
@@ -305,8 +308,6 @@ def main() -> None:
         figure_dir=figure_dir,
         filename="scan_1.png",
     )
-
-    raise SystemExit("also show the angle in the long ligand")
 
 
 if __name__ == "__main__":
