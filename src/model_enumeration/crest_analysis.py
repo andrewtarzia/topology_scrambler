@@ -19,7 +19,7 @@ logging.basicConfig(
 
 def main() -> None:
     """Run script."""
-    raise SystemExit("update directories")
+    raise SystemExit("update directories to be new for non sept")
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     ligand_dir = wd / "ligands"
     ligand_dir.mkdir(exist_ok=True)
@@ -27,8 +27,8 @@ def main() -> None:
     figure_dir.mkdir(exist_ok=True)
     calculation_dir = wd / "calculations"
     calculation_dir.mkdir(exist_ok=True)
-    crest_path = wd / "env" / "bin" / "crest"
-    xtb_path = wd / "env" / "bin" / "xtb"
+    crest_path = pathlib.Path("/home/atarzia/software/crest_301/crest")
+    xtb_path = pathlib.Path("/home/atarzia/miniforge3/envs/tscram/bin/xtb")
 
     forcefield_info_file = figure_dir / "auto_ff_information.txt"
     if forcefield_info_file.exists():
