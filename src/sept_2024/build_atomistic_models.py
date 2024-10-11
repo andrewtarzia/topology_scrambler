@@ -241,13 +241,15 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 raise RuntimeError
 
             logging.info(
-                "Extb/acetonitrile/au: %s",
+                "%s: Extb/acetonitrile/au = %s",
+                name,
                 calculate_xtb_energy(
                     molecule=stk.BuildingBlock.init_from_file(optc_file),
                     name=name,
                     charge=charge,
                     calc_dir=calculation_dir,
                     solvent="acetonitrile",
+                    xtb_path=xtb_path,
                 ),
             )
 
@@ -260,13 +262,15 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 raise RuntimeError
 
             logging.info(
-                "Extb/acetonitrile/au: %s",
+                "%s: Extb/acetonitrile/au = %s",
+                name,
                 calculate_xtb_energy(
                     molecule=stk.BuildingBlock.init_from_file(optc_file),
                     name=name,
                     charge=charge,
                     calc_dir=calculation_dir,
                     solvent="acetonitrile",
+                    xtb_path=xtb_path,
                 ),
             )
 
