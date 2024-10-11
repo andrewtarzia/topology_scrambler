@@ -232,7 +232,7 @@ def graph_optimise_cage(  # noqa: PLR0913
     return min_energy_conformer
 
 
-def optimise_cage(  # noqa: PLR0913, C901
+def optimise_cage(  # noqa: PLR0913, C901, PLR0915, PLR0912
     molecule: stk.Molecule,
     name: str,
     output_dir: pathlib.Path,
@@ -333,7 +333,53 @@ def optimise_cage(  # noqa: PLR0913, C901
             output_dir=output_dir,
             platform=platform,
         )
+
         ensemble.add_conformer(conformer=conformer, source="shifted")
+
+    # Add neighbours to systematic scan.
+    if "scan" in name:
+        si, sj = name.split("_")[1].split("-")
+
+        potential_names = [
+            f"scan_{int(si)-1}-{int(sj)-1}",
+            f"scan_{int(si)-1}-{int(sj)}",
+            f"scan_{int(si)}-{int(sj)-1}",
+        ]
+    elif "ts_" in name:
+        _, tstr, si, sj, _at = name.split("_")
+
+        potential_names = []
+        for i in range(6):
+            potential_names.extend(
+                [
+                    f"ts_{tstr}_{int(si)-1}_{int(sj)-1}_{i}",
+                    f"ts_{tstr}_{int(si)-1}_{int(sj)}_{i}",
+                    f"ts_{tstr}_{int(si)}_{int(sj)-1}_{i}",
+                ]
+            )
+    else:
+        potential_names = []
+
+    for potential_name in potential_names:
+        potential_file = output_dir / f"{potential_name}_final.mol"
+        if not potential_file.exists():
+            continue
+        test_molecule = temp_molecule.with_structure_from_file(potential_file)
+        conformer = cgexplore.utilities.run_optimisation(
+            assigned_system=cgexplore.forcefields.AssignedSystem(
+                molecule=test_molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+            ),
+            name=name,
+            file_suffix="ns",
+            output_dir=output_dir,
+            platform=platform,
+        )
+        ensemble.add_conformer(conformer=conformer, source="ns")
 
     num_steps = 20000
     traj_freq = 500
@@ -389,39 +435,6 @@ def optimise_cage(  # noqa: PLR0913, C901
                 platform=platform,
             )
             ensemble.add_conformer(conformer=conformer, source="smd")
-
-    # Add neighbours to systematic scan.
-    if "scan" in name:
-        si, sj = name.split("_")[1].split("-")
-
-        potential_names = [
-            f"scan_{int(si)-1}-{int(sj)-1}",
-            f"scan_{int(si)-1}-{int(sj)}",
-            f"scan_{int(si)}-{int(sj)-1}",
-        ]
-
-        for potential_name in potential_names:
-            potential_file = output_dir / f"{potential_name}_final.mol"
-            if not potential_file.exists():
-                continue
-            test_molecule = temp_molecule.with_structure_from_file(
-                potential_file
-            )
-            conformer = cgexplore.utilities.run_optimisation(
-                assigned_system=cgexplore.forcefields.AssignedSystem(
-                    molecule=test_molecule,
-                    forcefield_terms=assigned_system.forcefield_terms,
-                    system_xml=assigned_system.system_xml,
-                    topology_xml=assigned_system.topology_xml,
-                    bead_set=assigned_system.bead_set,
-                    vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
-                ),
-                name=name,
-                file_suffix="ns",
-                output_dir=output_dir,
-                platform=platform,
-            )
-            ensemble.add_conformer(conformer=conformer, source="ns")
 
     ensemble.write_conformers_to_file()
 
