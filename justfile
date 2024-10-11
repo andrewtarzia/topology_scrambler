@@ -2,12 +2,6 @@
 default:
   @just --list
 
-# Build docs.
-docs:
-  rm -rf ./docs/build docs/source/_autosummary
-  make -C docs html
-  echo Docs are in $PWD/docs/build/html/index.html
-
 # Install development environment.
 dev:
   pip install -e '.[dev]'
@@ -26,17 +20,22 @@ check:
   ( set -x; ruff format --check . )
 
   echo
-  ( set -x; mypy src examples )
+  ( set -x; mypy src )
 
   echo
   ( set -x; pytest --cov=src --cov-report term-missing )
 
-  echo
-  ( set -x; make -C docs doctest )
-
   test $error = 0
+
 
 # Auto-fix code issues.
 fix:
   ruff format .
   ruff check --fix .
+
+
+# Build docs.
+docs:
+  rm -rf ./docs/build docs/source/_autosummary
+  make -C docs html
+  echo Docs are in $PWD/docs/build/html/index.html

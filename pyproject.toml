@@ -3,7 +3,7 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "desymmetrised_scripts"
+name = "topology_scrambler"
 maintainers = [
   { name = "Andrew Tarzia", email = "andrew.tarzia@gmail.com" },
 ]
@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.urls]
-github = "https://github.com/andrewtarzia/desymmetrised_scripts"
+github = "https://github.com/andrewtarzia/topology_scrambler"
 
 [tool.setuptools_scm]
 write_to = "src/scram/_version.py"
