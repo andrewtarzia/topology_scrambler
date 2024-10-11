@@ -84,6 +84,12 @@ steric_bead = cgexplore.molecular.CgBead(
     bead_type="s",
     coordination=1,
 )
+inner_bead = cgexplore.molecular.CgBead(
+    element_string="Ir",
+    bead_class="i",
+    bead_type="i",
+    coordination=2,
+)
 
 constant_definer_dict = {
     # Bonds.
@@ -107,12 +113,13 @@ constant_definer_dict = {
 }
 
 
-def precursors_to_forcefield(
+def precursors_to_forcefield(  # noqa: PLR0913
     pair: str,
     diverging: cgexplore.molecular.Precursor,
     converging: cgexplore.molecular.Precursor,
     conv_meas: dict[str, float],
     dive_meas: dict[str, float],
+    new_definer_dict: dict[str, tuple] | None = None,
 ) -> cgexplore.forcefields.ForceField:
     """Get a forcefield from precursor definitions."""
     # Define bead libraries.
@@ -126,10 +133,14 @@ def precursors_to_forcefield(
         binder_bead,
         tetra_bead,
         steric_bead,
+        inner_bead,
     )
     cgexplore.molecular.BeadLibrary(present_beads)
 
-    definer_dict = deepcopy(constant_definer_dict)
+    if new_definer_dict is None:
+        definer_dict = deepcopy(constant_definer_dict)
+    else:
+        definer_dict = deepcopy(new_definer_dict)
 
     cg_scale = 2
 
@@ -137,6 +148,8 @@ def precursors_to_forcefield(
         beads = converging.get_bead_set()
         if "d" not in beads or "e" not in beads or "g" not in beads:
             raise RuntimeError
+        if "d" in conv_meas:
+            definer_dict["d"] = ("nb", 10.0, conv_meas["d"])
         definer_dict["dd"] = ("bond", conv_meas["dd"] / cg_scale, 1e5)
         definer_dict["de"] = ("bond", conv_meas["de"] / cg_scale, 1e5)
         definer_dict["eg"] = ("bond", conv_meas["eg"] / cg_scale, 1e5)
@@ -155,16 +168,15 @@ def precursors_to_forcefield(
             or "s" not in beads
         ):
             raise RuntimeError
-        definer_dict["dd"] = ("bond", conv_meas["dd"] / cg_scale / 2, 1e5)
-        definer_dict["ds"] = ("bond", 1.5, 1e5)
+        definer_dict["di"] = ("bond", conv_meas["dd"] / cg_scale / 2, 1e5)
+        definer_dict["is"] = ("bond", conv_meas["is"] / cg_scale, 1e5)
         definer_dict["de"] = ("bond", conv_meas["de"] / cg_scale, 1e5)
         definer_dict["eg"] = ("bond", conv_meas["eg"] / cg_scale, 1e5)
         definer_dict["gb"] = ("bond", conv_meas["gb"] / cg_scale, 1e5)
-        definer_dict["dde"] = ("angle", conv_meas["dde"], 1e2)
-        definer_dict["ddd"] = ("angle", 180, 1e2)
-        definer_dict["dds"] = ("angle", 90, 1e2)
-        definer_dict["eddde"] = ("tors", "0134", 180, 50, 1)
-        definer_dict["edds"] = ("tors", "0123", 180, 50, 1)
+        definer_dict["ide"] = ("angle", conv_meas["ide"], 1e2)
+        definer_dict["did"] = ("angle", 180, 1e2)
+        definer_dict["dis"] = ("angle", 90, 1e2)
+        definer_dict["edide"] = ("tors", "0134", 180, 50, 1)
         definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
         definer_dict["s"] = ("nb", conv_meas["se"], conv_meas["s"])
 
@@ -246,21 +258,24 @@ class StericSixBead(cgexplore.molecular.Precursor):
         bead: cgexplore.molecular.CgBead,
         abead1: cgexplore.molecular.CgBead,
         abead2: cgexplore.molecular.CgBead,
+        ibead: cgexplore.molecular.CgBead,
         sbead: cgexplore.molecular.CgBead,
     ) -> None:
         """Initialize a precursor."""
         self._bead = bead
         self._abead1 = abead1
         self._abead2 = abead2
+        self._ibead = ibead
         self._sbead = sbead
         self._name = (
             f"6S2{bead.bead_type}{abead1.bead_type}{abead2.bead_type}"
-            f"{sbead.bead_type}"
+            f"{sbead.bead_type}{ibead.bead_type}"
         )
         self._bead_set = {
             bead.bead_type: bead,
             abead1.bead_type: abead1,
             abead2.bead_type: abead2,
+            ibead.bead_type: ibead,
             sbead.bead_type: sbead,
         }
 
@@ -273,7 +288,7 @@ class StericSixBead(cgexplore.molecular.Precursor):
         self._building_block = stk.BuildingBlock(
             smiles=(
                 f"[{abead2.element_string}][{abead1.element_string}]"
-                f"[{bead.element_string}][{bead.element_string}]"
+                f"[{bead.element_string}][{ibead.element_string}]"
                 f"([{sbead.element_string}])[{bead.element_string}]"
                 f"[{abead1.element_string}][{abead2.element_string}]"
             ),
