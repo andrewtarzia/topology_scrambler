@@ -444,7 +444,7 @@ def make_summary_plot2(
     ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_ylim(0.01, 200)
+    ax.set_ylim(0.1, None)
     ax.axhline(y=0.3, c="k", ls="--")
 
     fig.tight_layout()
