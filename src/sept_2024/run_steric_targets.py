@@ -1,5 +1,6 @@
 """Script to generate and optimise CG models."""
 
+import itertools as it
 import logging
 import pathlib
 
@@ -17,6 +18,7 @@ from utilities import (
     cbead_d,
     eb_str,
     ebead_c,
+    inner_bead,
     precursors_to_forcefield,
     steric_bead,
     tetra_bead,
@@ -134,12 +136,14 @@ def analyse_cage(  # noqa: C901
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy / num_building_blocks,
                 "tstr": name.split("_")[1],
+                "attempt": name.split("_")[-1],
             },
         )
 
 
 def make_plot(
     database_path: pathlib.Path,
+    nonsteric_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
@@ -151,29 +155,36 @@ def make_plot(
         database_path
     ).get_entries():
         tstr = entry.properties["tstr"]
-        # x = 0.5 * (
-        #     entry.properties["forcefield_dict"]["v_dict"]["a"]
-        #     + entry.properties["forcefield_dict"]["v_dict"]["s"]
-        # )
+        a = entry.properties["attempt"]
         x = entry.properties["forcefield_dict"]["v_dict"]["s"]
+        x2 = entry.properties["forcefield_dict"]["v_dict"]["i_s"]
         y = entry.properties["energy_per_bb"]
-        if tstr not in datas:
-            datas[tstr] = []
-        datas[tstr].append((x, y))
 
-    for tstr in datas:
+        if (tstr, x2) not in datas:
+            datas[(tstr, x2)] = []
+        datas[(tstr, x2)].append((x, y, a))
+
+    for tstr, x2 in datas:
+        nonsteric_data = cgexplore.utilities.AtomliteDatabase(nonsteric_path)
+
+        nonsteric_energy = nonsteric_data.get_entry(key="scan_6-5").properties[
+            "energy_per_bb"
+        ]
+
+        datas[(tstr, x2)] = [(-0.2, nonsteric_energy)] + datas[(tstr, x2)]
+
         ax.plot(
-            [i[0] for i in datas[tstr]],
-            [i[1] for i in datas[tstr]],
+            [i[0] for i in datas[(tstr, x2)]],
+            [i[1] for i in datas[(tstr, x2)]],
             alpha=1.0,
             marker="o",
             mec="k",
-            markersize=8,
-            label=tstr,
+            markersize=10,
+            label=f"{tstr}-$ds$:{round(x2, 1)}",
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(r"$s \sigma$  [\AA]", fontsize=16)
+    ax.set_xlabel(r"$\sigma_{s}$  [\AA]", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.axhline(y=0.3, c="k", ls="--")
     ax.legend(fontsize=16)
@@ -191,9 +202,13 @@ def make_plot(
     plt.close()
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """Run script."""
-    raise SystemExit("there is something wrong with this force.")
+    raise SystemExit(
+        "This is paused for now, because there are some strangeness in the model:"
+        " should go back to the Stericsixbead, but set the inner (i) to eps/sigma=0"
+        " And then figure out why the 4P82 and 4P8 optimisation do not go well..."
+    )
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
     calculation_dir = wd / "tsteric_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -206,6 +221,7 @@ def main() -> None:
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
 
+    nonsteric_path = wd / "scan_data" / "scan.db"
     database_path = data_dir / "tsteric.db"
 
     pair = "la_st5"
@@ -213,6 +229,7 @@ def main() -> None:
         bead=cbead_c,
         abead1=abead_c,
         abead2=ebead_c,
+        ibead=inner_bead,
         sbead=steric_bead,
     )
     converging_name = "la"
@@ -226,40 +243,47 @@ def main() -> None:
         # ("4P82", scram.topologies.M4L82, (1, 1)),
     )
 
-    s_range = [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        # 1.0,
-        # 1.25,
-        # 1.5,
-        # 1.75,
-        # 2.0,
-        # 2.25,
-        # 2.5,
-        # 2.75,
-        # 3.0,
-        # 3.25,
-        # 3.5,
-        # 3.75,
-        # 4.0,
-    ]
+    is_range = [0.5]  # , 1.0, 2.0, 3.0, 4.0]
+    s_range = [0.0, 0.1]  # 0.25, 0.5, 0.75]
+
+    new_definer_dict = {
+        # Bonds.
+        "mb": ("bond", 1.0, 1e5),
+        # Angles.
+        "bmb": ("pyramid", 90, 1e2),
+        "mba": ("angle", 180, 1e2),
+        "mbg": ("angle", 180, 1e2),
+        "aca": ("angle", 180, 1e2),
+        "egb": ("angle", 120, 1e2),
+        "deg": ("angle", 180, 1e2),
+        # Torsions.
+        # Nonbondeds.
+        "m": ("nb", 10.0, 1.0),
+        "d": ("nb", 10.0, 1.0),
+        "e": ("nb", 10.0, 1.0),
+        "a": ("nb", 10.0, 1.0),
+        "b": ("nb", 10.0, 1.0),
+        "c": ("nb", 10.0, 1.0),
+        "g": ("nb", 10.0, 1.0),
+        "i": ("nb", 10.0, 1.0),
+    }
 
     logging.info("building %s structures", len(s_range) * len(topologies))
-    for i, s_value in enumerate(s_range):
+    for (i, s_value), (j, is_value) in it.product(
+        enumerate(s_range), enumerate(is_range)
+    ):
         ligand_measures = {
             "la": {
                 "dd": 7.0,
                 "de": 1.5,
-                "dde": 170,
+                "ide": 170,
                 "eg": 1.4,
                 "gb": 1.4,
                 "s": s_value,
-                "se": 10.0,
+                "se": 0,  # 10.0 if s_value > 0.0 else 0.0,
+                "is": is_value,
             },
-            "st5": {"ba": 2.8, "aa": 3.9, "bac": 120, "bacab": 180},
+            "st5": {"ba": 2.8, "aa": 5.0, "bac": 120, "bacab": 180},
         }
 
         forcefield = precursors_to_forcefield(
@@ -268,7 +292,9 @@ def main() -> None:
             converging=converging,
             conv_meas=ligand_measures[converging_name],
             dive_meas=ligand_measures[diverging_name],
+            new_definer_dict=new_definer_dict,
         )
+
         converging_bb = scram.toy.prepare_building_block(
             precursor=converging,
             forcefield=forcefield,
@@ -289,74 +315,87 @@ def main() -> None:
         )
 
         for tstr, tfunction, _ in topologies:
-            name = f"ts_{tstr}_{i}"
-            logging.info("building %s", name)
-            if tstr == "3P6":
-                cage = stk.ConstructedMolecule(
-                    tfunction(
-                        building_blocks={
-                            tetra_bb: (0, 1, 2),
-                            converging_bb: (3, 4, 5, 6),
-                            diverging_bb: (7, 8),
-                        },
-                        vertex_positions=None,
+            for attempt in range(6):
+                name = f"ts_{tstr}_{i}_{j}_{attempt}"
+                logging.info("building %s", name)
+                if tstr == "3P6":
+                    cage = stk.ConstructedMolecule(
+                        tfunction(
+                            building_blocks={
+                                tetra_bb: (0, 1, 2),
+                                converging_bb: (3, 4, 5, 6),
+                                diverging_bb: (7, 8),
+                            },
+                            vertex_positions=None,
+                            scale_multiplier=1.0,
+                        )
                     )
-                )
-                num_bbs = 9
+                    num_bbs = 9
 
-            if tstr == "4P8":
-                cage = stk.ConstructedMolecule(
-                    tfunction(
-                        building_blocks={
-                            tetra_bb: (0, 1, 2, 3),
-                            converging_bb: (4, 6, 8, 10),
-                            diverging_bb: (5, 7, 9, 11),
-                        },
-                        vertex_positions=None,
+                if tstr == "4P8":
+                    cage = stk.ConstructedMolecule(
+                        tfunction(
+                            building_blocks={
+                                tetra_bb: (0, 1, 2, 3),
+                                converging_bb: (4, 6, 8, 10),
+                                diverging_bb: (5, 7, 9, 11),
+                            },
+                            vertex_positions=None,
+                            scale_multiplier=0.5,
+                        )
                     )
-                )
-                num_bbs = 12
+                    num_bbs = 12
+                    cage.write(structure_dir / f"{name}_unopt.mol")
+                    raise SystemExit
 
-            if tstr == "4P82":
-                cage = stk.ConstructedMolecule(
-                    tfunction(
-                        building_blocks={
-                            tetra_bb: (0, 1, 2, 3),
-                            converging_bb: (5, 6, 7, 8),
-                            diverging_bb: (4, 9, 10, 11),
-                        },
-                        vertex_positions=None,
+                if tstr == "4P82":
+                    cage = stk.ConstructedMolecule(
+                        tfunction(
+                            building_blocks={
+                                tetra_bb: (0, 1, 2, 3),
+                                converging_bb: (5, 6, 7, 8),
+                                diverging_bb: (4, 9, 10, 11),
+                            },
+                            vertex_positions=None,
+                            scale_multiplier=0.5,
+                        )
                     )
+                    num_bbs = 12
+                    cage.write(structure_dir / f"{name}_unopt.mol")
+                    raise SystemExit
+
+                cage.write(structure_dir / f"{name}_unopt.mol")
+
+                conformer = scram.toy.optimise_cage(
+                    molecule=cage,
+                    name=name,
+                    output_dir=calculation_dir,
+                    forcefield=forcefield,
+                    platform=None,
+                    database_path=database_path,
                 )
-                num_bbs = 12
+                if conformer is not None:
+                    conformer.molecule.with_centroid((0, 0, 0)).write(
+                        str(structure_dir / f"{name}_optc.mol")
+                    )
 
-            cage.write(structure_dir / f"{name}_unopt.mol")
-
-            conformer = scram.toy.optimise_cage(
-                molecule=cage,
-                name=name,
-                output_dir=calculation_dir,
-                forcefield=forcefield,
-                platform=None,
-                database_path=database_path,
-            )
-            if conformer is not None:
-                conformer.molecule.with_centroid((0, 0, 0)).write(
-                    str(structure_dir / f"{name}_optc.mol")
+                analyse_cage(
+                    database_path=database_path,
+                    name=name,
+                    forcefield=forcefield,
+                    num_building_blocks=num_bbs,
                 )
-
-            analyse_cage(
-                database_path=database_path,
-                name=name,
-                forcefield=forcefield,
-                num_building_blocks=num_bbs,
-            )
 
     make_plot(
         database_path=database_path,
+        nonsteric_path=nonsteric_path,
         figure_dir=figure_dir,
         filename="sterics_1.png",
     )
+
+    raise SystemExit("test what happens if all sigmas are reduced.")
+    raise SystemExit("try and find which angle is causing the issue.")
+    raise SystemExit("there is something wrong with this force.")
 
 
 if __name__ == "__main__":
