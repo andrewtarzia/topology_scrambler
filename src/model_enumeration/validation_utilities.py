@@ -1,18 +1,16 @@
 """Script to generate and optimise CG models."""
 
-import argparse
 import logging
 import pathlib
 import warnings
 from collections import defaultdict
 
 import cgexplore
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
-from utilities import abead_d, binder_bead, cbead_d, eb_str, tetra_bead
+from utilities import eb_str
 
 import scram
 
@@ -22,21 +20,34 @@ logging.basicConfig(
 )
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
-tstr_cmap = mpl.colormaps["tab20"].resampled(20)
-multi_cmap = {
-    "1": tstr_cmap(0.0),
-    "2": tstr_cmap(0.05),
-    "3": tstr_cmap(0.1),
-    "4": tstr_cmap(0.15),
-    "5": tstr_cmap(0.2),
-    "6": tstr_cmap(0.25),
-    "7": tstr_cmap(0.30),
-    "8": tstr_cmap(0.35),
-    "9": tstr_cmap(0.40),
-    "10": tstr_cmap(0.45),
-    "11": tstr_cmap(0.5),
-    "12": tstr_cmap(0.55),
-}
+
+
+cbead_d = cgexplore.molecular.CgBead(
+    element_string="Ag",
+    bead_class="c",
+    bead_type="c",
+    coordination=2,
+)
+abead_d = cgexplore.molecular.CgBead(
+    element_string="Ba",
+    bead_class="a",
+    bead_type="a",
+    coordination=2,
+)
+
+
+binder_bead = cgexplore.molecular.CgBead(
+    element_string="Pb",
+    bead_class="b",
+    bead_type="b",
+    coordination=2,
+)
+tetra_bead = cgexplore.molecular.CgBead(
+    element_string="Pd",
+    bead_class="m",
+    bead_type="m",
+    coordination=4,
+)
 
 
 def analyse_cage(  # noqa: C901
@@ -198,26 +209,12 @@ def get_validation_forcefield(
     )
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run",
-        action="store_true",
-        help="set to iterate through structure functions",
-    )
-    parser.add_argument(
-        "--targetted",
-        action="store_true",
-        help="set to do non-naive tests",
-    )
-    return parser.parse_args()
-
-
 def make_plot(
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
     filename: str,
 ) -> None:
+    raise SystemExit("clean up")
     """Plot energies."""
     energies = defaultdict(list)
     bacs = defaultdict(list)
@@ -326,6 +323,7 @@ def make_plot(
 
 
 def main() -> None:
+    raise SystemExit("clean up")
     """Run script."""
     args = _parse_args()
 
@@ -472,7 +470,3 @@ def main() -> None:
         figure_dir=figure_dir,
         filename="validation_1.png",
     )
-
-
-if __name__ == "__main__":
-    main()
