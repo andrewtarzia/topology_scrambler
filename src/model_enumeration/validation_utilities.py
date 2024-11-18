@@ -7,6 +7,7 @@ import warnings
 from collections import defaultdict
 
 import cgexplore
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import stko
 from openmm import OpenMMException, openmm
@@ -21,20 +22,20 @@ logging.basicConfig(
 )
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
-
+tstr_cmap = mpl.colormaps["tab20"].resampled(20)
 multi_cmap = {
-    "1": "#ff0000",
-    "2": "#fe800a",
-    "3": "#fffe04",
-    "4": "#7cff17",
-    "5": "#07ff1a",
-    "6": "#00ff7e",
-    "7": "#0cfeff",
-    "8": "#107eff",
-    "9": "#0014ff",
-    "10": "#7f00ff",
-    "11": "#fe00fd",
-    "12": "#ff0080",
+    "1": tstr_cmap(0.0),
+    "2": tstr_cmap(0.05),
+    "3": tstr_cmap(0.1),
+    "4": tstr_cmap(0.15),
+    "5": tstr_cmap(0.2),
+    "6": tstr_cmap(0.25),
+    "7": tstr_cmap(0.30),
+    "8": tstr_cmap(0.35),
+    "9": tstr_cmap(0.40),
+    "10": tstr_cmap(0.45),
+    "11": tstr_cmap(0.5),
+    "12": tstr_cmap(0.55),
 }
 
 

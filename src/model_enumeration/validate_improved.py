@@ -16,10 +16,10 @@ import polars as pl
 from openmm import OpenMMException
 from rdkit import RDLogger
 from utilities import abead_d, binder_bead, cbead_d, eb_str, tetra_bead
-from validate_cg_model import (
+from validation_utilities import (
     analyse_cage,
     get_validation_forcefield,
-    make_plot,
+    multi_cmap,
 )
 
 import scram
@@ -48,10 +48,174 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def make_plot(
+    figure_dir: pathlib.Path,
+    database_path: pathlib.Path,
+    filename: str,
+) -> None:
+    """Plot energies."""
+    energies = defaultdict(list)
+    bacs = defaultdict(list)
+    for entry in cgexplore.utilities.AtomliteDatabase(
+        database_path
+    ).get_entries():
+        multi = entry.properties["multiplier"]
+        energy = entry.properties["energy_per_bb"]
+        bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
+
+        if entry.properties["num_components"] > 1:
+            continue
+
+        energies[multi].append((bac_angle, energy, entry.key))
+        bacs[bac_angle].append((multi, energy, entry.key))
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    axx = ax.twinx()
+    countsx = {}
+    for i, multi in enumerate(sorted([int(i) for i in energies])):
+        instable = False
+        idx = str(multi)
+        min_energy_tuple = min(energies[idx], key=lambda p: p[1])
+
+        bac_line = []
+        for bac_angle in sorted(bacs):
+            rel_energies = [i[1] for i in energies[idx] if i[0] == bac_angle]
+            if len(rel_energies) == 0:
+                continue
+            min_energy = min(rel_energies)
+            bac_line.append((bac_angle, min_energy))
+
+            stable = [
+                i
+                for i in energies[idx]
+                if i[0] == bac_angle and i[1] < 0.3  # noqa: PLR2004
+            ]
+            if len(stable) > 0:
+                logging.info("stable cages: %s", stable)
+                instable = True
+            if bac_angle not in countsx:
+                countsx[bac_angle] = 0
+            countsx[bac_angle] += len(stable)
+
+        ax.plot(
+            [i[0] for i in bac_line],
+            [i[1] for i in bac_line],
+            c=multi_cmap[str(multi)],
+            ls="-",
+            marker="o",
+            markersize=4,
+            alpha=1.0,
+            zorder=2,
+            label=(
+                f"M{idx}: {min_energy_tuple[0]}, {min_energy_tuple[2]}"
+                if instable
+                else f"M{idx}"
+            ),
+        )
+
+        ax.tick_params(axis="both", which="major", labelsize=16)
+
+        ax.set_yscale("log")
+        ax.axhline(y=0.3, c="k", ls="--")
+
+    axx.plot(
+        list(countsx),
+        [countsx[i] for i in countsx],
+        c="gray",
+        marker="D",
+        mec="k",
+        zorder=2,
+        markersize=3.0,
+    )
+    axx.tick_params(
+        axis="both",
+        which="major",
+        labelsize=16,
+        labelcolor="gray",
+    )
+    ax.set_ylabel(eb_str(), fontsize=16)
+    axx.set_ylabel("num. stable structures", fontsize=16, color="gray")
+    axx.set_ylim(0, None)
+
+    leg = ax.legend(ncols=1, fontsize=12)
+    for lh in leg.legend_handles:
+        lh.set_alpha(1)
+
+    ax.set_xlabel("target $bac$ angle [deg]", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def make_parity_plot(
+    figure_dir: pathlib.Path,
+    database_path: pathlib.Path,
+    full_database_path: pathlib.Path,
+    filename: str,
+) -> None:
+    """Plot energies."""
+    db = cgexplore.utilities.AtomliteDatabase(database_path)
+    full_db = cgexplore.utilities.AtomliteDatabase(full_database_path)
+
+    energies = defaultdict(list)
+    for entry in db.get_entries():
+        if not full_db.has_molecule(entry.key):
+            continue
+
+        multi = entry.properties["multiplier"]
+        energy1 = entry.properties["energy_per_bb"]
+        energy2 = full_db.get_entry(entry.key).properties["energy_per_bb"]
+
+        if entry.properties["num_components"] > 1:
+            continue
+
+        energies[multi].append((energy1, energy2))
+
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    for multi in energies:
+        ax.scatter(
+            [i[0] for i in energies[multi]],
+            [i[1] for i in energies[multi]],
+            c=multi_cmap[str(multi)],
+            ec="k",
+            alpha=1.0,
+            zorder=2,
+            s=20,
+            label=f"M{multi}",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.axhline(y=0.3, c="k", ls="--")
+    ax.axvline(x=0.3, c="k", ls="--")
+    ax.plot((0.001, 100), (0.001, 100), c="gray", ls="-", zorder=-1)
+
+    ax.set_xlabel(f"1st {eb_str()}", fontsize=16)
+    ax.set_ylabel(f"2nd {eb_str()}", fontsize=16)
+
+    leg = ax.legend(ncols=1, fontsize=12)
+    for lh in leg.legend_handles:
+        lh.set_alpha(1)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def make_timings_plot(
     figure_dir: pathlib.Path,
     timing_file: pathlib.Path,
-    graph_timing_file: pathlib.Path,
     filename: str,
 ) -> None:
     """Plot energies."""
@@ -69,20 +233,7 @@ def make_timings_plot(
         ],
     )
 
-    graph_timings = pl.read_csv(
-        graph_timing_file,
-        has_header=False,
-        new_columns=[
-            "num_vertices",
-            "algtype",
-            "num_found",
-            "gen-time/s",
-        ],
-    )
-
-    nx_graph_timings = graph_timings.filter(pl.col("algtype") == "nx")
-    rx_graph_timings = graph_timings.filter(pl.col("algtype") == "rx")
-    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(16, 5))
+    fig, ax = plt.subplots(figsize=(8, 5))
     ax.scatter(
         timings["num_vertices"],
         timings["opt-time/s"],
@@ -101,58 +252,12 @@ def make_timings_plot(
         label="analysis time",
         ec="k",
     )
-    ax.scatter(
-        nx_graph_timings["num_vertices"],
-        nx_graph_timings["gen-time/s"],
-        c="tab:green",
-        marker="s",
-        s=100,
-        alpha=1,
-        label="nx-graph time",
-        ec="k",
-    )
-    ax.scatter(
-        rx_graph_timings["num_vertices"],
-        rx_graph_timings["gen-time/s"],
-        c="tab:purple",
-        marker="o",
-        s=100,
-        alpha=1,
-        label="rx-graph time",
-        ec="k",
-    )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("num. vertices", fontsize=16)
     ax.set_ylabel("time [s]", fontsize=16)
     ax.set_yscale("log")
     ax.legend(fontsize=16)
-
-    ax1.plot(
-        nx_graph_timings["num_vertices"],
-        nx_graph_timings["num_found"],
-        c="tab:green",
-        marker="s",
-        markersize=12,
-        alpha=1,
-        label="nx-graph time",
-        mec="k",
-    )
-    ax1.plot(
-        rx_graph_timings["num_vertices"],
-        rx_graph_timings["num_found"],
-        c="tab:purple",
-        marker="o",
-        markersize=10,
-        alpha=1,
-        label="rx-graph time",
-        mec="k",
-    )
-
-    ax1.tick_params(axis="both", which="major", labelsize=16)
-    ax1.set_xlabel("num. vertices", fontsize=16)
-    ax1.set_ylabel("num. graphs found", fontsize=16)
-    ax1.set_yscale("log")
 
     fig.tight_layout()
     fig.savefig(
@@ -219,7 +324,7 @@ def make_summary_plot(
             vmax=vmax,
             alpha=1.0,
             edgecolor="k",
-            s=100,
+            s=200,
             marker="s",
             cmap="Blues_r",
         )
@@ -452,7 +557,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validationi_2.png",
     )
-
     make_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -467,14 +571,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validation_times.png",
     )
-
-    raise SystemExit("plot parity of energy from validationd and validationi")
-    raise SystemExit("Search for m12 stk combo in jaon")
-    raise SystemExit(
-        "convert get_all_graphs to a db usage that allows you to contain "
-        "the information better, like types"
-    )
-    raise SystemExit("rerun graph times")
+    if args.nodoubles:
+        make_parity_plot(
+            database_path=database_path,
+            full_database_path=wd / "ivalidation_data" / "ivalidation_run.db",
+            figure_dir=figure_dir,
+            filename="validationd_3.png",
+        )
 
 
 if __name__ == "__main__":
