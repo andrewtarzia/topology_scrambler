@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import polars as pl
 import stk
 import stko
-from env_set import EnvVariables
+from ds_utilities import EnvVariables
 
 logging.basicConfig(
     level=logging.INFO,
