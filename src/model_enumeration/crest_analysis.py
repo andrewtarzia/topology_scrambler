@@ -20,7 +20,7 @@ logging.basicConfig(
 def main() -> None:
     """Run script."""
     raise SystemExit("update directories to be new for non sept")
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     ligand_dir = wd / "ligands"
     ligand_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"

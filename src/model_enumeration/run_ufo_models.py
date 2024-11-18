@@ -472,20 +472,18 @@ def main() -> None:
     """Run script."""
     args = _parse_args()
 
-    raise SystemExit("update directories")
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "rerun_calculations"
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    calculation_dir = wd / "ufo_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "rerun_structures"
+    structure_dir = wd / "ufo_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "rerun_ligands"
+    ligand_dir = wd / "ufo_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "rerun_data"
+    data_dir = wd / "ufo_data"
     data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "rerun.db"
-    steric_database_path = wd / "steric_data" / "steric.db"
+    database_path = data_dir / "ufo.db"
 
     ligand_measures = {
         "lf": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
