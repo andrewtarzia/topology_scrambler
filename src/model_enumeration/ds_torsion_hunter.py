@@ -75,7 +75,6 @@ definer_dict_2p3 = {
     "bao": ("angle", 90, 1e2),
     "aoa": ("angle", 180, 1e2),
     # Torsions.
-    "bacab": ("tors", "0134", 180, 50, 1),
     "baoab": ("tors", "0134", 180, 50, 1),
     # Nonbondeds.
     "n": ("nb", 10.0, 1.0),
@@ -86,12 +85,11 @@ definer_dict_2p3 = {
 }
 
 
-def template_structure_function(  # noqa: PLR0915
+def structure_function(  # noqa: PLR0912, PLR0915, C901
     chromosome: cgexplore.systems_optimisation.Chromosome,
     database_path: pathlib.Path,
     calculation_output: pathlib.Path,
     structure_output: pathlib.Path,
-    options: dict,  # noqa: ARG001
 ) -> None:
     """Generate a structure from a chromosome."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
@@ -106,6 +104,8 @@ def template_structure_function(  # noqa: PLR0915
         f"f{chromosome.get_separated_string()}"
     )
 
+    forcefield_dict = get_forcefield_dict(forcefield)
+
     bbs = {
         bb: tuple(bb_dict[1][idx])
         for idx, bb in enumerate(
@@ -116,13 +116,6 @@ def template_structure_function(  # noqa: PLR0915
             )
         )
     }
-
-    template_name = (
-        f"temp_{chromosome.prefix}_{larger.get_name()}_{smaller.get_name()}_"
-        f"{smaller2.get_name()}_v{bb_dict[0]}_"
-        f"f{chromosome.get_separated_string()}"
-    )
-    template_file = calculation_output / f"{template_name}_final.mol"
 
     cage = stk.ConstructedMolecule(tfunction(building_blocks=bbs))
 
@@ -137,8 +130,7 @@ def template_structure_function(  # noqa: PLR0915
                 property_type=dict,
             ),
         )
-        if not template_file.exists():
-            final_conformer.molecule.write(template_file)
+        final_conformer.molecule.write(structure_output / f"{name}_optc.mol")
 
     # Do not rerun if final mol exists.
     elif fina_mol_file.exists():
@@ -162,8 +154,6 @@ def template_structure_function(  # noqa: PLR0915
                 "bb_dict": bb_dict[1],
             },
         )
-        if not template_file.exists():
-            final_conformer.molecule.write(template_file)
 
     else:
         ensemble = cgexplore.molecular.Ensemble(
@@ -173,8 +163,7 @@ def template_structure_function(  # noqa: PLR0915
             data_json=calculation_output / f"{name}_ensemble.json",
             overwrite=True,
         )
-
-        logging.info("building %s with template", name)
+        logging.info("optimising %s from scratch", name)
         # Assign the forcefield.
         assigned_system = forcefield.assign_terms(
             molecule=cage,
@@ -283,147 +272,7 @@ def template_structure_function(  # noqa: PLR0915
                 platform=None,
             )
             ensemble.add_conformer(conformer=conformer, source="smd")
-        ensemble.write_conformers_to_file()
 
-        final_conformer = ensemble.get_lowest_e_conformer()
-        final_conformerid = final_conformer.conformer_id
-        min_energy = final_conformer.energy_decomposition["total energy"][0]
-        logging.info(
-            "Min. energy conformer: %s from %s with energy: %s kJ.mol-1",
-            final_conformerid,
-            final_conformer.source,
-            round(min_energy, 3),
-        )
-        final_conformer.molecule.write(template_file)
-
-        # Add to atomlite database.
-        database.add_molecule(molecule=final_conformer.molecule, key=name)
-        database.add_properties(
-            key=name,
-            property_dict={
-                "energy_decomposition": final_conformer.energy_decomposition,
-                "source": final_conformer.source,
-                "optimised": True,
-                "viable": True,
-                "bb_dict_idx": bb_dict[0],
-                "bb_dict": bb_dict[1],
-            },
-        )
-        final_conformer.molecule.write(fina_mol_file)
-        final_conformer.molecule.write(structure_output / f"{name}_optc.mol")
-
-
-def structure_function(  # noqa: PLR0912, PLR0915, C901
-    chromosome: cgexplore.systems_optimisation.Chromosome,
-    database_path: pathlib.Path,
-    calculation_output: pathlib.Path,
-    structure_output: pathlib.Path,
-    options: dict,
-) -> None:
-    """Generate a structure from a chromosome."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
-
-    forcefield = chromosome.get_forcefield()
-    larger, smaller, smaller2, bb_dict = chromosome.get_precursors()
-    tstr, tfunction = chromosome.get_topology_information()
-
-    name = (
-        f"{chromosome.prefix}_{larger.get_name()}_{smaller.get_name()}_"
-        f"{smaller2.get_name()}_v{bb_dict[0]}_"
-        f"f{chromosome.get_separated_string()}"
-    )
-
-    forcefield_dict = get_forcefield_dict(forcefield)
-
-    # Ensure same binding angles.
-    if (
-        forcefield_dict["v_dict"]["b_a_c"]
-        != forcefield_dict["v_dict"]["b_a_o"]
-    ):
-        return
-
-    bbs = {
-        bb: tuple(bb_dict[1][idx])
-        for idx, bb in enumerate(
-            (
-                larger.get_building_block(),
-                smaller.get_building_block(),
-                smaller2.get_building_block(),
-            )
-        )
-    }
-
-    cage = stk.ConstructedMolecule(tfunction(building_blocks=bbs))
-
-    fina_mol_file = calculation_output / f"{name}_final.mol"
-    if database.has_molecule(key=name):
-        final_molecule = database.get_molecule(key=name)
-        final_conformer = cgexplore.molecular.Conformer(
-            molecule=final_molecule,
-            energy_decomposition=database.get_property(
-                key=name,
-                property_key="energy_decomposition",
-                property_type=dict,
-            ),
-        )
-
-    # Do not rerun if final mol exists.
-    elif fina_mol_file.exists():
-        ensemble = cgexplore.molecular.Ensemble(
-            base_molecule=cage,
-            base_mol_path=calculation_output / f"{name}_base.mol",
-            conformer_xyz=calculation_output / f"{name}_ensemble.xyz",
-            data_json=calculation_output / f"{name}_ensemble.json",
-            overwrite=False,
-        )
-        final_conformer = ensemble.get_lowest_e_conformer()
-        database.add_molecule(molecule=final_conformer.molecule, key=name)
-        database.add_properties(
-            key=name,
-            property_dict={
-                "energy_decomposition": final_conformer.energy_decomposition,
-                "source": final_conformer.source,
-                "optimised": True,
-                "viable": True,
-                "bb_dict_idx": bb_dict[0],
-                "bb_dict": bb_dict[1],
-            },
-        )
-
-    else:
-        ensemble = cgexplore.molecular.Ensemble(
-            base_molecule=cage,
-            base_mol_path=calculation_output / f"{name}_base.mol",
-            conformer_xyz=calculation_output / f"{name}_ensemble.xyz",
-            data_json=calculation_output / f"{name}_ensemble.json",
-            overwrite=True,
-        )
-        logging.info("optimising %s from templates", name)
-        for ti, template_file in enumerate(options["template_files"]):
-            tmolecule = stk.BuildingBlock.init_from_file(str(template_file))
-
-            temp_molecule = cage.with_position_matrix(
-                tmolecule.get_position_matrix()
-            )
-
-            # Assign the forcefield.
-            assigned_system = forcefield.assign_terms(
-                molecule=temp_molecule,
-                name=name,
-                output_dir=calculation_output,
-            )
-            conformer = cgexplore.utilities.run_optimisation(
-                assigned_system=assigned_system,
-                name=name,
-                file_suffix=f"temp_opt{ti}",
-                output_dir=calculation_output,
-                platform=None,
-            )
-
-            ensemble.add_conformer(
-                conformer=conformer,
-                source=f"temp_opt{ti}",
-            )
         ensemble.write_conformers_to_file()
 
         final_conformer = ensemble.get_lowest_e_conformer()
@@ -630,16 +479,16 @@ def low_resolution_function(  # noqa: PLR0915
     fig, (ax, ax1, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
-    target_y = "$.forcefield_dict.v_dict.b_a_c_a_b"
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax.set_ylabel("$b-a-c-a-b$ [$^\\circ$]", fontsize=16)
-    ax2.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax2.set_ylabel("$b-a-c-a-b$ [$^\\circ$]", fontsize=16)
+    target_y = "$.forcefield_dict.v_dict.b_a_o"
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
+    ax2.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax2.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
 
     df_properties = [
         "$.energy_per_bb",
         "$.forcefield_dict.v_dict.b_a_c",
-        "$.forcefield_dict.v_dict.b_a_c_a_b",
+        "$.forcefield_dict.v_dict.b_a_o",
         "$.bb_dict_idx",
     ]
 
@@ -782,20 +631,24 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         low_res_database_path
     )
     tstr = prefix.split("_")[1]
-    fig, (ax, ax1, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
+    fig, (ax1, ax, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
+    figtors, (axtors, axtors1) = plt.subplots(ncols=2, figsize=(16, 5))
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
-    target_y = "$.forcefield_dict.v_dict.b_a_c_a_b"
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax.set_ylabel("$b-a-c-a-b$ [$^\\circ$]", fontsize=16)
-    ax2.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax2.set_ylabel("$b-a-c-a-b$ [$^\\circ$]", fontsize=16)
+    target_y = "$.forcefield_dict.v_dict.b_a_o"
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
+    ax2.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax2.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
 
     df_properties = [
         "$.energy_per_bb",
         "$.forcefield_dict.v_dict.b_a_c",
-        "$.forcefield_dict.v_dict.b_a_c_a_b",
+        "$.forcefield_dict.v_dict.b_a_o",
         "$.bb_dict_idx",
+        "$.dihedral_spread",
+        "$.dihedral_states",
+        "$.dihedral_num_states",
     ]
 
     vmin = 0
@@ -830,30 +683,11 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
         )
 
-        if len(pdata) > 1:
-            colour = "tab:orange"
-
-        elif len(pdata) == 1:
-            colour = "tab:purple"
-
-        else:
-            colour = "white"
-
-        ax.scatter(
-            xangle,
-            yangle,
-            c=colour,
-            alpha=1.0,
-            edgecolor="k",
-            s=160,
-            marker="s",
-        )
-
         ax2.scatter(
             xangle,
             yangle,
             c=min_energy,
-            alpha=1.0,
+            alpha=0.5,
             edgecolor="k",
             s=160,
             marker="s",
@@ -864,6 +698,8 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
 
     vx_stables = {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
     vx_energies = {i: float("inf") for i in set(dataframe["$.bb_dict_idx"])}
+    region_types = {}
+    positioned_energies = {}
     for xangle, yangle in it.product(
         set(dataframe[target_x]),
         set(dataframe[target_y]),
@@ -881,36 +717,64 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         if len(pdata) == 0:
             continue
 
+        positioned_energies[(xangle, yangle)] = {
+            row["$.bb_dict_idx"]: row["$.energy_per_bb"]
+            for row in pdata.iter_rows(named=True)
+        }
+
+        for row in pdata.iter_rows(named=True):
+            axtors.scatter(
+                row["$.dihedral_num_states"],
+                row["$.energy_per_bb"],
+                c="tab:blue" if row["$.bb_dict_idx"] == 0 else "tab:orange",
+                s=60,
+                alpha=1.0,
+                ec="k",
+            )
+            axtors1.scatter(
+                list(row["$.dihedral_states"]),
+                [row["$.energy_per_bb"] for i in row["$.dihedral_states"]],
+                # 180 - yangle,
+                c="tab:blue" if row["$.bb_dict_idx"] == 0 else "tab:orange",
+                s=60,
+                alpha=1.0,
+                ec="k",
+            )
+
         min_energy = min(pdata["$.energy_per_bb"])
         # Get stable states.
         pdata = pdata.filter(
             pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
         )
-
         if len(pdata) > 1:
-            colour = "tab:orange"
-            logging.info("found-ish %s", pdata["key"].item(0))
+            stable_string = "|".join(
+                [str(i) for i in list(pdata["$.bb_dict_idx"])]
+            )
+            stable_count = len(pdata)
+            if stable_count < 20:  # noqa: PLR2004
+                logging.info("found-ish bb_ids: %s", stable_string)
+            else:
+                logging.info("found-ish m(%s)", stable_count)
 
         elif len(pdata) == 1:
-            colour = "tab:purple"
-            logging.info("found %s", pdata["key"].item(0))
+            stable_string = "|".join(
+                sorted([str(i) for i in list(pdata["$.bb_dict_idx"])])
+            )
+            stable_count = len(pdata)
+            logging.info("found bbid: %s", stable_string)
 
         else:
-            colour = "white"
+            stable_string = ""
+            stable_count = 0
 
         for bbidx in list(pdata["$.bb_dict_idx"]):
             if xangle != yangle:
                 vx_stables[bbidx] += 1
 
-        ax.scatter(
-            xangle,
-            yangle,
-            c=colour,
-            alpha=1.0,
-            edgecolor="k",
-            s=60,
-            marker="o",
-        )
+        if stable_count > 0:
+            if stable_string not in region_types:
+                region_types[stable_string] = []
+            region_types[stable_string].append((xangle, yangle))
 
         ax2.scatter(
             xangle,
@@ -925,41 +789,57 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             cmap="Blues_r",
         )
 
+    for stable_string in region_types:
+        stable_count = len(stable_string.split("|"))
+        ax.scatter(
+            [i[0] for i in region_types[stable_string]],
+            [i[1] for i in region_types[stable_string]],
+            s=60,
+            alpha=1.0,
+            label=stable_string,
+        )
+
+    ax.plot((90, 180), (90, 180), c="k", ls="--")
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_title(tstr, fontsize=16)
+    ax.legend(fontsize=16)
 
+    axtors.tick_params(axis="both", which="major", labelsize=16)
+    axtors.set_xlabel("num. dihedral states", fontsize=16)
+    axtors.set_ylabel(EnvVariables.eb_str, fontsize=16)
+
+    axtors1.tick_params(axis="both", which="major", labelsize=16)
+    axtors1.set_xlabel("measured torsion states", fontsize=16)
+    axtors1.set_ylabel(EnvVariables.eb_str, fontsize=16)
+    axtors1.set_xlim(-180, 180)
+
+    ax2.plot((90, 180), (90, 180), c="k", ls="--")
     ax2.tick_params(axis="both", which="major", labelsize=16)
     ax2.set_title(tstr, fontsize=16)
 
-    ax1.plot(
-        sorted(vx_stables),
-        [vx_stables[i] for i in sorted(vx_stables)],
-        c="k",
-        markersize=6,
-        marker="o",
-    )
+    for xangle, yangle in positioned_energies:
+        if 12869 in positioned_energies[(xangle, yangle)]:  # noqa: PLR2004
+            y = positioned_energies[(xangle, yangle)][12869]
+            ax1.set_xlabel(f"bridging {EnvVariables.eb_str}", fontsize=16)
+            ax1.set_ylabel(f"cap {EnvVariables.eb_str}", fontsize=16)
+        elif 19 in positioned_energies[(xangle, yangle)]:  # noqa: PLR2004
+            y = positioned_energies[(xangle, yangle)][19]
+            ax1.set_xlabel(f"cone {EnvVariables.eb_str}", fontsize=16)
+            ax1.set_ylabel(f"face {EnvVariables.eb_str}", fontsize=16)
+        ax1.scatter(
+            positioned_energies[(xangle, yangle)][0],
+            y,
+            c="tab:blue",
+            s=60,
+            ec="k",
+        )
+
     ax1.tick_params(axis="both", which="major", labelsize=16)
     ax1.set_title(tstr, fontsize=16)
-    ax1.set_xlabel("bb-state", fontsize=16)
-    ax1.set_ylabel("count stable", fontsize=16)
-    ax1.set_ylim(0, None)
 
-    ax1a = ax1.twinx()
-    ax1a.plot(
-        sorted(vx_energies),
-        [vx_energies[i] for i in sorted(vx_energies)],
-        c="tab:red",
-        markersize=6,
-        marker="o",
-    )
-    ax1a.tick_params(
-        axis="both",
-        which="major",
-        labelsize=16,
-        labelcolor="tab:red",
-    )
-    ax1a.set_ylabel(f"min {EnvVariables.eb_str}", fontsize=16, color="tab:red")
-    ax1a.set_ylim(0, 2.0)
+    ax1.plot((0.1, 4), (0.1, 4), c="k", ls="--")
+    ax1.set_xlim(0, 4)
+    ax1.set_ylim(0, 4)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
     cmap = mpl.cm.Blues_r
@@ -975,6 +855,24 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     fig.tight_layout()
     fig.savefig(
         figure_output / f"{prefix}_am.png",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_output / f"{prefix}_am.pdf",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+    figtors.tight_layout()
+    figtors.savefig(
+        figure_output / f"{prefix}_tors.png",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    figtors.savefig(
+        figure_output / f"{prefix}_tors.pdf",
         dpi=360,
         bbox_inches="tight",
     )
@@ -1022,7 +920,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     """Run script."""
     args = _parse_args()
     structure_output = EnvVariables.cg_structures
@@ -1062,33 +960,20 @@ def main() -> None:
     low_resolution_zones = {
         "bac": ("angle", [90, 105, 120, 135, 150, 165, 180], 1e2),
         "bao": ("angle", [90, 105, 120, 135, 150, 165, 180], 1e2),
-        "bacab": (
-            "tors",
-            "0134",
-            [90, 100, 110, 120, 130, 140, 150, 160, 170],
-            50,
-            1,
-        ),
     }
 
-    tt1bacbaozones = {
-        "2P4": create_zone(dmin=90, dmax=100, resolution=5),
-        "3P6": create_zone(dmin=95, dmax=115, resolution=5),
-        "4P8": create_zone(dmin=90, dmax=140, resolution=5),
-        "4P82": create_zone(dmin=90, dmax=140, resolution=5),
-        "6P12": create_zone(dmin=100, dmax=150, resolution=5),
+    tt1baczones = {
+        "8P16": create_zone(dmin=100, dmax=150, resolution=5),
+        "4P6": create_zone(dmin=90, dmax=145, resolution=5),
     }
-    tt1bacabzones = {
-        "2P4": create_zone(dmin=140, dmax=175, resolution=5),
-        "3P6": create_zone(dmin=110, dmax=130, resolution=5),
-        "4P8": create_zone(dmin=100, dmax=150, resolution=5),
-        "4P82": create_zone(dmin=120, dmax=160, resolution=5),
-        "6P12": create_zone(dmin=120, dmax=180, resolution=5),
+    tt1baozones = {
+        "8P16": create_zone(dmin=140, dmax=180, resolution=5),
+        "4P6": create_zone(dmin=90, dmax=155, resolution=5),
     }
 
     studies = {
-        "tt1_2P4": {
-            "topology": ("2P4", stk.cage.M2L4Lantern),
+        "tt1_8P16": {
+            "topology": ("8P16", stk.cage.EightPlusSixteen),
             "definer_dict": definer_dict_2p4,
             "present_beads": present_beads_2p4,
             "large_gene": large_gene_4x,
@@ -1097,71 +982,7 @@ def main() -> None:
             "bb_ratio": (1, 1),
             "definer_dict_updates": low_resolution_zones,
         },
-        "tt1r1_2P4": {
-            "topology": ("2P4", stk.cage.M2L4Lantern),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", tt1bacbaozones["2P4"], 1e2),
-                "bao": ("angle", tt1bacbaozones["2P4"], 1e2),
-                "bacab": ("tors", "0134", tt1bacabzones["2P4"], 50, 1),
-            },
-        },
-        "tt1_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt1_4P8": {
-            "topology": ("4P8", scram.topologies.CGM4L8),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt1_4P82": {
-            "topology": ("4P82", scram.topologies.M4L82),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt1_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt2_2P3": {
-            "topology": ("2P3", stk.cage.TwoPlusThree),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt2_4P6": {
+        "tt1_4P6": {
             "topology": ("4P6", stk.cage.FourPlusSix),
             "definer_dict": definer_dict_2p3,
             "present_beads": present_beads_2p3,
@@ -1171,35 +992,31 @@ def main() -> None:
             "bb_ratio": (1, 1),
             "definer_dict_updates": low_resolution_zones,
         },
-        "tt2_4P62": {
-            "topology": ("4P62", stk.cage.FourPlusSix2),
+        "tt1r1_8P16": {
+            "topology": ("8P16", stk.cage.EightPlusSixteen),
+            "definer_dict": definer_dict_2p4,
+            "present_beads": present_beads_2p4,
+            "large_gene": large_gene_4x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": (1, 1),
+            "definer_dict_updates": {
+                "bac": ("angle", tt1baczones["8P16"], 1e2),
+                "bao": ("angle", tt1baozones["8P16"], 1e2),
+            },
+        },
+        "tt1r1_4P6": {
+            "topology": ("4P6", stk.cage.FourPlusSix),
             "definer_dict": definer_dict_2p3,
             "present_beads": present_beads_2p3,
             "large_gene": large_gene_3x,
             "small_gene": small_gene,
             "small_gene2": small_gene2,
             "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt2_6P9": {
-            "topology": ("6P9", stk.cage.SixPlusNine),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt2_8P12": {
-            "topology": ("8P12", stk.cage.EightPlusTwelve),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
+            "definer_dict_updates": {
+                "bac": ("angle", tt1baczones["4P6"], 1e2),
+                "bao": ("angle", tt1baozones["4P6"], 1e2),
+            },
         },
     }
 
@@ -1225,11 +1042,23 @@ def main() -> None:
             prefix,
         )
 
-        if len(possible_bbdicts) == 0:
+        logging.info("but we are only using two chosen ones with bridges!")
+        if "4P6" in study:
+            target_bbdict = (4, 5, 6)
+        elif "8P16" in study:
+            target_bbdict = (8, 9, 10, 11, 12, 13, 14, 15)
+        chosen_bbdicts = []
+        for bbdict in possible_bbdicts:
+            if tuple(sorted(bbdict[1][1])) == target_bbdict:
+                chosen_bbdicts.append(bbdict)
+            if tuple(sorted(bbdict[1][2])) == target_bbdict:
+                chosen_bbdicts.append(bbdict)
+
+        if len(chosen_bbdicts) == 0:
             continue
 
         if args.run_calcs and not calculations_done_file.exists():
-            for bdict in possible_bbdicts:
+            for bdict in chosen_bbdicts:
                 chromosome_gen = (
                     cgexplore.systems_optimisation.ChromosomeGenerator(
                         prefix=prefix,
@@ -1260,40 +1089,6 @@ def main() -> None:
                 )
                 chromosome_gen.add_forcefield_dict(definer_dict=definer_dict)
 
-                template_population = chromosome_gen.select_random_population(
-                    generator=np.random.default_rng(1824),
-                    size=3,
-                )
-
-                # Pick random structures from chromosome to build as
-                # template.
-                template_files = []
-                for chromosome in template_population:
-                    (
-                        larger,
-                        smaller,
-                        smaller2,
-                        bb_dict,
-                    ) = chromosome.get_precursors()
-
-                    template_name = (
-                        f"temp_{chromosome.prefix}_{larger.get_name()}_"
-                        f"{smaller.get_name()}_{smaller2.get_name()}_"
-                        f"v{bb_dict[0]}_f{chromosome.get_separated_string()}"
-                    )
-
-                    template_structure_function(
-                        chromosome=chromosome,
-                        database_path=database_path,
-                        calculation_output=calculation_output,
-                        structure_output=structure_output,
-                        options={},
-                    )
-
-                    template_files.append(
-                        calculation_output / f"{template_name}_final.mol"
-                    )
-
                 # Go through all in chromosome, and only opt from templates.
                 for chromosome in chromosome_gen.yield_chromosomes():
                     structure_function(
@@ -1301,7 +1096,6 @@ def main() -> None:
                         database_path=database_path,
                         calculation_output=calculation_output,
                         structure_output=structure_output,
-                        options={"template_files": template_files},
                     )
 
                 # Create a done file.
@@ -1312,6 +1106,8 @@ def main() -> None:
             figure_output=figure_output,
             prefix=prefix,
         )
+    raise SystemExit("rerun this whole thing without the skip")
+    raise SystemExit("OR JUST REMOVE: update the high res zones")
 
 
 if __name__ == "__main__":

@@ -137,6 +137,7 @@ def template_structure_function(  # noqa: PLR0915
                 property_type=dict,
             ),
         )
+        final_conformer.molecule.write(structure_output / f"{name}_optc.mol")
         if not template_file.exists():
             final_conformer.molecule.write(template_file)
 
@@ -335,16 +336,6 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
     forcefield_dict = get_forcefield_dict(forcefield)
 
-    if forcefield_dict["v_dict"]["b_a_c"] > forcefield_dict["v_dict"]["b_a_o"]:
-        return
-
-    if (
-        forcefield_dict["v_dict"]["b_a_c"]
-        == forcefield_dict["v_dict"]["b_a_o"]
-        and forcefield_dict["v_dict"]["b_a_c"] != 90  # noqa: PLR2004
-    ):
-        return
-
     bbs = {
         bb: tuple(bb_dict[1][idx])
         for idx, bb in enumerate(
@@ -369,6 +360,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
                 property_type=dict,
             ),
         )
+        final_conformer.molecule.write(structure_output / f"{name}_optc.mol")
 
     # Do not rerun if final mol exists.
     elif fina_mol_file.exists():
@@ -567,7 +559,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         angle_data = {"_".join(i): angle_data[i] for i in angle_data}
         dihedral_data = g_measure.calculate_torsions(
             molecule=final_conformer.molecule,
-            absolute=True,
+            absolute=False,
             as_search_string=True,
         )
         opt_pore_data = g_measure.calculate_min_distance(
@@ -784,7 +776,10 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         low_res_database_path
     )
     tstr = prefix.split("_")[1]
-    fig, (ax, ax1, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
+    fig, (ax1, ax, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
+    figrank, axrank = plt.subplots(figsize=(8, 5))
+
+    candidates = []
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
     target_y = "$.forcefield_dict.v_dict.b_a_o"
@@ -831,30 +826,11 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
         )
 
-        if len(pdata) > 1:
-            colour = "tab:orange"
-
-        elif len(pdata) == 1:
-            colour = "tab:purple"
-
-        else:
-            colour = "white"
-
-        ax.scatter(
-            xangle,
-            yangle,
-            c=colour,
-            alpha=1.0,
-            edgecolor="k",
-            s=160,
-            marker="s",
-        )
-
         ax2.scatter(
             xangle,
             yangle,
             c=min_energy,
-            alpha=1.0,
+            alpha=0.5,
             edgecolor="k",
             s=160,
             marker="s",
@@ -864,7 +840,9 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         )
 
     vx_stables = {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
+    num_poss = len(vx_stables)
     vx_energies = {i: float("inf") for i in set(dataframe["$.bb_dict_idx"])}
+    region_types = {}
     for xangle, yangle in it.product(
         set(dataframe[target_x]),
         set(dataframe[target_y]),
@@ -887,31 +865,43 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         pdata = pdata.filter(
             pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
         )
-
         if len(pdata) > 1:
-            colour = "tab:orange"
-            logging.info("found-ish %s", pdata["key"].item(0))
+            stable_string = "|".join(
+                [str(i) for i in list(pdata["$.bb_dict_idx"])]
+            )
+            stable_count = len(pdata)
+            if stable_count < 20:  # noqa: PLR2004
+                logging.info("found-ish bb_ids: %s", stable_string)
+            else:
+                logging.info("found-ish m(%s)", stable_count)
 
         elif len(pdata) == 1:
-            colour = "tab:purple"
-            logging.info("found %s", pdata["key"].item(0))
+            stable_string = "|".join(
+                sorted([str(i) for i in list(pdata["$.bb_dict_idx"])])
+            )
+            stable_count = len(pdata)
+            logging.info("found bbid: %s", stable_string)
 
         else:
-            colour = "white"
+            stable_string = ""
+            stable_count = 0
 
         for bbidx in list(pdata["$.bb_dict_idx"]):
             if xangle != yangle:
                 vx_stables[bbidx] += 1
 
-        ax.scatter(
-            xangle,
-            yangle,
-            c=colour,
-            alpha=1.0,
-            edgecolor="k",
-            s=60,
-            marker="o",
-        )
+        if stable_count > 0:
+            if stable_string not in region_types:
+                region_types[stable_string] = []
+            region_types[stable_string].append((xangle, yangle))
+
+            if stable_count < 20:  # noqa: PLR2004
+                for i in pdata["key"]:
+                    filename = f"{i}_optc.mol"
+                    stru = EnvVariables.cg_structures
+                    if not (stru / filename).exists():
+                        database.get_molecule(i).write(stru / filename)
+                    candidates.append(filename)
 
         ax2.scatter(
             xangle,
@@ -926,9 +916,35 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             cmap="Blues_r",
         )
 
+        # Combination ranking.
+        axrank.scatter(
+            xangle,
+            yangle - xangle,
+            c=stable_count if stable_count > 0 else "w",
+            ec="k",
+            vmin=0,
+            vmax=10,
+            s=60,
+        )
+
+    for stable_string in region_types:
+        stable_count = len(stable_string.split("|"))
+        ax.scatter(
+            [i[0] for i in region_types[stable_string]],
+            [i[1] for i in region_types[stable_string]],
+            s=60,
+            alpha=1.0,
+            label=stable_string if stable_count < 5 else f"m({stable_count})",  # noqa: PLR2004
+        )
+
     ax.plot((90, 180), (90, 180), c="k", ls="--")
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_title(tstr, fontsize=16)
+    ax.legend(fontsize=16)
+
+    axrank.tick_params(axis="both", which="major", labelsize=16)
+    axrank.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    axrank.set_ylabel("$bao$ - $bac$ [$^\\circ$]", fontsize=16)
 
     ax2.plot((90, 180), (90, 180), c="k", ls="--")
     ax2.tick_params(axis="both", which="major", labelsize=16)
@@ -944,7 +960,7 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     ax1.tick_params(axis="both", which="major", labelsize=16)
     ax1.set_title(tstr, fontsize=16)
     ax1.set_xlabel("bb-state", fontsize=16)
-    ax1.set_ylabel("count stable", fontsize=16)
+    ax1.set_ylabel(f"count stable of {num_poss}", fontsize=16)
     ax1.set_ylim(0, None)
 
     ax1a = ax1.twinx()
@@ -975,9 +991,30 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     cbar.ax.tick_params(labelsize=16)
     cbar.set_label(f"min {EnvVariables.eb_str}", fontsize=16)
 
+    with (figure_output / f"{prefix}_am.txt").open("w") as f:
+        f.write(" ".join(sorted(candidates)))
+        f.write("\n")
+
     fig.tight_layout()
     fig.savefig(
         figure_output / f"{prefix}_am.png",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_output / f"{prefix}_am.pdf",
+        dpi=360,
+        bbox_inches="tight",
+    )
+
+    figrank.tight_layout()
+    figrank.savefig(
+        figure_output / f"{prefix}_rank.png",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    figrank.savefig(
+        figure_output / f"{prefix}_rank.pdf",
         dpi=360,
         bbox_inches="tight",
     )
@@ -1025,7 +1062,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:  # noqa: PLR0915
+def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
     structure_output = EnvVariables.cg_structures
@@ -1072,12 +1109,14 @@ def main() -> None:  # noqa: PLR0915
         "4P8": create_zone(dmin=90, dmax=140, resolution=5),
         "4P82": create_zone(dmin=90, dmax=140, resolution=5),
         "6P12": create_zone(dmin=100, dmax=150, resolution=5),
+        "8P16": create_zone(dmin=100, dmax=150, resolution=5),
     }
     at1baozones = {
         "3P6": create_zone(dmin=110, dmax=130, resolution=5),
         "4P8": create_zone(dmin=100, dmax=150, resolution=5),
         "4P82": create_zone(dmin=120, dmax=160, resolution=5),
         "6P12": create_zone(dmin=120, dmax=180, resolution=5),
+        "8P16": create_zone(dmin=140, dmax=180, resolution=5),
     }
     at2baczones = {
         "3P6": create_zone(dmin=95, dmax=115, resolution=5),
@@ -1115,8 +1154,8 @@ def main() -> None:  # noqa: PLR0915
     at8baozones = {"4P62": create_zone(dmin=90, dmax=180, resolution=5)}
 
     studies = {
-        "at1_2P4": {
-            "topology": ("2P4", stk.cage.M2L4Lantern),
+        "at1_8P16": {
+            "topology": ("8P16", stk.cage.EightPlusSixteen),
             "definer_dict": definer_dict_2p4,
             "present_beads": present_beads_2p4,
             "large_gene": large_gene_4x,
@@ -1125,8 +1164,57 @@ def main() -> None:  # noqa: PLR0915
             "bb_ratio": (1, 1),
             "definer_dict_updates": low_resolution_zones,
         },
+        "at1r1_8P16": {
+            "topology": ("8P16", stk.cage.EightPlusSixteen),
+            "definer_dict": definer_dict_2p4,
+            "present_beads": present_beads_2p4,
+            "large_gene": large_gene_4x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": (1, 1),
+            "definer_dict_updates": {
+                "bac": ("angle", at1baczones["8P16"], 1e2),
+                "bao": ("angle", at1baozones["8P16"], 1e2),
+            },
+        },
         "at1_3P6": {
             "topology": ("3P6", stk.cage.M3L6),
+            "definer_dict": definer_dict_2p4,
+            "present_beads": present_beads_2p4,
+            "large_gene": large_gene_4x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": (1, 1),
+            "definer_dict_updates": low_resolution_zones,
+        },
+        "at1r1_4P8": {
+            "topology": ("4P8", scram.topologies.CGM4L8),
+            "definer_dict": definer_dict_2p4,
+            "present_beads": present_beads_2p4,
+            "large_gene": large_gene_4x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": (1, 1),
+            "definer_dict_updates": {
+                "bac": ("angle", at1baczones["4P8"], 1e2),
+                "bao": ("angle", at1baozones["4P8"], 1e2),
+            },
+        },
+        "at1r1_6P12": {
+            "topology": ("6P12", stk.cage.M6L12Cube),
+            "definer_dict": definer_dict_2p4,
+            "present_beads": present_beads_2p4,
+            "large_gene": large_gene_4x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": (1, 1),
+            "definer_dict_updates": {
+                "bac": ("angle", at1baczones["6P12"], 1e2),
+                "bao": ("angle", at1baozones["6P12"], 1e2),
+            },
+        },
+        "at1_2P4": {
+            "topology": ("2P4", stk.cage.M2L4Lantern),
             "definer_dict": definer_dict_2p4,
             "present_beads": present_beads_2p4,
             "large_gene": large_gene_4x,
@@ -1149,16 +1237,6 @@ def main() -> None:  # noqa: PLR0915
             },
         },
         "at1_4P8": {
-            "topology": ("4P8", scram.topologies.CGM4L8),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at1r1_4P8": {
             "topology": ("4P8", scram.topologies.CGM4L8),
             "definer_dict": definer_dict_2p4,
             "present_beads": present_beads_2p4,
@@ -1203,19 +1281,6 @@ def main() -> None:  # noqa: PLR0915
             "small_gene2": small_gene2,
             "bb_ratio": (1, 1),
             "definer_dict_updates": low_resolution_zones,
-        },
-        "at1r1_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["6P12"], 1e2),
-                "bao": ("angle", at1baozones["6P12"], 1e2),
-            },
         },
         "at2_3P6": {
             "topology": ("3P6", stk.cage.M3L6),
@@ -1540,6 +1605,20 @@ def main() -> None:  # noqa: PLR0915
             prefix,
         )
 
+        logging.info(
+            "but for 8P16 we are only using two chosen ones with bridges!"
+        )
+        if "8P16" in study:
+            target_bbdict = (8, 9, 10, 11, 12, 13, 14, 15)
+        chosen_bbdicts = []
+        for bbdict in possible_bbdicts:
+            if tuple(sorted(bbdict[1][1])) == target_bbdict:
+                chosen_bbdicts.append(bbdict)
+            if tuple(sorted(bbdict[1][2])) == target_bbdict:
+                chosen_bbdicts.append(bbdict)
+
+        possible_bbdicts = tuple(chosen_bbdicts)
+
         if len(possible_bbdicts) == 0:
             continue
 
@@ -1611,6 +1690,24 @@ def main() -> None:  # noqa: PLR0915
 
                 # Go through all in chromosome, and only opt from templates.
                 for chromosome in chromosome_gen.yield_chromosomes():
+                    forcefield_dict = get_forcefield_dict(
+                        chromosome.get_forcefield()
+                    )
+                    # Skip matching bao < bac.
+                    if (
+                        forcefield_dict["v_dict"]["b_a_c"]
+                        > forcefield_dict["v_dict"]["b_a_o"]
+                    ):
+                        continue
+
+                    # Include one case of bac == bao.
+                    if (
+                        forcefield_dict["v_dict"]["b_a_c"]
+                        == forcefield_dict["v_dict"]["b_a_o"]
+                        and forcefield_dict["v_dict"]["b_a_c"] != 90  # noqa: PLR2004
+                    ):
+                        continue
+
                     structure_function(
                         chromosome=chromosome,
                         database_path=database_path,
@@ -1627,6 +1724,8 @@ def main() -> None:  # noqa: PLR0915
             figure_output=figure_output,
             prefix=prefix,
         )
+
+    raise SystemExit("put the founds into a library somewhere")
 
 
 if __name__ == "__main__":

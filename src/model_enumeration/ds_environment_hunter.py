@@ -87,7 +87,6 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         f"{chromosome.prefix}_{larger.get_name()}_{smaller.get_name()}_"
         f"f{chromosome.get_separated_string()}"
     )
-
     cage = stk.ConstructedMolecule(
         tfunction((larger.get_building_block(), smaller.get_building_block())),
     )
@@ -369,7 +368,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         angle_data = {"_".join(i): angle_data[i] for i in angle_data}
         dihedral_data = g_measure.calculate_torsions(
             molecule=final_conformer.molecule,
-            absolute=True,
+            absolute=False,
             as_search_string=True,
         )
         opt_pore_data = g_measure.calculate_min_distance(
@@ -378,7 +377,6 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
         dihedral_spread = np.std(dihedral_data["Pb_Ba_Ag_Ba_Pb"])
         all_values = dihedral_data["Pb_Ba_Ag_Ba_Pb"]
-
         # Then I want the distinct env as a coloured point.
         envs = {}
 
@@ -567,7 +565,6 @@ def plot_torsion_data(
         figsize=(8, 10),
     )
     for ax, (tstr, _) in zip(axs, topology_options, strict=True):
-        ax2 = ax.twinx()
         prefix = f"{study}_{tstr}"
         database_path = data_output / f"{prefix}.db"
         database = cgexplore.utilities.AtomliteDatabase(database_path)
@@ -621,11 +618,11 @@ def plot_torsion_data(
             states = pdata["$.dihedral_states"].item(0).to_list()
 
             if pdata["$.energy_per_bb"].item(0) <= EnvVariables.isomer_energy:
-                c = "tab:orange" if len(states) == 2 else "tab:blue"  # noqa: PLR2004
+                c = "tab:orange" if len(states) == 3 else "tab:blue"  # noqa: PLR2004
                 c2 = "tab:red"
             else:
                 c = "white"
-                c2 = "white"
+                c2 = "none"
 
             ax.scatter(
                 [xangle for i in states],
@@ -637,34 +634,26 @@ def plot_torsion_data(
             )
 
             count = sum([i[1] for i in states])
-            ax2.scatter(
-                [xangle for i in states],
-                [i[1] / count for i in states],
-                c=c2,
-                alpha=1.0,
-                edgecolor="none",
-                s=60,
-                marker="X",
-            )
-            if tstr in ("4P82", ""):
-                ax.set_ylabel("torsion states [$^\\circ$]", fontsize=16)
-                ax2.set_ylabel("proportion in states", fontsize=16)
+            target_prop = (0.25, 0.25, 0.5)
+            curren_prop = tuple(sorted([i[1] / count for i in states]))
+            if curren_prop == target_prop:
+                ax.scatter(
+                    xangle,
+                    175,
+                    c=c2,
+                    alpha=1.0,
+                    edgecolor="none",
+                    s=30,
+                    marker="D",
+                    zorder=-1,
+                )
 
         ax.tick_params(axis="both", which="major", labelsize=16)
         ax.text(x=160, y=100, s=tstr, fontsize=16)
-        ax.set_ylim(0, 180)
-        ax.set_yticks([0, 90, 180])
+        ax.set_ylim(-180, 182)
+        ax.set_yticks([-180, 0, 180])
 
-        ax2.tick_params(
-            axis="both",
-            which="major",
-            labelsize=16,
-            labelcolor="tab:red",
-        )
-        ax2.set_ylim(0, 1)
-        ax2.set_yticks([0, 0.5, 1])
-
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -688,10 +677,9 @@ def plot_specific_torsion_data(
 ) -> None:
     """Plot the bar chart."""
     for tstr, _ in topology_options:
-        if tstr not in ("4P82", "4P6", "8P16"):
+        if tstr not in ("4P82", "4P6", "8P12", "8P16"):
             continue
         fig, ax = plt.subplots(figsize=(8, 3))
-        ax2 = ax.twinx()
         prefix = f"{study}_{tstr}"
         database_path = data_output / f"{prefix}.db"
         database = cgexplore.utilities.AtomliteDatabase(database_path)
@@ -736,11 +724,11 @@ def plot_specific_torsion_data(
             states = pdata["$.dihedral_states"].item(0).to_list()
 
             if pdata["$.energy_per_bb"].item(0) <= EnvVariables.isomer_energy:
-                c = "tab:orange" if len(states) == 2 else "tab:blue"  # noqa: PLR2004
+                c = "tab:orange" if len(states) == 3 else "tab:blue"  # noqa: PLR2004
                 c2 = "tab:red"
             else:
                 c = "white"
-                c2 = "white"
+                c2 = "none"
 
             ax.scatter(
                 [xangle for i in states],
@@ -752,33 +740,28 @@ def plot_specific_torsion_data(
             )
 
             count = sum([i[1] for i in states])
-            ax2.scatter(
-                [xangle for i in states],
-                [i[1] / count for i in states],
-                c=c2,
-                alpha=1.0,
-                edgecolor="none",
-                s=60,
-                marker="X",
-            )
+            target_prop = (0.25, 0.25, 0.5)
+            curren_prop = tuple(sorted([i[1] / count for i in states]))
+            if curren_prop == target_prop:
+                ax.scatter(
+                    xangle,
+                    175,
+                    c=c2,
+                    alpha=1.0,
+                    edgecolor="none",
+                    s=30,
+                    marker="D",
+                    zorder=-1,
+                )
 
         ax.tick_params(axis="both", which="major", labelsize=16)
         ax.set_title(tstr, fontsize=16)
-        ax.set_ylim(0, 180)
-        ax.set_yticks([0, 90, 180])
-
-        ax2.tick_params(
-            axis="both",
-            which="major",
-            labelsize=16,
-            labelcolor="tab:red",
-        )
-        ax2.set_ylim(0, 1)
-        ax2.set_yticks([0, 0.5, 1])
+        ax.set_ylim(-180, 182)
+        ax.set_yticks([-180, 0, 180])
 
         ax.set_ylabel("torsion states [$^\\circ$]", fontsize=16)
-        ax2.set_ylabel("proportion in states", fontsize=16)
-        ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
+        ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+        ax.axhline(y=0, alpha=0.2, zorder=-1, c="k")
 
         fig.tight_layout()
         fig.savefig(
@@ -882,7 +865,7 @@ def main() -> None:
                 "(%s) built %s for %s", study, count, cage_topology[0]
             )
 
-        bar_function(
+        plot_specific_torsion_data(
             data_output=data_output,
             figure_output=figure_output,
             study=study,
@@ -898,7 +881,7 @@ def main() -> None:
                 study=studies[study]["topology"]
             ),
         )
-        plot_specific_torsion_data(
+        bar_function(
             data_output=data_output,
             figure_output=figure_output,
             study=study,
