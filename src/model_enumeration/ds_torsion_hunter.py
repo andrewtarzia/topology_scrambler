@@ -621,15 +621,12 @@ def low_resolution_function(  # noqa: PLR0915
 
 def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     database_path: pathlib.Path,
-    low_res_database_path: pathlib.Path,
     figure_output: pathlib.Path,
     prefix: str,
 ) -> None:
     """Show low resolution data."""
     database = cgexplore.utilities.AtomliteDatabase(database_path)
-    low_res_database = cgexplore.utilities.AtomliteDatabase(
-        low_res_database_path
-    )
+
     tstr = prefix.split("_")[1]
     fig, (ax1, ax, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
     figtors, (axtors, axtors1) = plt.subplots(ncols=2, figsize=(16, 5))
@@ -657,44 +654,8 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         properties=df_properties,
         allow_missing=False,
     )
-    low_res_dataframe = low_res_database.get_property_df(
-        properties=df_properties,
-        allow_missing=False,
-    )
 
     logging.info("%s dataframe size: %s", prefix, len(dataframe))
-    logging.info(
-        "%s low res dataframe size: %s", prefix, len(low_res_dataframe)
-    )
-
-    for xangle, yangle in it.product(
-        set(low_res_dataframe[target_x]),
-        set(low_res_dataframe[target_y]),
-    ):
-        pdata = low_res_dataframe.filter(pl.col(target_x) == xangle)
-        pdata = pdata.filter(pl.col(target_y) == yangle)
-
-        if len(pdata) == 0:
-            continue
-
-        min_energy = min(pdata["$.energy_per_bb"])
-        # Get stable states.
-        pdata = pdata.filter(
-            pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
-        )
-
-        ax2.scatter(
-            xangle,
-            yangle,
-            c=min_energy,
-            alpha=0.5,
-            edgecolor="k",
-            s=160,
-            marker="s",
-            vmin=vmin,
-            vmax=vmax,
-            cmap="Blues_r",
-        )
 
     vx_stables = {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
     vx_energies = {i: float("inf") for i in set(dataframe["$.bb_dict_idx"])}
@@ -752,16 +713,16 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             )
             stable_count = len(pdata)
             if stable_count < 20:  # noqa: PLR2004
-                logging.info("found-ish bb_ids: %s", stable_string)
+                logging.info("%s: found-ish bb_ids: %s", prefix, stable_string)
             else:
-                logging.info("found-ish m(%s)", stable_count)
+                logging.info("%s: found-ish m(%s)", prefix, stable_count)
 
         elif len(pdata) == 1:
             stable_string = "|".join(
                 sorted([str(i) for i in list(pdata["$.bb_dict_idx"])])
             )
             stable_count = len(pdata)
-            logging.info("found bbid: %s", stable_string)
+            logging.info("%s: found bbid: %s", prefix, stable_string)
 
         else:
             stable_string = ""
@@ -837,7 +798,7 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     ax1.tick_params(axis="both", which="major", labelsize=16)
     ax1.set_title(tstr, fontsize=16)
 
-    ax1.plot((0.1, 4), (0.1, 4), c="k", ls="--")
+    ax1.plot((0, 4), (0, 4), c="k", ls="--")
     ax1.set_xlim(0, 4)
     ax1.set_ylim(0, 4)
 
@@ -885,28 +846,11 @@ def plot_function(
     prefix: str,
 ) -> None:
     """Plot the angle map."""
-    run_resolution = 0 if "r1" not in prefix.split("_")[0] else 1
-
-    if run_resolution == 0:
-        low_resolution_function(
-            database_path=database_path,
-            figure_output=figure_output,
-            prefix=prefix,
-        )
-
-    elif run_resolution == 1:
-        database_parent = database_path.parents[0]
-        preprefix = prefix.replace("r1", "")
-        low_res_database_path = database_parent / database_path.name.replace(
-            prefix, preprefix
-        )
-
-        high_resolution_function(
-            database_path=database_path,
-            low_res_database_path=low_res_database_path,
-            figure_output=figure_output,
-            prefix=prefix,
-        )
+    high_resolution_function(
+        database_path=database_path,
+        figure_output=figure_output,
+        prefix=prefix,
+    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -957,41 +901,12 @@ def main() -> None:  # noqa: C901
         cgexplore.molecular.TwoC1Arm(bead=core_bead2, abead1=arm_bead),
     )
 
-    low_resolution_zones = {
-        "bac": ("angle", [90, 105, 120, 135, 150, 165, 180], 1e2),
-        "bao": ("angle", [90, 105, 120, 135, 150, 165, 180], 1e2),
-    }
-
-    tt1baczones = {
-        "8P16": create_zone(dmin=100, dmax=150, resolution=5),
-        "4P6": create_zone(dmin=90, dmax=145, resolution=5),
-    }
-    tt1baozones = {
-        "8P16": create_zone(dmin=140, dmax=180, resolution=5),
-        "4P6": create_zone(dmin=90, dmax=155, resolution=5),
+    zones = {
+        "bac": ("angle", create_zone(dmin=90, dmax=180, resolution=5), 1e2),
+        "bao": ("angle", create_zone(dmin=90, dmax=180, resolution=5), 1e2),
     }
 
     studies = {
-        "tt1_8P16": {
-            "topology": ("8P16", stk.cage.EightPlusSixteen),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "tt1_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
         "tt1r1_8P16": {
             "topology": ("8P16", stk.cage.EightPlusSixteen),
             "definer_dict": definer_dict_2p4,
@@ -1000,10 +915,7 @@ def main() -> None:  # noqa: C901
             "small_gene": small_gene,
             "small_gene2": small_gene2,
             "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", tt1baczones["8P16"], 1e2),
-                "bao": ("angle", tt1baozones["8P16"], 1e2),
-            },
+            "definer_dict_updates": zones,
         },
         "tt1r1_4P6": {
             "topology": ("4P6", stk.cage.FourPlusSix),
@@ -1013,10 +925,7 @@ def main() -> None:  # noqa: C901
             "small_gene": small_gene,
             "small_gene2": small_gene2,
             "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", tt1baczones["4P6"], 1e2),
-                "bao": ("angle", tt1baozones["4P6"], 1e2),
-            },
+            "definer_dict_updates": zones,
         },
     }
 
@@ -1106,8 +1015,6 @@ def main() -> None:  # noqa: C901
             figure_output=figure_output,
             prefix=prefix,
         )
-    raise SystemExit("rerun this whole thing without the skip")
-    raise SystemExit("OR JUST REMOVE: update the high res zones")
 
 
 if __name__ == "__main__":
