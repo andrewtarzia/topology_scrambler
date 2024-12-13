@@ -5,30 +5,27 @@ import pathlib
 import warnings
 from collections import defaultdict
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib.pyplot as plt
 import stko
-from openmm import OpenMMException, openmm
-from rdkit import RDLogger
+from openmm import openmm
 from utilities import eb_str
-
-import scram
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
-RDLogger.DisableLog("rdApp.*")
+
 warnings.filterwarnings("ignore")
 
 
-cbead_d = cgexplore.molecular.CgBead(
+cbead_d = cgx.molecular.CgBead(
     element_string="Ag",
     bead_class="c",
     bead_type="c",
     coordination=2,
 )
-abead_d = cgexplore.molecular.CgBead(
+abead_d = cgx.molecular.CgBead(
     element_string="Ba",
     bead_class="a",
     bead_type="a",
@@ -36,13 +33,13 @@ abead_d = cgexplore.molecular.CgBead(
 )
 
 
-binder_bead = cgexplore.molecular.CgBead(
+binder_bead = cgx.molecular.CgBead(
     element_string="Pb",
     bead_class="b",
     bead_type="b",
     coordination=2,
 )
-tetra_bead = cgexplore.molecular.CgBead(
+tetra_bead = cgx.molecular.CgBead(
     element_string="Pd",
     bead_class="m",
     bead_type="m",
@@ -53,12 +50,12 @@ tetra_bead = cgexplore.molecular.CgBead(
 def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
     name: str,
-    forcefield: cgexplore.forcefields.ForceField,
-    iterator: scram.topologies.TopologyIterator,
-    topology_code: scram.topologies.TopologyCode,
+    forcefield: cgx.forcefields.ForceField,
+    iterator: cgx.scram.TopologyIterator,
+    topology_code: cgx.scram.TopologyCode,
 ) -> None:
     """Analyse toy model cage."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
     if "num_components" not in properties:
         energy_decomp = {}
@@ -173,7 +170,7 @@ def analyse_cage(  # noqa: C901
 def get_validation_forcefield(
     bac_angle: float,
     identifier: str,
-) -> cgexplore.forcefields.ForceField:
+) -> cgx.forcefields.ForceField:
     """Get forcefield."""
     present_beads = (
         cbead_d,
@@ -199,7 +196,7 @@ def get_validation_forcefield(
         "b": ("nb", 10.0, 1.0),
         "c": ("nb", 10.0, 1.0),
     }
-    return cgexplore.systems_optimisation.get_forcefield_from_dict(
+    return cgx.systems_optimisation.get_forcefield_from_dict(
         identifier=identifier,
         prefix="min_val",
         present_beads=present_beads,
@@ -218,9 +215,7 @@ def make_plot(
     """Plot energies."""
     energies = defaultdict(list)
     bacs = defaultdict(list)
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
@@ -320,153 +315,3 @@ def make_plot(
         bbox_inches="tight",
     )
     plt.close()
-
-
-def main() -> None:
-    raise SystemExit("clean up")
-    """Run script."""
-    args = _parse_args()
-
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "validation_calculations"
-    calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "validation_structures"
-    structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "validation_ligands"
-    ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "validation_data"
-    data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures"
-    figure_dir.mkdir(exist_ok=True)
-
-    database_path = data_dir / "validation_run.db"
-
-    if args.targetted:
-        ligands = {
-            str(bac_angle): {
-                "forcefield": get_validation_forcefield(
-                    bac_angle=bac_angle,
-                    identifier=str(bac_angle),
-                ),
-                "stoichiometry_L_M": (2, 1),
-                "ditopic": cgexplore.molecular.TwoC1Arm(
-                    bead=cbead_d,
-                    abead1=abead_d,
-                ),
-                "tetra": cgexplore.molecular.FourC1Arm(
-                    bead=tetra_bead,
-                    abead1=binder_bead,
-                ),
-                "multipliers": (multi,),
-            }
-            for bac_angle, multi in zip(
-                (110, 120, 135, 150), (3, 4, 6, 12), strict=True
-            )
-        }
-    else:
-        ligands = {
-            str(bac_angle): {
-                "forcefield": get_validation_forcefield(
-                    bac_angle=bac_angle,
-                    identifier=str(i),
-                ),
-                "stoichiometry_L_M": (2, 1),
-                "ditopic": cgexplore.molecular.TwoC1Arm(
-                    bead=cbead_d,
-                    abead1=abead_d,
-                ),
-                "tetra": cgexplore.molecular.FourC1Arm(
-                    bead=tetra_bead,
-                    abead1=binder_bead,
-                ),
-                "multipliers": (1, 2, 3, 4, 6, 8, 10, 12),
-            }
-            for i, bac_angle in enumerate(range(40, 181, 5))
-        }
-
-    if args.run:
-        for lig in ligands:
-            forcefield = ligands[lig]["forcefield"]
-            ditopic = ligands[lig]["ditopic"]
-            tetra = ligands[lig]["tetra"]
-
-            ditopic_bb = scram.toy.prepare_building_block(
-                precursor=ditopic,
-                forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
-            )
-            tetra_bb = scram.toy.prepare_building_block(
-                precursor=tetra,
-                forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
-            )
-
-            for multiplier in ligands[lig]["multipliers"]:
-                iterator = scram.topologies.HomolepticTopologyIterator(
-                    multiplier=multiplier,
-                    stoichiometry=ligands[lig]["stoichiometry_L_M"],
-                    tetra_bb=tetra_bb,
-                    ditopic_bb=ditopic_bb,
-                )
-                count = 0
-                logging.info("doing: ligand %s, multi %s", lig, multiplier)
-                for constructed in iterator.get_constructed_molecules():
-                    idx = constructed.idx
-                    acage = constructed.constructed_molecule
-                    name = f"{lig}_{multiplier}_{idx}"
-                    acage.write(structure_dir / f"{name}_unopt.mol")
-
-                    num_components = len(
-                        stko.Network.init_from_molecule(
-                            acage
-                        ).get_connected_components()
-                    )
-                    if num_components != 1:
-                        continue
-
-                    # Optimise and save.
-                    logging.info("building %s", name)
-
-                    try:
-                        conformer = scram.toy.optimise_cage(
-                            molecule=acage,
-                            name=name,
-                            output_dir=calculation_dir,
-                            forcefield=forcefield,
-                            platform=None,
-                            database_path=database_path,
-                        )
-                        if conformer is not None:
-                            conformer.molecule.with_centroid((0, 0, 0)).write(
-                                str(structure_dir / f"{name}_optc.mol")
-                            )
-
-                        analyse_cage(
-                            database_path=database_path,
-                            name=name,
-                            forcefield=forcefield,
-                            iterator=iterator,
-                            topology_code=constructed.topology_code,
-                        )
-
-                    except (OpenMMException, ValueError):
-                        pass
-                    count += 1
-
-                    maxc = 100 if args.targetted else 40
-                    if count == maxc:
-                        break
-
-                make_plot(
-                    database_path=database_path,
-                    figure_dir=figure_dir,
-                    filename="validation_1.png",
-                )
-
-    make_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="validation_1.png",
-    )

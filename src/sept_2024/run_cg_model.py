@@ -4,7 +4,7 @@ import argparse
 import logging
 import pathlib
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,8 +25,6 @@ from utilities import (
     tetra_bead,
 )
 
-import scram
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -37,12 +35,12 @@ RDLogger.DisableLog("rdApp.*")
 def analyse_cage(  # noqa: C901, PLR0912
     database_path: pathlib.Path,
     name: str,
-    forcefield: cgexplore.forcefields.ForceField,
-    iterator: scram.topologies.TopologyIterator,
-    topology_code: scram.topologies.TopologyCode,
+    forcefield: cgx.forcefields.ForceField,
+    iterator: cgx.scram.TopologyIterator,
+    topology_code: cgx.scram.TopologyCode,
 ) -> None:
     """Analyse a toy model cage."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
     if "topology_code_vmap" not in properties:
         energy_decomp = {}
@@ -185,9 +183,7 @@ def make_plot(
         "4": "tab:red",
     }
 
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "pair" not in entry.properties:
             continue
 
@@ -256,9 +252,7 @@ def make_summary_plot(
     ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_st5_11", "la_st52_11"]
     ys.reverse()
 
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "pair" not in entry.properties:
             continue
 
@@ -379,9 +373,7 @@ def make_summary_plot2(
     }
     count_423 = 0
     count_111 = 0
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "pair" not in entry.properties:
             continue
 
@@ -476,7 +468,7 @@ def main() -> None:
     """Run script."""
     args = _parse_args()
 
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    wd = pathlib.Path("/home/atarzia/workingspace/starships/")
     calculation_dir = wd / "rerun_calculations"
     calculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "rerun_structures"
@@ -508,11 +500,11 @@ def main() -> None:
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -527,11 +519,11 @@ def main() -> None:
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -546,11 +538,11 @@ def main() -> None:
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -565,11 +557,11 @@ def main() -> None:
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -584,11 +576,11 @@ def main() -> None:
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -603,11 +595,11 @@ def main() -> None:
                 abead1=abead_c,
                 abead2=ebead_c,
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -631,28 +623,48 @@ def main() -> None:
                 dive_meas=ligand_measures[diverging_name],
             )
 
-            converging_bb = scram.toy.prepare_building_block(
-                precursor=converging,
-                forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
+            converging_name = (
+                f"{converging.get_name()}_f{forcefield.get_identifier()}"
             )
-            diverging_bb = scram.toy.prepare_building_block(
-                precursor=diverging,
+            converging_bb = cgx.utilities.optimise_ligand(
+                molecule=converging.get_building_block(),
+                name=converging_name,
+                output_dir=calculation_dir,
                 forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
+                platform=None,
             )
-            tetra_bb = scram.toy.prepare_building_block(
-                precursor=tetra,
+            converging_bb.write(
+                str(ligand_dir / f"{converging_name}_optl.mol")
+            )
+            converging_bb = converging_bb.clone()
+
+            tetra_name = f"{tetra.get_name()}_f{forcefield.get_identifier()}"
+            tetra_bb = cgx.utilities.optimise_ligand(
+                molecule=tetra.get_building_block(),
+                name=tetra_name,
+                output_dir=calculation_dir,
                 forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
+                platform=None,
             )
+            tetra_bb.write(str(ligand_dir / f"{tetra_name}_optl.mol"))
+            tetra_bb = tetra_bb.clone()
+
+            diverging_name = (
+                f"{diverging.get_name()}_f{forcefield.get_identifier()}"
+            )
+            diverging_bb = cgx.utilities.optimise_ligand(
+                molecule=diverging.get_building_block(),
+                name=diverging_name,
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            )
+            diverging_bb.write(str(ligand_dir / f"{diverging_name}_optl.mol"))
+            diverging_bb = diverging_bb.clone()
 
             for multiplier in pairs[pair]["multipliers"]:
                 # Define a connectivity based on a multiplier.
-                iterator = scram.topologies.TopologyIterator(
+                iterator = cgx.scram.TopologyIterator(
                     multiplier=multiplier,
                     stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
                     tetra_bb=tetra_bb,
@@ -678,7 +690,7 @@ def main() -> None:
                     logging.info("building %s", name)
 
                     try:
-                        conformer = scram.toy.optimise_cage(
+                        conformer = cgx.scram.optimise_cage(
                             molecule=acage,
                             name=name,
                             output_dir=calculation_dir,

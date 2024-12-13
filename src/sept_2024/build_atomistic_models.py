@@ -3,17 +3,19 @@
 import logging
 import pathlib
 
+import cgexplore as cgx
 import stk
 import stko
 from rdkit import RDLogger
 
-import scram
+from .utilities import get_ligand_bb
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
+
 react_factory = stk.DativeReactionFactory(
     stk.GenericReactionFactory(
         bond_orders={
@@ -21,6 +23,164 @@ react_factory = stk.DativeReactionFactory(
         },
     ),
 )
+
+
+def desymm_optimisation_sequence(  # noqa: PLR0915, PLR0913, PLR0912
+    mol: stk.Molecule,
+    name: str,
+    charge: int,
+    calc_dir: pathlib.Path,
+    gulp_path: pathlib.Path,
+    xtb_path: pathlib.Path,
+    solvent_str: str | None,
+) -> stk.Molecule:
+    """Cage optimisation sequence."""
+    gulp1_output = calc_dir / f"{name}_gulp1.mol"
+    gulp2_output = calc_dir / f"{name}_gulp2.mol"
+    gulpmd_output = calc_dir / f"{name}_gulpmd.mol"
+    xtbopt_output = calc_dir / f"{name}_xtb.mol"
+    xtbsolvopt_output = calc_dir / f"{name}_xtb_dmso.mol"
+
+    if not xtb_path.exists():
+        msg = f"xtb is not installed here: {xtb_path}"
+        raise ValueError(msg)
+    if not gulp_path.exists():
+        msg = f"gulp is not installed here: {gulp_path}"
+        raise ValueError(msg)
+
+    if not gulp1_output.exists():
+        output_dir = calc_dir / f"{name}_gulp1"
+
+        logging.info("    UFF4MOF optimisation 1 of %s CG: True", name)
+        gulp_opt = stko.GulpUFFOptimizer(
+            gulp_path=gulp_path,
+            maxcyc=1000,
+            metal_FF={46: "Pd4+2"},
+            metal_ligand_bond_order="",
+            output_dir=output_dir,
+            conjugate_gradient=True,
+        )
+        gulp_opt.assign_FF(mol)
+        gulp1_mol = gulp_opt.optimize(mol=mol)
+        gulp1_mol.write(gulp1_output)
+    else:
+        logging.info("    loading %s", gulp1_output)
+        gulp1_mol = mol.with_structure_from_file(str(gulp1_output))
+
+    if not gulp2_output.exists():
+        output_dir = calc_dir / f"{name}_gulp2"
+
+        logging.info("    UFF4MOF optimisation 2 of %s CG: False", name)
+        gulp_opt = stko.GulpUFFOptimizer(
+            gulp_path=gulp_path,
+            maxcyc=1000,
+            metal_FF={46: "Pd4+2"},
+            metal_ligand_bond_order="",
+            output_dir=output_dir,
+            conjugate_gradient=False,
+        )
+        gulp_opt.assign_FF(gulp1_mol)
+        gulp2_mol = gulp_opt.optimize(mol=gulp1_mol)
+        gulp2_mol.write(gulp2_output)
+    else:
+        logging.info("    loading %s", gulp2_output)
+        gulp2_mol = mol.with_structure_from_file(str(gulp2_output))
+
+    if not gulpmd_output.exists():
+        logging.info("    UFF4MOF equilib MD of %s", name)
+        gulp_md = stko.GulpUFFMDOptimizer(
+            gulp_path=gulp_path,
+            metal_FF={46: "Pd4+2"},
+            metal_ligand_bond_order="",
+            output_dir=calc_dir / f"{name}_gulpmde",
+            integrator="leapfrog verlet",
+            ensemble="nvt",
+            temperature=1000,
+            timestep=0.25,
+            equilbration=0.5,
+            production=0.5,
+            N_conformers=2,
+            opt_conformers=False,
+            save_conformers=False,
+        )
+        gulp_md.assign_FF(gulp2_mol)
+        gulpmd_mol = gulp_md.optimize(mol=gulp2_mol)
+
+        logging.info("    UFF4MOF production MD of %s", name)
+        gulp_md = stko.GulpUFFMDOptimizer(
+            gulp_path=gulp_path,
+            metal_FF={46: "Pd4+2"},
+            metal_ligand_bond_order="",
+            output_dir=calc_dir / f"{name}_gulpmd",
+            integrator="leapfrog verlet",
+            ensemble="nvt",
+            temperature=1000,
+            timestep=0.75,
+            equilbration=0.5,
+            production=200.0,
+            N_conformers=40,
+            opt_conformers=True,
+            save_conformers=False,
+        )
+        gulp_md.assign_FF(gulpmd_mol)
+        gulpmd_mol = gulp_md.optimize(mol=gulpmd_mol)
+        gulpmd_mol.write(gulpmd_output)
+    else:
+        logging.info("    loading %s", gulpmd_output)
+        gulpmd_mol = mol.with_structure_from_file(str(gulpmd_output))
+
+    if not xtbopt_output.exists():
+        output_dir = calc_dir / f"{name}_xtbopt"
+        logging.info("    xtb optimisation of %s", name)
+        xtb_opt = stko.XTB(
+            xtb_path=xtb_path,
+            output_dir=output_dir,
+            gfn_version=2,
+            num_cores=6,
+            charge=charge,
+            opt_level="normal",
+            num_unpaired_electrons=0,
+            max_runs=1,
+            calculate_hessian=False,
+            unlimited_memory=True,
+            solvent=None,
+        )
+        xtbopt_mol = xtb_opt.optimize(mol=gulpmd_mol)
+        xtbopt_mol.write(xtbopt_output)
+    else:
+        logging.info("    loading %s", xtbopt_output)
+        xtbopt_mol = mol.with_structure_from_file(str(xtbopt_output))
+
+    if solvent_str is None:
+        return mol.with_structure_from_file(str(xtbopt_output))
+
+    if not xtbsolvopt_output.exists():
+        output_dir = calc_dir / f"{name}_xtbsolvopt"
+        logging.info(
+            "    solvated xtb optimisation of %s with %s", name, solvent_str
+        )
+        xtb_opt = stko.XTB(
+            xtb_path=xtb_path,
+            output_dir=output_dir,
+            gfn_version=2,
+            num_cores=6,
+            charge=charge,
+            opt_level="normal",
+            num_unpaired_electrons=0,
+            max_runs=1,
+            calculate_hessian=False,
+            unlimited_memory=True,
+            solvent_model="alpb",
+            solvent=solvent_str,
+            solvent_grid="verytight",
+        )
+        xtbsolvopt_mol = xtb_opt.optimize(mol=xtbopt_mol)
+        xtbsolvopt_mol.write(xtbsolvopt_output)
+    else:
+        logging.info("    loading %s", xtbsolvopt_output)
+        xtbsolvopt_mol = mol.with_structure_from_file(str(xtbsolvopt_output))
+
+    return mol.with_structure_from_file(str(xtbsolvopt_output))
 
 
 def calculate_xtb_energy(  # noqa: PLR0913
@@ -65,7 +225,7 @@ def calculate_xtb_energy(  # noqa: PLR0913
 
 def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    wd = pathlib.Path("/home/atarzia/workingspace/starships/")
     calculation_dir = wd / "ratom_calculations"
     calculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "ratom_structures"
@@ -80,11 +240,11 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     xtb_path = pathlib.Path("/home/atarzia/miniforge3/envs/tscram/bin/xtb")
 
     buildingblocks = {
-        "la": scram.atomistic.get_ligand_bb(
+        "la": get_ligand_bb(
             path=ligand_dir / "la_prep.mol",
             optl_path=ligand_dir / "la_optl.mol",
         ),
-        "las": scram.atomistic.get_ligand_bb(
+        "las": get_ligand_bb(
             path=ligand_dir / "las_prep.mol",
             optl_path=ligand_dir / "las_optl.mol",
         ),
@@ -112,8 +272,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     pairs = (("la", "st5"), ("las", "st5"), ("las2", "st5"))
     topology_graphs = {
         # "3P6": stk.cage.M3L6,  # noqa: ERA001
-        "4P8": scram.topologies.CGM4L8,
-        "4P82": scram.topologies.M4L82,
+        "4P8": cgx.topologies.CGM4L8,
+        "4P82": cgx.topologies.M4L82,
     }
 
     for tstr in topology_graphs:
@@ -175,7 +335,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             )
             cage_molecule.write(structure_dir / f"{name}_unopt.mol")
 
-            cage_molecule = scram.atomistic.desymm_optimisation_sequence(
+            cage_molecule = desymm_optimisation_sequence(
                 mol=cage_molecule,
                 name=name,
                 charge=charge,
@@ -207,7 +367,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             )
             cage_molecule.write(structure_dir / f"{name}_unopt.mol")
 
-            cage_molecule = scram.atomistic.desymm_optimisation_sequence(
+            cage_molecule = desymm_optimisation_sequence(
                 mol=cage_molecule,
                 name=name,
                 calc_dir=calculation_dir,
