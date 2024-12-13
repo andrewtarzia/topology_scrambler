@@ -28,9 +28,9 @@ def prepare_building_block(
     forcefield: cgexplore.forcefields.ForceField,
     calculation_dir: pathlib.Path,
     ligand_dir: pathlib.Path,
+    name: str,
 ) -> stk.BuildingBlock:
     """Prepare a building block."""
-    name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
     building_block = cgexplore.utilities.optimise_ligand(
         molecule=precursor.get_building_block(),
         name=name,

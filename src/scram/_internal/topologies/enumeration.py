@@ -740,7 +740,7 @@ class IHomolepticTopologyIterator:
 
     building_block_counts: dict[stk.BuildingBlock, int]
     graph_type: str
-    graph_set: Literal["rx", "nx"] = "rx"
+    graph_set: Literal["rx", "nx", "rx_nodoubles"] = "rx"
     scale_multiplier = 5
 
     def __post_init__(self) -> None:
@@ -752,7 +752,15 @@ class IHomolepticTopologyIterator:
                     / "known_graphs"
                     / f"rx_{self.graph_type}.json"
                 )
-                self.num_samples = int(1e4)
+                self.max_samples = int(1e4)
+
+            case "rx_nodoubles":
+                self.graphs_path = (
+                    pathlib.Path(__file__).resolve().parent
+                    / "known_graphs"
+                    / f"rxnd_{self.graph_type}.json"
+                )
+                self.max_samples = int(1e5)
 
             case "nx":
                 self.graphs_path = (
@@ -893,7 +901,7 @@ class IHomolepticTopologyIterator:
         ]
 
         to_save = []
-        for _ in range(self.num_samples):
+        for _ in range(self.max_samples):
             rng.shuffle(options)
             # Build an edge selection.
             combination = [
@@ -915,6 +923,12 @@ class IHomolepticTopologyIterator:
                 vertex_map=combination,
                 as_string=vmap_to_str(combination),
             )
+
+            if (
+                self.graph_set == "rx_nodoubles"
+                and topology_code.contains_doubles()
+            ):
+                continue
 
             # Check for string done.
             if topology_code.as_string in combinations_tested:
