@@ -1,31 +1,22 @@
 """Script to generate and optimise CG models."""
 
-import argparse
+import itertools as it
 import logging
 import pathlib
 
-import cgexplore
-import matplotlib.pyplot as plt
+import mchammer as mch
+import numpy as np
 import stk
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
+from run_cg_model import make_aa_plot, make_plot
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
-
-
-def num_pds(pair, multi):
-    opts = {
-        "lf_ls1": {"1": 1, "2": 2, "3": 3},
-        "lf_ls9": {"1": 1, "2": 2, "3": 3},
-        "la_st5": {"1": 3, "2": 6, "4": 12},
-        "la_st52": {"1": 3, "2": 6, "4": 12},
-    }
-    return opts[pair][multi]
 
 
 def optimiser(pair, multi):
@@ -54,108 +45,26 @@ def optimiser(pair, multi):
     return opts[pair][multi]
 
 
-def make_aa_plot(pair, atomistic_dir, atomistic_calculation_dir, filename):
-    cmap = {
-        "1": "tab:blue",
-        "2": "tab:orange",
-        "3": "tab:green",
-        "4": "tab:red",
-    }
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    founds = atomistic_calculation_dir.glob(f"c*{pair}*gulp2")
-
-    energies = {}
-    for path in sorted(founds):
-        if not path.is_dir():
-            continue
-        output_file = path / "gulp_opt.ginout"
-        with output_file.open("r") as f:
-            lines = f.readlines()
-
-        name = path.name
-        multi = path.name.split("_")[3]
-        for line in lines:
-            if "Total lattice energy       =" in line and "kJ/mol" in line:
-                energy = float(line.strip().split(" ")[-2]) / num_pds(
-                    pair, multi
-                )
-
-        if multi not in energies:
-            energies[multi] = []
-
-        energies[multi].append((name.replace("_gulp2", ""), energy))
-
-    for multi in sorted(energies):
-        if len(energies[multi]) == 0:
-            continue
-
-        sorted_energies = sorted(energies[multi], key=lambda p: p[1])
-        min_energy = sorted_energies[0]
-
-        ax.plot(
-            [i[1] for i in energies[multi]],
-            marker="o",
-            c=cmap[multi],
-            markersize=4,
-            # s=40,
-            # alpha=0.3,
-            # ec="none",
-            label=f"{multi}: {round(min_energy[1],3)} @ {min_energy[0]}",
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_ylabel("UFF energy / Pd [kJmol-1]", fontsize=16)
-    ax.set_yscale("log")
-    ax.set_ylim(500, 1e5)
-    ax.legend(ncols=1, fontsize=16)
-    fig.tight_layout()
-    fig.savefig(
-        filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run",
-        action="store_true",
-        help="set to iterate through structure functions",
-    )
-    parser.add_argument(
-        "--atomise",
-        action="store_true",
-        help="set to build atomistic structures",
-    )
-
-    return parser.parse_args()
-
-
-def main() -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run script."""
-    raise SystemExit("figure this all out")
+def main():
     args = _parse_args()
 
     wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "min_calculations"
+    calculation_dir = wd / "minmc_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "min_structures"
+    structure_dir = wd / "minmc_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "min_ligands"
+    ligand_dir = wd / "minmc_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "min_data"
+    data_dir = wd / "minmc_data"
     data_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
-    atomistic_dir = wd / "atomistic"
+    atomistic_dir = wd / "mcatomistic"
     atomistic_dir.mkdir(exist_ok=True)
-    atomistic_calculation_dir = wd / "atomistic_calculations"
+    atomistic_calculation_dir = wd / "mcatomistic_calculations"
     atomistic_calculation_dir.mkdir(exist_ok=True)
 
-    database_path = data_dir / "min_run.db"
+    database_path = data_dir / "minmc_run.db"
 
     # Define bead libraries.
     present_beads = (
@@ -169,21 +78,6 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
     cgexplore.molecular.BeadLibrary(beads=present_beads)
 
     pairs = {
-        "la_c1": {
-            "forcefield": forcefield_la_c1,
-            "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 4),
-        },
         "lf_ls1": {
             "forcefield": forcefield_lf_ls1,
             "stoichiometry_L_L_M": (1, 1, 1),
@@ -196,7 +90,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
             "tetra": cgexplore.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
-            "multipliers": (1, 2, 3, 4),
+            "multipliers": (1, 2, 3),
         },
         "lf_ls9": {
             "forcefield": forcefield_lf_ls9,
@@ -210,7 +104,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
             "tetra": cgexplore.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
-            "multipliers": (1, 2, 3, 4),
+            "multipliers": (1, 2, 3),
         },
         "la_st5": {
             "forcefield": forcefield_la_st5,
@@ -363,24 +257,149 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
             elif i == 2:
                 tetra_bb = building_block.clone()
 
-        for multiplier in pairs[pair]["multipliers"]:
-            if args.run:
-                # Define a connectivity based on a multiplier.
-                iterator = TopologyIterator(
-                    multiplier=multiplier,
-                    stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
-                    tetra_bb=tetra_bb,
-                    converging_bb=converging_bb,
-                    diverging_bb=diverging_bb,
-                )
-                logging.info(f"doing: pair {pair}, multi {multiplier}")
-                count = 0
-                for constructed in iterator.get_constructed_molecules():
-                    idx = constructed.idx
-                    acage = constructed.constructed_molecule
-                    name = f"{pair}_{multiplier}_{idx}"
-                    acage.write(structure_dir / f"{name}_unopt.mol")
+        seeds = (100, 32963, 399, 9)
+        current_energy = 1e24
+        vmap_str_map = {}
+        for multiplier, seed in it.product(pairs[pair]["multipliers"], seeds):
+            if not args.run:
+                break
+            if current_energy < 0.3:
+                logging.info(f"breaking before seed {seed}")
+                break
+            rng = np.random.default_rng(seed=seed)
 
+            # Define a connectivity based on a multiplier.
+            iterator = TopologyIterator(
+                multiplier=multiplier,
+                stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
+                tetra_bb=tetra_bb,
+                converging_bb=converging_bb,
+                diverging_bb=diverging_bb,
+            )
+            logging.info(f"doing: pair {pair}, multi {multiplier}")
+            for scramble_step in range(iterator.get_num_scrambles()):
+                logging.info(f"doing: step {scramble_step}")
+                if scramble_step == 0:
+                    new_constructed = iterator.get_topology(
+                        input_topology_code=None,
+                        generator=rng,
+                    )
+                    current_energy = 1e24
+                    current_topology_code = None
+                    current_best = None
+
+                else:
+                    new_constructed = iterator.get_topology(
+                        input_topology_code=current_topology_code,
+                        generator=rng,
+                    )
+
+                if new_constructed is None:
+                    continue
+
+                if current_energy < 0.3:
+                    logging.info(f"breaking at step {scramble_step}")
+                    break
+
+                mash_step = 0
+                acage = new_constructed.constructed_molecule
+                new_topology_code = new_constructed.topology_code
+                # Avoid redoing same TGs.
+                if new_topology_code.as_string in vmap_str_map:
+                    name = vmap_str_map[new_topology_code.as_string]
+                    name = name.split("_")
+                    name[4] = str(mash_step)
+                    name[5] = str(seed)
+                    name = "_".join(name)
+                else:
+                    name = f"{pair}_{multiplier}_{scramble_step}_{mash_step}_{seed}"
+                    vmap_str_map[new_topology_code.as_string] = name
+
+                logging.info(f"building {name}")
+                acage.write(str(structure_dir / f"{name}_unopt.mol"))
+
+                num_components = len(
+                    stko.Network.init_from_molecule(
+                        acage
+                    ).get_connected_components()
+                )
+                if num_components != 1:
+                    continue
+                # Optimise and save.
+                try:
+                    conformer = optimise_cage(
+                        molecule=acage,
+                        name=name,
+                        output_dir=calculation_dir,
+                        forcefield=forcefield,
+                        platform=None,
+                        database_path=database_path,
+                    )
+                    if conformer is not None:
+                        conformer.molecule.write(
+                            str(structure_dir / f"{name}_optc.mol")
+                        )
+
+                    save_vertex_positions(
+                        name=name,
+                        calculation_dir=calculation_dir,
+                        structure_dir=structure_dir,
+                        molecule=acage,
+                    )
+
+                    analyse_cage(
+                        database_path=database_path,
+                        name=name,
+                        forcefield=forcefield,
+                        iterator=iterator,
+                        topology_code=new_topology_code,
+                    )
+
+                except OpenMMException:
+                    continue
+
+                new_energy = (
+                    cgexplore.utilities.AtomliteDatabase(database_path)
+                    .get_entry(key=name)
+                    .properties["energy_per_bb"]
+                )
+
+                if mch.test_move(
+                    beta=10,
+                    curr_pot=current_energy,
+                    new_pot=new_energy,
+                    generator=rng,
+                ):
+                    current_energy = new_energy
+                    current_topology_code = new_topology_code
+                    current_best = name
+                    logging.info(
+                        "new best %s with E: %s",
+                        current_best,
+                        round(current_energy, 3),
+                    )
+
+                # Scramble the vertex positions.
+                for mash_step in range(1, iterator.get_num_mashes() + 1):
+                    # Avoid redoing same TGs.
+                    if new_topology_code.as_string in vmap_str_map:
+                        name = vmap_str_map[new_topology_code.as_string]
+                        name = name.split("_")
+                        name[4] = str(mash_step)
+                        name[5] = str(seed)
+                        name = "_".join(name)
+                    else:
+                        name = f"{pair}_{multiplier}_{scramble_step}_{mash_step}_{seed}"
+                        vmap_str_map[new_topology_code.as_string] = name
+
+                    new_constructed = iterator.get_mashed_topology(
+                        topology_code=new_topology_code,
+                        generator=rng,
+                    )
+                    acage = new_constructed.constructed_molecule
+
+                    logging.info(f"building {name}")
+                    acage.write(str(structure_dir / f"{name}_unopt.mol"))
                     num_components = len(
                         stko.Network.init_from_molecule(
                             acage
@@ -388,11 +407,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                     )
                     if num_components != 1:
                         continue
-
                     # Optimise and save.
-                    logging.info(f"building {name}")
-                    count += 1
-
                     try:
                         conformer = optimise_cage(
                             molecule=acage,
@@ -419,21 +434,39 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                             name=name,
                             forcefield=forcefield,
                             iterator=iterator,
-                            topology_code=constructed.topology_code,
+                            topology_code=new_topology_code,
                         )
 
                     except OpenMMException:
-                        pass
-                logging.info(
-                    f"for: pair {pair}, multi {multiplier}, built {count}!"
-                )
+                        continue
+
+                    new_energy = (
+                        cgexplore.utilities.AtomliteDatabase(database_path)
+                        .get_entry(key=name)
+                        .properties["energy_per_bb"]
+                    )
+
+                    if mch.test_move(
+                        beta=10,
+                        curr_pot=current_energy,
+                        new_pot=new_energy,
+                        generator=rng,
+                    ):
+                        current_energy = new_energy
+                        current_topology_code = new_topology_code
+                        current_best = name
+                        logging.info(
+                            "new best %s with E: %s",
+                            current_best,
+                            round(current_energy, 3),
+                        )
 
             energies = make_plot(
                 database_path=database_path,
                 pair=pair,
                 structure_dir=structure_dir,
                 figure_dir=figure_dir,
-                filename=figure_dir / f"min_1_{pair}.png",
+                filename=figure_dir / f"min_2_{pair}.png",
             )
 
             top_ten_distinct = sorted(
@@ -469,12 +502,19 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                         building_blocks=bb_library[pair][multiplier],
                         optimizer=optimiser(pair, str(multiplier)),
                     )
-            make_aa_plot(
-                pair=pair,
-                atomistic_dir=atomistic_dir,
-                atomistic_calculation_dir=atomistic_calculation_dir,
-                filename=figure_dir / f"min_3_{pair}.png",
-            )
+        energies = make_plot(
+            database_path=database_path,
+            pair=pair,
+            structure_dir=structure_dir,
+            figure_dir=figure_dir,
+            filename=figure_dir / f"min_2_{pair}.png",
+        )
+        make_aa_plot(
+            pair=pair,
+            atomistic_dir=atomistic_dir,
+            atomistic_calculation_dir=atomistic_calculation_dir,
+            filename=figure_dir / f"min_4_{pair}.png",
+        )
 
 
 if __name__ == "__main__":
