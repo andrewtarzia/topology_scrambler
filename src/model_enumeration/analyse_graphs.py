@@ -5,16 +5,15 @@ import pathlib
 import warnings
 from collections import Counter
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import polars as pl
 import rustworkx as rx
 from rdkit import RDLogger
 from utilities import abead_d, binder_bead, cbead_d, tetra_bead
-from validate_cg_model import multi_cmap
-
-import scram
+from validation_utilities import multi_cmap
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,11 +29,11 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
 
     properties = {i: {} for i in multipliers}
 
-    fake_ditopic_bb = cgexplore.molecular.TwoC1Arm(
+    fake_ditopic_bb = cgx.molecular.TwoC1Arm(
         bead=cbead_d,
         abead1=abead_d,
     ).get_building_block()
-    fake_tetra_bb = cgexplore.molecular.FourC1Arm(
+    fake_tetra_bb = cgx.molecular.FourC1Arm(
         bead=tetra_bead,
         abead1=binder_bead,
     ).get_building_block()
@@ -50,15 +49,12 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
 
     targets = []
     for multi in multipliers:
-        iterator = scram.topologies.IHomolepticTopologyIterator(
+        iterator = cgx.scram.IHomolepticTopologyIterator(
             building_block_counts={
                 fake_tetra_bb: 1 * multi,
                 fake_ditopic_bb: 2 * multi,
             },
-            graph_type=scram.topologies.get_graph_type(
-                stoichiometry=(2, 1),
-                multiplier=multi,
-            ),
+            graph_type=f"{1*multi}P{2*multi}",
         )
 
         for idx, topology_code in enumerate(iterator.get_graphs()):
@@ -194,13 +190,139 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
     plt.close()
 
 
+def make_timings_plot(
+    figure_dir: pathlib.Path,
+    timing_file: pathlib.Path,
+    graph_timing_file: pathlib.Path,
+    filename: str,
+) -> None:
+    """Plot energies."""
+    timings = pl.read_csv(
+        timing_file,
+        has_header=False,
+        new_columns=[
+            "lig",
+            "multi",
+            "num_vertices",
+            "idx",
+            "mash_idx",
+            "opt-time/s",
+            "ana-time/s",
+        ],
+    )
+
+    graph_timings = pl.read_csv(
+        graph_timing_file,
+        has_header=False,
+        new_columns=[
+            "num_vertices",
+            "algtype",
+            "num_found",
+            "gen-time/s",
+        ],
+    )
+
+    nx_graph_timings = graph_timings.filter(pl.col("algtype") == "nx")
+    rx_graph_timings = graph_timings.filter(pl.col("algtype") == "rx")
+    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(16, 5))
+    ax.scatter(
+        timings["num_vertices"],
+        timings["opt-time/s"],
+        c="tab:blue",
+        s=100,
+        alpha=1,
+        label="optimisation time",
+        ec="k",
+    )
+    ax.scatter(
+        timings["num_vertices"],
+        timings["ana-time/s"],
+        c="tab:orange",
+        s=100,
+        alpha=1,
+        label="analysis time",
+        ec="k",
+    )
+    ax.scatter(
+        nx_graph_timings["num_vertices"],
+        nx_graph_timings["gen-time/s"],
+        c="tab:green",
+        marker="s",
+        s=100,
+        alpha=1,
+        label="nx-graph time",
+        ec="k",
+    )
+    ax.scatter(
+        rx_graph_timings["num_vertices"],
+        rx_graph_timings["gen-time/s"],
+        c="tab:purple",
+        marker="o",
+        s=100,
+        alpha=1,
+        label="rx-graph time",
+        ec="k",
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("num. vertices", fontsize=16)
+    ax.set_ylabel("time [s]", fontsize=16)
+    ax.set_yscale("log")
+    ax.legend(fontsize=16)
+
+    ax1.plot(
+        nx_graph_timings["num_vertices"],
+        nx_graph_timings["num_found"],
+        c="tab:green",
+        marker="s",
+        markersize=12,
+        alpha=1,
+        label="nx-graph time",
+        mec="k",
+    )
+    ax1.plot(
+        rx_graph_timings["num_vertices"],
+        rx_graph_timings["num_found"],
+        c="tab:purple",
+        marker="o",
+        markersize=10,
+        alpha=1,
+        label="rx-graph time",
+        mec="k",
+    )
+
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel("num. vertices", fontsize=16)
+    ax1.set_ylabel("num. graphs found", fontsize=16)
+    ax1.set_yscale("log")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def main() -> None:
     """Run script."""
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
-
+    raise SystemExit("rerun graph times")
+    raise SystemExit("rerun, save timing files")
+    raise SystemExit("Search for m12 stk combo in jaon")
+    graph_timing_file = data_dir / "graph_times.csv"
     analyse_graphs(figure_dir)
+
+    make_timings_plot(
+        timing_file=timing_file,
+        figure_dir=figure_dir,
+        filename="validationd_times.png"
+        if args.nodoubles
+        else "validation_times.png",
+    )
 
 
 if __name__ == "__main__":

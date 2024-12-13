@@ -4,6 +4,7 @@ import itertools as it
 import logging
 import pathlib
 
+import cgexplore as cgx
 import mchammer as mch
 import numpy as np
 import stk
@@ -75,7 +76,7 @@ def main():
         binder_bead,
         tetra_bead,
     )
-    cgexplore.molecular.BeadLibrary(beads=present_beads)
+    cgx.molecular.BeadLibrary(beads=present_beads)
 
     pairs = {
         "lf_ls1": {
@@ -84,10 +85,8 @@ def main():
             "converging": SixBead(
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d, abead1=abead_d
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 3),
@@ -98,10 +97,8 @@ def main():
             "converging": SixBead(
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d, abead1=abead_d
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 3),
@@ -113,7 +110,7 @@ def main():
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 4),
@@ -125,7 +122,7 @@ def main():
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 4),
@@ -242,7 +239,7 @@ def main():
                 "think aout if this name is an issue wrt ff.idnet"
             )
             name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
-            building_block = cgexplore.utilities.optimise_ligand(
+            building_block = cgx.utilities.optimise_ligand(
                 molecule=precursor.get_building_block(),
                 name=name,
                 output_dir=calculation_dir,
@@ -359,7 +356,7 @@ def main():
                     continue
 
                 new_energy = (
-                    cgexplore.utilities.AtomliteDatabase(database_path)
+                    cgx.utilities.AtomliteDatabase(database_path)
                     .get_entry(key=name)
                     .properties["energy_per_bb"]
                 )
@@ -441,7 +438,7 @@ def main():
                         continue
 
                     new_energy = (
-                        cgexplore.utilities.AtomliteDatabase(database_path)
+                        cgx.utilities.AtomliteDatabase(database_path)
                         .get_entry(key=name)
                         .properties["energy_per_bb"]
                     )
@@ -482,7 +479,7 @@ def main():
                             chosen = o_name
                             break
 
-                    entry = cgexplore.utilities.AtomliteDatabase(
+                    entry = cgx.utilities.AtomliteDatabase(
                         database_path
                     ).get_entry(chosen)
 

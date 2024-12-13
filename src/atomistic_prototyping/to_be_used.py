@@ -4,6 +4,7 @@ import argparse
 import logging
 import pathlib
 
+import cgexplore as cgx
 import matplotlib.pyplot as plt
 import stk
 import stko
@@ -190,7 +191,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
         binder_bead,
         tetra_bead,
     )
-    cgexplore.molecular.BeadLibrary(beads=present_beads)
+    cgx.molecular.BeadLibrary(beads=present_beads)
 
     pairs = {
         "la_c1": {
@@ -202,7 +203,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 abead2=ebead_c,
             ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -214,10 +215,8 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
             "converging": SixBead(
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d, abead1=abead_d
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 3, 4),
@@ -228,10 +227,8 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
             "converging": SixBead(
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
-            "diverging": cgexplore.molecular.TwoC1Arm(
-                bead=cbead_d, abead1=abead_d
-            ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "diverging": cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 3, 4),
@@ -243,7 +240,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 4),
@@ -255,7 +252,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             ),
             "diverging": SixBead(bead=cbead_d, abead1=abead_d, abead2=ebead_d),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
             "multipliers": (1, 2, 4),
@@ -372,7 +369,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 "think aout if this name is an issue wrt ff.idnet"
             )
             name = f"{precursor.get_name()}_f{forcefield.get_identifier()}"
-            building_block = cgexplore.utilities.optimise_ligand(
+            building_block = cgx.utilities.optimise_ligand(
                 molecule=precursor.get_building_block(),
                 name=name,
                 output_dir=calculation_dir,
@@ -473,7 +470,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                             chosen = o_name
                             break
 
-                    entry = cgexplore.utilities.AtomliteDatabase(
+                    entry = cgx.utilities.AtomliteDatabase(
                         database_path
                     ).get_entry(chosen)
 
