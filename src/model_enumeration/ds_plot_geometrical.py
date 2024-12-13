@@ -4,7 +4,7 @@ import argparse
 import logging
 import pathlib
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib.pyplot as plt
 from ds_utilities import EnvVariables
 
@@ -16,7 +16,7 @@ logging.basicConfig(
 
 def geom_distributions(
     prefix: str,
-    database: cgexplore.utilities.AtomliteDatabase,
+    database: cgx.utilities.AtomliteDatabase,
     figure_output: pathlib.Path,
 ) -> None:
     """Plot geometry distributions."""
@@ -138,7 +138,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run script."""
     args = _parse_args()
-    database = cgexplore.utilities.AtomliteDatabase(db_file=args.database_path)
+    database = cgx.utilities.AtomliteDatabase(db_file=args.database_path)
     logging.info("there are %s collected data", database.get_num_entries())
     prefix = (
         pathlib.Path(args.database_path).absolute().name.replace(".db", "")

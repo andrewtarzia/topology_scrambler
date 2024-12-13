@@ -4,7 +4,7 @@ import itertools as it
 import logging
 import pathlib
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import stk
@@ -23,8 +23,6 @@ from utilities import (
     tetra_bead,
 )
 
-import scram
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -35,11 +33,11 @@ RDLogger.DisableLog("rdApp.*")
 def analyse_cage(  # noqa: C901
     database_path: pathlib.Path,
     name: str,
-    forcefield: cgexplore.forcefields.ForceField,
+    forcefield: cgx.forcefields.ForceField,
     num_building_blocks: int,
 ) -> None:
     """Analyse a toy model cage."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
     if "topology_code_vmap" not in properties:
         energy_decomp = {}
@@ -148,9 +146,7 @@ def make_plot(
     vmin = 0
     vmax = 1.0
     min_energy = float("inf")
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         x = entry.properties["forcefield_dict"]["v_dict"]["a_c"]
         y = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
         c = entry.properties["energy_per_bb"]
@@ -206,7 +202,7 @@ def make_plot(
 
 def main() -> None:
     """Run script."""
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    wd = pathlib.Path("/home/atarzia/workingspace/starships/")
     calculation_dir = wd / "scan_calculations"
     calculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "scan_structures"
@@ -225,9 +221,9 @@ def main() -> None:
     pair = "la_st5"
     converging = SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c)
     converging_name = "la"
-    diverging = cgexplore.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
+    diverging = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
     diverging_name = "st5"
-    tetra = cgexplore.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead)
+    tetra = cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead)
 
     logging.info("building %s structures", len(aa_range) * len(bac_range))
     for (i, aa), (j, bac) in it.product(
@@ -245,24 +241,43 @@ def main() -> None:
             conv_meas=ligand_measures[converging_name],
             dive_meas=ligand_measures[diverging_name],
         )
-        converging_bb = scram.toy.prepare_building_block(
-            precursor=converging,
-            forcefield=forcefield,
-            calculation_dir=calculation_dir,
-            ligand_dir=ligand_dir,
+
+        converging_name = (
+            f"{converging.get_name()}_f{forcefield.get_identifier()}"
         )
-        diverging_bb = scram.toy.prepare_building_block(
-            precursor=diverging,
+        converging_bb = cgx.utilities.optimise_ligand(
+            molecule=converging.get_building_block(),
+            name=converging_name,
+            output_dir=calculation_dir,
             forcefield=forcefield,
-            calculation_dir=calculation_dir,
-            ligand_dir=ligand_dir,
+            platform=None,
         )
-        tetra_bb = scram.toy.prepare_building_block(
-            precursor=tetra,
+        converging_bb.write(str(ligand_dir / f"{converging_name}_optl.mol"))
+        converging_bb = converging_bb.clone()
+
+        tetra_name = f"{tetra.get_name()}_f{forcefield.get_identifier()}"
+        tetra_bb = cgx.utilities.optimise_ligand(
+            molecule=tetra.get_building_block(),
+            name=tetra_name,
+            output_dir=calculation_dir,
             forcefield=forcefield,
-            calculation_dir=calculation_dir,
-            ligand_dir=ligand_dir,
+            platform=None,
         )
+        tetra_bb.write(str(ligand_dir / f"{tetra_name}_optl.mol"))
+        tetra_bb = tetra_bb.clone()
+
+        diverging_name = (
+            f"{diverging.get_name()}_f{forcefield.get_identifier()}"
+        )
+        diverging_bb = cgx.utilities.optimise_ligand(
+            molecule=diverging.get_building_block(),
+            name=diverging_name,
+            output_dir=calculation_dir,
+            forcefield=forcefield,
+            platform=None,
+        )
+        diverging_bb.write(str(ligand_dir / f"{diverging_name}_optl.mol"))
+        diverging_bb = diverging_bb.clone()
 
         name = f"scan_{i}-{j}"
         logging.info("building %s", name)
@@ -280,7 +295,7 @@ def main() -> None:
         cage.write(structure_dir / f"{name}_unopt.mol")
 
         try:
-            conformer = scram.toy.optimise_cage(
+            conformer = cgx.scram.optimise_cage(
                 molecule=cage,
                 name=name,
                 output_dir=calculation_dir,

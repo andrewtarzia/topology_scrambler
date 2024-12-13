@@ -7,7 +7,7 @@ import time
 import warnings
 from collections import defaultdict
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -24,8 +24,6 @@ from validation_utilities import (
     get_validation_forcefield,
     tetra_bead,
 )
-
-import scram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,9 +57,7 @@ def make_plot(
     """Plot energies."""
     energies = defaultdict(list)
     bacs = defaultdict(list)
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
@@ -162,8 +158,8 @@ def make_parity_plot(
     filename: str,
 ) -> None:
     """Plot energies."""
-    db = cgexplore.utilities.AtomliteDatabase(database_path)
-    full_db = cgexplore.utilities.AtomliteDatabase(full_database_path)
+    db = cgx.utilities.AtomliteDatabase(database_path)
+    full_db = cgx.utilities.AtomliteDatabase(full_database_path)
 
     energies = defaultdict(list)
     for entry in db.get_entries():
@@ -286,9 +282,7 @@ def make_summary_plot(
         tops.unlink()
 
     to_save = []
-    for entry in cgexplore.utilities.AtomliteDatabase(
-        database_path
-    ).get_entries():
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
@@ -392,7 +386,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         data_dir = wd / "dvalidation_data"
         database_path = data_dir / "dvalidation_run.db"
         timing_file = data_dir / "dvalidation_times.csv"
-        max_num = None
+        max_num = 1000
 
     calculation_dir.mkdir(exist_ok=True)
     structure_dir.mkdir(exist_ok=True)
@@ -407,11 +401,11 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 identifier=str(i),
             ),
             "stoichiometry_L_M": (2, 1),
-            "ditopic": cgexplore.molecular.TwoC1Arm(
+            "ditopic": cgx.molecular.TwoC1Arm(
                 bead=cbead_d,
                 abead1=abead_d,
             ),
-            "tetra": cgexplore.molecular.FourC1Arm(
+            "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
@@ -426,40 +420,46 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             ditopic = ligands[lig]["ditopic"]
             tetra = ligands[lig]["tetra"]
 
-            ditopic_bb = scram.toy.prepare_building_block(
-                precursor=ditopic,
-                forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
+            ditopic_name = (
+                f"{ditopic.get_name()}_f{forcefield.get_identifier()}"
             )
-            tetra_bb = scram.toy.prepare_building_block(
-                precursor=tetra,
+            ditopic_bb = cgx.utilities.optimise_ligand(
+                molecule=ditopic.get_building_block(),
+                name=ditopic_name,
+                output_dir=calculation_dir,
                 forcefield=forcefield,
-                calculation_dir=calculation_dir,
-                ligand_dir=ligand_dir,
+                platform=None,
             )
+            ditopic_bb.write(str(ligand_dir / f"{ditopic_name}_optl.mol"))
+            ditopic_bb = ditopic_bb.clone()
+
+            tetra_name = f"{tetra.get_name()}_f{forcefield.get_identifier()}"
+            tetra_bb = cgx.utilities.optimise_ligand(
+                molecule=tetra.get_building_block(),
+                name=tetra_name,
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            )
+            tetra_bb.write(str(ligand_dir / f"{tetra_name}_optl.mol"))
+            tetra_bb = tetra_bb.clone()
 
             for multiplier in ligands[lig]["multipliers"]:
                 if int(lig) < 90 and multiplier > 8:  # noqa: PLR2004
                     continue
-                iterator = scram.topologies.IHomolepticTopologyIterator(
+                iterator = cgx.scram.IHomolepticTopologyIterator(
                     building_block_counts={
                         tetra_bb: ligands[lig]["stoichiometry_L_M"][1]
                         * multiplier,
                         ditopic_bb: ligands[lig]["stoichiometry_L_M"][0]
                         * multiplier,
                     },
-                    graph_type=scram.topologies.get_graph_type(
-                        stoichiometry=ligands[lig]["stoichiometry_L_M"],
-                        multiplier=multiplier,
-                    ),
+                    graph_type=f"{1*multiplier}P{2*multiplier}",
+                    graph_set="rx_nodoubles" if args.nodoubles else "rx",
                 )
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
                 for idx, topology_code in enumerate(iterator.get_graphs()):
-                    if args.nodoubles and topology_code.contains_doubles():
-                        continue
-
                     if max_num is not None and idx > max_num:
                         break
 
@@ -484,14 +484,14 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                                 idx: np.array(nx_positions[idx]) * 10
                                 for idx in topology_code.get_nx_graph().nodes
                             }
-                            opt_function = scram.toy.optimise_cage
+                            opt_function = cgx.scram.optimise_cage
                         else:
                             vertex_positions = None
-                            opt_function = scram.toy.graph_optimise_cage
+                            opt_function = cgx.scram.graph_optimise_cage
 
                         # Do the construction.
                         constructed_molecule = (
-                            scram.toy.try_except_construction(
+                            cgx.scram.try_except_construction(
                                 iterator=iterator,
                                 topology_code=topology_code,
                                 vertex_positions=vertex_positions,

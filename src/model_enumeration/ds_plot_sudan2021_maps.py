@@ -6,7 +6,7 @@ import logging
 import pathlib
 
 import bbprep
-import cgexplore
+import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import polars as pl
@@ -186,7 +186,7 @@ def sudan2021_bite_angle(
 
     fig, ax = plt.subplots(ncols=1, figsize=(5, 5))
 
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
     tstr = database_path.name.strip(".db").split("_")[1]
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
@@ -293,7 +293,7 @@ def sudan2021_ss(
 
     fig, ax = plt.subplots(ncols=1, figsize=(5, 5))
 
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
     tstr = database_path.name.strip(".db").split("_")[1]
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"

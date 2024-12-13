@@ -3,13 +3,12 @@
 import logging
 import pathlib
 
+import cgexplore as cgx
 import matplotlib.pyplot as plt
 import numpy as np
 import stk
 import stko
-from utilities import plot_xy
-
-import scram
+from utilities import get_ligand_bb, plot_xy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,7 +18,7 @@ logging.basicConfig(
 
 def main() -> None:
     """Run script."""
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
+    wd = pathlib.Path("/home/atarzia/workingspace/starships/")
     ligand_dir = wd / "ligands"
     ligand_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures"
@@ -58,7 +57,7 @@ def main() -> None:
 
         molecule.write(ligand_dir / f"{ligand}_unopt.mol")
 
-        ensemble = scram.run_conformer_analysis(
+        ensemble = cgx.atomistic.run_conformer_analysis(
             ligand_name=ligand,
             molecule=molecule,
             ligand_dir=ligand_dir,
@@ -116,7 +115,7 @@ def main() -> None:
                 ligand_name=ligand,
             )
 
-        _ = scram.atomistic.get_ligand_bb(
+        _ = get_ligand_bb(
             path=wd / "ligands" / f"{ligand}_prep.mol",
             optl_path=wd / "ligands" / f"{ligand}_optl.mol",
         )

@@ -6,7 +6,7 @@ import logging
 import pathlib
 
 import bbprep
-import cgexplore
+import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import polars as pl
@@ -203,7 +203,7 @@ def li2023_bite_angle(
 
     fig, axs = plt.subplots(ncols=len(databases), figsize=(16, 5))
     for ax, database_path in zip(axs, databases, strict=True):
-        database = cgexplore.utilities.AtomliteDatabase(database_path)
+        database = cgx.utilities.AtomliteDatabase(database_path)
         tstr = database_path.name.strip(".db").split("_")[1]
 
         target_x = "$.forcefield_dict.v_dict.b_a_c"
@@ -306,7 +306,7 @@ def li2023_ss(
 
     fig, axs = plt.subplots(ncols=len(databases), figsize=(16, 5))
     for ax, database_path in zip(axs, databases, strict=True):
-        database = cgexplore.utilities.AtomliteDatabase(database_path)
+        database = cgx.utilities.AtomliteDatabase(database_path)
         tstr = database_path.name.strip(".db").split("_")[1]
 
         target_x = "$.forcefield_dict.v_dict.b_a_c"

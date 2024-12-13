@@ -7,7 +7,7 @@ import pathlib
 import warnings
 from collections import defaultdict
 
-import cgexplore
+import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,8 +27,6 @@ from ds_utilities import (
     trigonal_bead,
 )
 from rdkit import RDLogger
-
-import scram
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(
@@ -86,13 +84,13 @@ definer_dict_2p3 = {
 
 
 def structure_function(  # noqa: PLR0912, PLR0915, C901
-    chromosome: cgexplore.systems_optimisation.Chromosome,
+    chromosome: cgx.systems_optimisation.Chromosome,
     database_path: pathlib.Path,
     calculation_output: pathlib.Path,
     structure_output: pathlib.Path,
 ) -> None:
     """Generate a structure from a chromosome."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
 
     forcefield = chromosome.get_forcefield()
     larger, smaller, smaller2, bb_dict = chromosome.get_precursors()
@@ -122,7 +120,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
     fina_mol_file = calculation_output / f"{name}_final.mol"
     if database.has_molecule(key=name):
         final_molecule = database.get_molecule(key=name)
-        final_conformer = cgexplore.molecular.Conformer(
+        final_conformer = cgx.molecular.Conformer(
             molecule=final_molecule,
             energy_decomposition=database.get_property(
                 key=name,
@@ -134,7 +132,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
     # Do not rerun if final mol exists.
     elif fina_mol_file.exists():
-        ensemble = cgexplore.molecular.Ensemble(
+        ensemble = cgx.molecular.Ensemble(
             base_molecule=cage,
             base_mol_path=calculation_output / f"{name}_base.mol",
             conformer_xyz=calculation_output / f"{name}_ensemble.xyz",
@@ -156,7 +154,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         )
 
     else:
-        ensemble = cgexplore.molecular.Ensemble(
+        ensemble = cgx.molecular.Ensemble(
             base_molecule=cage,
             base_mol_path=calculation_output / f"{name}_base.mol",
             conformer_xyz=calculation_output / f"{name}_ensemble.xyz",
@@ -171,7 +169,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
             output_dir=calculation_output,
         )
 
-        temp_molecule = cgexplore.utilities.run_constrained_optimisation(
+        temp_molecule = cgx.utilities.run_constrained_optimisation(
             assigned_system=assigned_system,
             name=name,
             output_dir=calculation_output,
@@ -181,8 +179,8 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
             platform=None,
         )
 
-        conformer = cgexplore.utilities.run_optimisation(
-            assigned_system=cgexplore.forcefields.AssignedSystem(
+        conformer = cgx.utilities.run_optimisation(
+            assigned_system=cgx.forcefields.AssignedSystem(
                 molecule=temp_molecule,
                 forcefield_terms=assigned_system.forcefield_terms,
                 system_xml=assigned_system.system_xml,
@@ -199,11 +197,11 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
         # Run optimisations of series of conformers with shifted out
         # building blocks.
-        for test_molecule in cgexplore.utilities.yield_shifted_models(
+        for test_molecule in cgx.utilities.yield_shifted_models(
             temp_molecule, forcefield, kicks=(1, 2, 3, 4)
         ):
-            conformer = cgexplore.utilities.run_optimisation(
-                assigned_system=cgexplore.forcefields.AssignedSystem(
+            conformer = cgx.utilities.run_optimisation(
+                assigned_system=cgx.forcefields.AssignedSystem(
                     molecule=test_molecule,
                     forcefield_terms=assigned_system.forcefield_terms,
                     system_xml=assigned_system.system_xml,
@@ -220,9 +218,9 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
         num_steps = 20000
         traj_freq = 500
-        soft_md_trajectory = cgexplore.utilities.run_soft_md_cycle(
+        soft_md_trajectory = cgx.utilities.run_soft_md_cycle(
             name=name,
-            assigned_system=cgexplore.forcefields.AssignedSystem(
+            assigned_system=cgx.forcefields.AssignedSystem(
                 molecule=ensemble.get_lowest_e_conformer().molecule,
                 forcefield_terms=assigned_system.forcefield_terms,
                 system_xml=assigned_system.system_xml,
@@ -257,8 +255,8 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         # Go through each conformer from soft MD.
         # Optimise them all.
         for md_conformer in soft_md_trajectory.yield_conformers():
-            conformer = cgexplore.utilities.run_optimisation(
-                assigned_system=cgexplore.forcefields.AssignedSystem(
+            conformer = cgx.utilities.run_optimisation(
+                assigned_system=cgx.forcefields.AssignedSystem(
                     molecule=md_conformer.molecule,
                     forcefield_terms=assigned_system.forcefield_terms,
                     system_xml=assigned_system.system_xml,
@@ -380,9 +378,9 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
     properties = database.get_entry(key=name).properties
     if "dihedral_states" not in properties:
         # Always want to extract target torions if present.
-        g_measure = cgexplore.analysis.GeomMeasure(
+        g_measure = cgx.analysis.GeomMeasure(
             target_torsions=(
-                cgexplore.terms.TargetTorsion(
+                cgx.terms.TargetTorsion(
                     search_string=("b", "a", "c", "a", "b"),
                     search_estring=("Pb", "Ba", "Ag", "Ba", "Pb"),
                     measured_atom_ids=[0, 1, 3, 4],
@@ -395,7 +393,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
                     ),
                     torsion_n=1,
                 ),
-                cgexplore.terms.TargetTorsion(
+                cgx.terms.TargetTorsion(
                     search_string=("b", "a", "o", "a", "b"),
                     search_estring=("Pb", "Ba", "O", "Ba", "Pb"),
                     measured_atom_ids=[0, 1, 3, 4],
@@ -474,7 +472,7 @@ def low_resolution_function(  # noqa: PLR0915
     prefix: str,
 ) -> None:
     """Show low resolution data."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
     tstr = prefix.split("_")[1]
     fig, (ax, ax1, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
 
@@ -625,7 +623,7 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     prefix: str,
 ) -> None:
     """Show low resolution data."""
-    database = cgexplore.utilities.AtomliteDatabase(database_path)
+    database = cgx.utilities.AtomliteDatabase(database_path)
 
     tstr = prefix.split("_")[1]
     fig, (ax1, ax, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
@@ -887,19 +885,13 @@ def main() -> None:  # noqa: C901
         core_bead2,
     )
     large_gene_4x = (
-        cgexplore.molecular.FourC1Arm(
-            bead=tetragonal_bead, abead1=binder_bead
-        ),
+        cgx.molecular.FourC1Arm(bead=tetragonal_bead, abead1=binder_bead),
     )
     large_gene_3x = (
-        cgexplore.molecular.ThreeC1Arm(bead=trigonal_bead, abead1=binder_bead),
+        cgx.molecular.ThreeC1Arm(bead=trigonal_bead, abead1=binder_bead),
     )
-    small_gene = (
-        cgexplore.molecular.TwoC1Arm(bead=core_bead, abead1=arm_bead),
-    )
-    small_gene2 = (
-        cgexplore.molecular.TwoC1Arm(bead=core_bead2, abead1=arm_bead),
-    )
+    small_gene = (cgx.molecular.TwoC1Arm(bead=core_bead, abead1=arm_bead),)
+    small_gene2 = (cgx.molecular.TwoC1Arm(bead=core_bead2, abead1=arm_bead),)
 
     zones = {
         "bac": ("angle", create_zone(dmin=90, dmax=180, resolution=5), 1e2),
@@ -940,7 +932,7 @@ def main() -> None:  # noqa: C901
         database_path = data_output / f"{prefix}.db"
         calculations_done_file = data_output / f"{prefix}.done"
 
-        possible_bbdicts = scram.topologies.get_potential_bb_dicts(
+        possible_bbdicts = cgx.scram.get_potential_bb_dicts(
             tstr=cage_topology[0],
             ratio=studies[study]["bb_ratio"],
             bb_type="ditopic",
@@ -968,12 +960,10 @@ def main() -> None:  # noqa: C901
 
         if args.run_calcs and not calculations_done_file.exists():
             for bdict in chosen_bbdicts:
-                chromosome_gen = (
-                    cgexplore.systems_optimisation.ChromosomeGenerator(
-                        prefix=prefix,
-                        present_beads=studies[study]["present_beads"],
-                        vdw_bond_cutoff=2,
-                    )
+                chromosome_gen = cgx.systems_optimisation.ChromosomeGenerator(
+                    prefix=prefix,
+                    present_beads=studies[study]["present_beads"],
+                    vdw_bond_cutoff=2,
                 )
 
                 chromosome_gen.add_gene(

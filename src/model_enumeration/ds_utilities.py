@@ -4,7 +4,7 @@ import logging
 import pathlib
 from collections import defaultdict
 
-import cgexplore
+import cgexplore as cgx
 import numpy as np
 import openmm
 import stk
@@ -17,14 +17,14 @@ logging.basicConfig(
 )
 
 
-core_bead = cgexplore.molecular.CgBead(
+core_bead = cgx.molecular.CgBead(
     element_string="Ag",
     bead_class="c",
     bead_type="c",
     coordination=2,
 )
 
-core_bead2 = cgexplore.molecular.CgBead(
+core_bead2 = cgx.molecular.CgBead(
     element_string="O",
     bead_class="o",
     bead_type="o",
@@ -32,7 +32,7 @@ core_bead2 = cgexplore.molecular.CgBead(
 )
 
 
-arm_bead = cgexplore.molecular.CgBead(
+arm_bead = cgx.molecular.CgBead(
     element_string="Ba",
     bead_class="a",
     bead_type="a",
@@ -40,7 +40,7 @@ arm_bead = cgexplore.molecular.CgBead(
 )
 
 
-binder_bead = cgexplore.molecular.CgBead(
+binder_bead = cgx.molecular.CgBead(
     element_string="Pb",
     bead_class="b",
     bead_type="b",
@@ -48,14 +48,14 @@ binder_bead = cgexplore.molecular.CgBead(
 )
 
 
-tetragonal_bead = cgexplore.molecular.CgBead(
+tetragonal_bead = cgx.molecular.CgBead(
     element_string="Pd",
     bead_class="m",
     bead_type="m",
     coordination=4,
 )
 
-trigonal_bead = cgexplore.molecular.CgBead(
+trigonal_bead = cgx.molecular.CgBead(
     element_string="C",
     bead_class="n",
     bead_type="n",
@@ -63,14 +63,14 @@ trigonal_bead = cgexplore.molecular.CgBead(
 )
 
 
-tetragonal_bead2 = cgexplore.molecular.CgBead(
+tetragonal_bead2 = cgx.molecular.CgBead(
     element_string="Cr",
     bead_class="y",
     bead_type="y",
     coordination=4,
 )
 
-trigonal_bead2 = cgexplore.molecular.CgBead(
+trigonal_bead2 = cgx.molecular.CgBead(
     element_string="Ge",
     bead_class="x",
     bead_type="x",
@@ -147,7 +147,7 @@ def create_zone(dmin: float, dmax: float, resolution: int) -> list[float]:
     return list(range(dmin, dmax + 1, resolution))
 
 
-def get_forcefield_dict(forcefield: cgexplore.forcefields.ForceField) -> dict:
+def get_forcefield_dict(forcefield: cgx.forcefields.ForceField) -> dict:
     """Get the underlying forcefield dict."""
     # This is matched to the existing analysis code. I recommend
     # generalising in the future.
@@ -245,7 +245,7 @@ def rmsd_checker(
 
 
 def get_binder_vector_angles(
-    conformer: cgexplore.molecular.Conformer,
+    conformer: cgx.molecular.Conformer,
 ) -> dict[str, list[float]]:
     """Extract the binder vector angles for each ligand."""
     ligands = stko.molecule_analysis.DecomposeMOC().decompose(

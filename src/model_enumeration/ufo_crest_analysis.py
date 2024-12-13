@@ -3,13 +3,12 @@
 import logging
 import pathlib
 
+import cgexplore as cgx
 import matplotlib.pyplot as plt
 import numpy as np
 import stk
 import stko
 from utilities import plot_xy
-
-import scram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,7 +55,7 @@ def main() -> None:
 
         molecule.write(ligand_dir / f"{ligand}_unopt.mol")
 
-        ensemble = scram.run_conformer_analysis(
+        ensemble = cgx.atomistic.run_conformer_analysis(
             ligand_name=ligand,
             molecule=molecule,
             ligand_dir=ligand_dir,
@@ -114,7 +113,7 @@ def main() -> None:
                 ligand_name=ligand,
             )
 
-        _ = scram.atomistic.get_ligand_bb(
+        _ = get_ligand_bb(
             path=wd / "ligands" / f"{ligand}_prep.mol",
             optl_path=wd / "ligands" / f"{ligand}_optl.mol",
         )

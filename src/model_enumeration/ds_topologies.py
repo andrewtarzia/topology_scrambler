@@ -3,9 +3,8 @@
 import logging
 from collections import abc
 
+import cgexplore as cgx
 import stk
-
-import scram
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,25 +21,25 @@ def cage_topology_options(
             topologies = (
                 ("2P4", stk.cage.M2L4Lantern),
                 ("3P6", stk.cage.M3L6),
-                ("4P8", scram.topologies.CGM4L8),
-                ("4P82", scram.topologies.M4L82),
+                ("4P8", cgx.topologies.CGM4L8),
+                ("4P82", cgx.topologies.M4L82),
                 ("6P12", stk.cage.M6L12Cube),
-                ("6P122", scram.topologies.M6L122),
+                ("6P122", cgx.topologies.M6L122),
                 ("8P16", stk.cage.EightPlusSixteen),
-                ("8P162", scram.topologies.M8L162),
+                ("8P162", cgx.topologies.M8L162),
             )
 
         case "shortened_homoleptic_2p4":
             topologies = (
                 ("2P4", stk.cage.M2L4Lantern),
                 ("3P6", stk.cage.M3L6),
-                ("4P8", scram.topologies.CGM4L8),
-                ("4P82", scram.topologies.M4L82),
+                ("4P8", cgx.topologies.CGM4L8),
+                ("4P82", cgx.topologies.M4L82),
                 ("6P12", stk.cage.M6L12Cube),
             )
 
         case "repr_6P122":
-            topologies = (("6P122", scram.topologies.M6L122),)
+            topologies = (("6P122", cgx.topologies.M6L122),)
 
         case "homoleptic_2p3":
             topologies = (
@@ -67,12 +66,12 @@ def cage_topology_options(
             topologies = (
                 ("2P4", stk.cage.M2L4Lantern),
                 ("3P6", stk.cage.M3L6),
-                ("4P8", scram.topologies.CGM4L8),
-                ("4P82", scram.topologies.M4L82),
+                ("4P8", cgx.topologies.CGM4L8),
+                ("4P82", cgx.topologies.M4L82),
                 ("6P12", stk.cage.M6L12Cube),
-                ("6P122", scram.topologies.M6L122),
+                ("6P122", cgx.topologies.M6L122),
                 ("8P16", stk.cage.EightPlusSixteen),
-                ("8P162", scram.topologies.M8L162),
+                ("8P162", cgx.topologies.M8L162),
             )
 
         case "heteroleptic":
@@ -80,9 +79,9 @@ def cage_topology_options(
 
         case "li2023":
             topologies = (
-                ("4P82", scram.topologies.M4L82),
-                ("6P122", scram.topologies.M6L122),
-                ("8P162", scram.topologies.M8L162),
+                ("4P82", cgx.topologies.M4L82),
+                ("6P122", cgx.topologies.M6L122),
+                ("8P162", cgx.topologies.M8L162),
             )
 
         case _:

@@ -3,7 +3,7 @@
 import logging
 from copy import deepcopy
 
-import cgexplore
+import cgexplore as cgx
 import numpy as np
 import stk
 
@@ -14,19 +14,19 @@ logging.basicConfig(
 
 
 # Diverging ligands.
-cbead_d = cgexplore.molecular.CgBead(
+cbead_d = cgx.molecular.CgBead(
     element_string="Ag",
     bead_class="c",
     bead_type="c",
     coordination=2,
 )
-abead_d = cgexplore.molecular.CgBead(
+abead_d = cgx.molecular.CgBead(
     element_string="Ba",
     bead_class="a",
     bead_type="a",
     coordination=2,
 )
-ebead_d = cgexplore.molecular.CgBead(
+ebead_d = cgx.molecular.CgBead(
     element_string="Mn",
     bead_class="f",
     bead_type="f",
@@ -34,19 +34,19 @@ ebead_d = cgexplore.molecular.CgBead(
 )
 
 # Converging ligands.
-cbead_c = cgexplore.molecular.CgBead(
+cbead_c = cgx.molecular.CgBead(
     element_string="Ni",
     bead_class="d",
     bead_type="d",
     coordination=2,
 )
-abead_c = cgexplore.molecular.CgBead(
+abead_c = cgx.molecular.CgBead(
     element_string="Fe",
     bead_class="e",
     bead_type="e",
     coordination=2,
 )
-ebead_c = cgexplore.molecular.CgBead(
+ebead_c = cgx.molecular.CgBead(
     element_string="Ga",
     bead_class="g",
     bead_type="g",
@@ -54,19 +54,19 @@ ebead_c = cgexplore.molecular.CgBead(
 )
 
 # Constant.
-binder_bead = cgexplore.molecular.CgBead(
+binder_bead = cgx.molecular.CgBead(
     element_string="Pb",
     bead_class="b",
     bead_type="b",
     coordination=2,
 )
-tetra_bead = cgexplore.molecular.CgBead(
+tetra_bead = cgx.molecular.CgBead(
     element_string="Pd",
     bead_class="m",
     bead_type="m",
     coordination=4,
 )
-steric_bead = cgexplore.molecular.CgBead(
+steric_bead = cgx.molecular.CgBead(
     element_string="S",
     bead_class="s",
     bead_type="s",
@@ -97,11 +97,11 @@ constant_definer_dict = {
 
 def precursors_to_forcefield(
     pair: str,
-    diverging: cgexplore.molecular.Precursor,
-    converging: cgexplore.molecular.Precursor,
+    diverging: cgx.molecular.Precursor,
+    converging: cgx.molecular.Precursor,
     conv_meas: dict[str, float],
     dive_meas: dict[str, float],
-) -> cgexplore.forcefields.ForceField:
+) -> cgx.forcefields.ForceField:
     """Get a forcefield from precursor definitions."""
     # Define bead libraries.
     present_beads = (
@@ -115,7 +115,7 @@ def precursors_to_forcefield(
         tetra_bead,
         steric_bead,
     )
-    cgexplore.molecular.BeadLibrary(present_beads)
+    cgx.molecular.BeadLibrary(present_beads)
 
     definer_dict = deepcopy(constant_definer_dict)
 
@@ -159,7 +159,7 @@ def precursors_to_forcefield(
     else:
         raise NotImplementedError
 
-    if isinstance(diverging, cgexplore.molecular.TwoC1Arm):
+    if isinstance(diverging, cgx.molecular.TwoC1Arm):
         beads = diverging.get_bead_set()
         if "a" not in beads or "c" not in beads:
             raise RuntimeError
@@ -171,7 +171,7 @@ def precursors_to_forcefield(
     else:
         raise NotImplementedError
 
-    return cgexplore.systems_optimisation.get_forcefield_from_dict(
+    return cgx.systems_optimisation.get_forcefield_from_dict(
         identifier=f"{pair}ff",
         prefix=f"{pair}ff",
         vdw_bond_cutoff=2,
@@ -180,14 +180,14 @@ def precursors_to_forcefield(
     )
 
 
-class SixBead(cgexplore.molecular.Precursor):
+class SixBead(cgx.molecular.Precursor):
     """A Precursor."""
 
     def __init__(
         self,
-        bead: cgexplore.molecular.CgBead,
-        abead1: cgexplore.molecular.CgBead,
-        abead2: cgexplore.molecular.CgBead,
+        bead: cgx.molecular.CgBead,
+        abead1: cgx.molecular.CgBead,
+        abead2: cgx.molecular.CgBead,
     ) -> None:
         """Initialize a precursor."""
         self._bead = bead
@@ -226,15 +226,15 @@ class SixBead(cgexplore.molecular.Precursor):
         )
 
 
-class StericSixBead(cgexplore.molecular.Precursor):
+class StericSixBead(cgx.molecular.Precursor):
     """A Precursor."""
 
     def __init__(
         self,
-        bead: cgexplore.molecular.CgBead,
-        abead1: cgexplore.molecular.CgBead,
-        abead2: cgexplore.molecular.CgBead,
-        sbead: cgexplore.molecular.CgBead,
+        bead: cgx.molecular.CgBead,
+        abead1: cgx.molecular.CgBead,
+        abead2: cgx.molecular.CgBead,
+        sbead: cgx.molecular.CgBead,
     ) -> None:
         """Initialize a precursor."""
         self._bead = bead
