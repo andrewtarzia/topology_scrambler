@@ -1,28 +1,29 @@
 """Script to generate and optimise CG models."""
 
 import argparse
+import itertools as it
 import logging
 import pathlib
 
 import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import networkx as nx
+import numpy as np
 import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
-from utilities import (
-    SixBead,
+from ufo_utilities import (
     abead_c,
     abead_d,
     binder_bead,
     cbead_c,
     cbead_d,
-    eb_str,
     ebead_c,
     precursors_to_forcefield,
-    save_vertex_positions,
     tetra_bead,
 )
+from utilities import eb_str
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,17 +32,18 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def analyse_cage(  # noqa: C901, PLR0912
+def analyse_cage(  # noqa: C901, PLR0913
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
     iterator: cgx.scram.TopologyIterator,
     topology_code: cgx.scram.TopologyCode,
+    bb_config: cgx.scram.BuildingBlockConfiguration,
 ) -> None:
-    """Analyse a toy model cage."""
+    """Analyse toy model cage."""
     database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
-    if "topology_code_vmap" not in properties:
+    if "num_components" not in properties:
         energy_decomp = {}
         for component in properties["energy_decomposition"]:
             component_tup = properties["energy_decomposition"][component]
@@ -134,34 +136,10 @@ def analyse_cage(  # noqa: C901, PLR0912
             ).get_connected_components()
         )
 
-        splits = name.split("_")
-        if len(splits) == 4:  # noqa: PLR2004
-            multiplier = name.split("_")[2]
-            pairname = name.split("_")[0] + "_" + name.split("_")[1]
-        elif len(splits) == 5:  # noqa: PLR2004
-            multiplier = name.split("_")[3]
-            pairname = (
-                name.split("_")[0]
-                + "_"
-                + name.split("_")[1]
-                + "_"
-                + name.split("_")[2]
-            )
-        print(
-            {
-                "forcefield_dict": forcefield_dict,
-                "strain_energy": fin_energy,
-                "energy_per_bb": fin_energy
-                / iterator.get_num_building_blocks(),
-                "pair": pairname,
-                "num_components": num_components,
-                "multiplier": multiplier,
-                "topology_code_vmap": tuple(
-                    (int(i[0]), int(i[1])) for i in topology_code.vertex_map
-                ),
-            }
+        (l1, l2, multiplier, topology_idx, mash_idx, bbconfig_name) = (
+            name.split("_")
         )
-        raise SystemExit
+
         database.add_properties(
             key=name,
             property_dict={
@@ -169,18 +147,22 @@ def analyse_cage(  # noqa: C901, PLR0912
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy
                 / iterator.get_num_building_blocks(),
-                "pair": pairname,
+                "l1": l1,
+                "l2": l2,
                 "num_components": num_components,
                 "multiplier": multiplier,
+                "topology_idx": topology_idx,
+                "mash_idx": mash_idx,
                 "topology_code_vmap": tuple(
                     (int(i[0]), int(i[1])) for i in topology_code.vertex_map
                 ),
+                "bb_config_idx": bb_config.idx,
             },
         )
 
 
 def make_plot(
-    pair: str,
+    target_pair: str,
     database_path: pathlib.Path,
     structure_dir: pathlib.Path,
     figure_dir: pathlib.Path,
@@ -197,13 +179,13 @@ def make_plot(
     }
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        if "pair" not in entry.properties:
-            continue
-
-        if pair != entry.properties["pair"]:
-            continue
-
         multi = entry.properties["multiplier"]
+        l1 = entry.properties["l1"]
+        l2 = entry.properties["l2"]
+        pair = f"{l1}_{l2}"
+        if pair != target_pair:
+            continue
+
         energy = entry.properties["energy_per_bb"]
 
         if multi not in energies:
@@ -213,6 +195,7 @@ def make_plot(
             continue
         energies[multi].append((round(energy, 4), entry.key))
 
+    print(energies)
     with (figure_dir / f"min_{pair}.txt").open("w") as f:
         for multi in energies:
             if len(energies[multi]) == 0:
@@ -251,7 +234,7 @@ def make_plot(
     )
     plt.close()
 
-    return energies
+    raise SystemExit
 
 
 def make_summary_plot(
@@ -263,19 +246,16 @@ def make_summary_plot(
     fig, ax = plt.subplots(figsize=(5, 5))
     energies = {}
 
-    xs = ["1", "2", "4"]
-    ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_c13", "la_c14", "la_c15"]
+    xs = ["1", "2", "3", "4"]
+    ys = ["lf_ls1"]
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        if "pair" not in entry.properties:
-            continue
-
         multi = entry.properties["multiplier"]
-        pair = entry.properties["pair"]
-        if "lf_ls" in pair or "_11" in pair:
-            continue
-
-        vstr = entry.key.split("_")[-1]
+        l1 = entry.properties["l1"]
+        l2 = entry.properties["l2"]
+        pair = f"{l1}_{l2}"
+        tidx = entry.properties["topology_idx"]
+        bidx = entry.properties["bb_config_idx"]
         energy = entry.properties["energy_per_bb"]
 
         if (pair, multi) not in energies:
@@ -283,7 +263,7 @@ def make_summary_plot(
 
         if entry.properties["num_components"] > 1:
             continue
-        energies[(pair, multi)].append((round(energy, 4), vstr))
+        energies[(pair, multi)].append((round(energy, 4), tidx, bidx))
 
     vmin = 0
     vmax = 1
@@ -346,117 +326,93 @@ def make_summary_plot(
         bbox_inches="tight",
     )
     plt.close()
-    raise SystemExit
 
 
-def make_parity_plot(  # noqa: PLR0912, C901, PLR0915
+def make_summary_plot2(
     database_path: pathlib.Path,
-    steric_database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(5, 5))
-    energies = {}
-    steric_energies = {}
 
+    systems = {
+        ("lf_ls1", "1"): {"name": "lf-ls1-1", "data": []},
+        ("lf_ls1", "2"): {"name": "lf-ls1-2", "data": []},
+        ("lf_ls1", "3"): {"name": "lf-ls1-4", "data": []},
+        ("lf_ls1", "4"): {"name": "lf-ls1-1", "data": []},
+    }
+
+    count = 0
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        if "pair" not in entry.properties:
-            continue
-
         multi = entry.properties["multiplier"]
-        pair = entry.properties["pair"]
-        if "lf_ls" in pair:
-            continue
-        vstr = entry.key.split("_")[-1]
+        l1 = entry.properties["l1"]
+        l2 = entry.properties["l2"]
+        pair = f"{l1}_{l2}"
+
         energy = entry.properties["energy_per_bb"]
 
-        if pair not in energies:
-            energies[pair] = []
+        if (pair, multi) not in systems:
+            continue
+        energy = entry.properties["energy_per_bb"]
 
         if entry.properties["num_components"] > 1:
             continue
-        energies[pair].append((round(energy, 4), vstr, multi))
 
-    for entry in cgx.utilities.AtomliteDatabase(
-        steric_database_path
-    ).get_entries():
-        if "pair" not in entry.properties:
+        systems[(pair, multi)]["data"].append(energy)
+        count += 1
+
+    logging.info("structures built, %s", count)
+    rng = np.random.default_rng(seed=2)
+
+    for i, (pair, multi) in enumerate(systems):
+        if len(systems[(pair, multi)]["data"]) == 0:
             continue
-
-        multi = entry.properties["multiplier"]
-        pair = entry.properties["pair"]
-        if "lf_ls" in pair:
-            continue
-        vstr = entry.key.split("_")[-1]
-        energy = entry.properties["energy_per_bb"]
-
-        if pair not in steric_energies:
-            steric_energies[pair] = []
-
-        if entry.properties["num_components"] > 1:
-            continue
-        steric_energies[pair].append((round(energy, 4), vstr, multi))
-
-    for pair in energies:
-        if "_11" in pair:
-            continue
-        sorted_energies = sorted(energies[pair], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-
-        pair11 = pair + "_11"
-        sorted_energies11 = sorted(energies[pair11], key=lambda p: p[0])
-        min_energy11 = sorted_energies11[0]
-        ec = "k" if min_energy[0] < 0.3 else "none"  # noqa: PLR2004
+        min_energy = min(systems[(pair, multi)]["data"])
 
         ax.scatter(
-            min_energy[0],
-            min_energy11[0],
+            [
+                i + (2 * rng.random() - 1) * 0.3
+                for j in range(len(systems[(pair, multi)]["data"]))
+            ],
+            systems[(pair, multi)]["data"],
             c="tab:blue",
-            ec=ec,
-            s=60,
+            alpha=0.1,
+            edgecolor="none",
+            s=30,
+            marker="o",
+            zorder=1,
         )
-        ax.text(
-            x=6,
-            y=min_energy11[0],
-            s=(
-                f"{pair}: {min_energy[2]}|{min_energy[1]} vs. "
-                f"{min_energy11[2]}|{min_energy11[1]}"
-            ),
-        )
-
-    for pair in steric_energies:
-        if "_11" in pair:
-            continue
-
-        sorted_energies = sorted(steric_energies[pair], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-
-        pair11 = pair + "_11"
-        sorted_energies11 = sorted(steric_energies[pair11], key=lambda p: p[0])
-        min_energy11 = sorted_energies11[0]
-        ec = "k" if min_energy[0] < 0.3 else "none"  # noqa: PLR2004
-
         ax.scatter(
-            min_energy[0],
-            min_energy11[0],
+            i,
+            min_energy,
             c="tab:orange",
-            ec=ec,
-            s=60,
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
+            marker="o",
+            zorder=2,
         )
+
+    ax.axvline(x=3 + 0.5, c="gray")
+    ax.axvline(x=6 + 0.5, c="gray")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(f"4:2:3 {eb_str()}", fontsize=16)
-    ax.set_ylabel(f"1:1:1 {eb_str()}", fontsize=16)
-
-    ax.set_xlim(0.0, 10)
-    ax.set_ylim(0.0, 10)
-
-    ax.plot((0, 10), (0, 10), c="k")
+    ax.set_xticks(list(range(len(systems))))
+    ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.set_ylim(0.1, None)
+    ax.axhline(y=0.3, c="k", ls="--")
 
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
         dpi=360,
         bbox_inches="tight",
     )
@@ -474,7 +430,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901, PLR0915
     """Run script."""
     args = _parse_args()
 
@@ -496,14 +452,14 @@ def main() -> None:
         "ls1": {"ba": 2.8, "aa": 4.9, "bac": 150, "bacab": 180},
         "ls9": {"ba": 2.8, "aa": 5.5, "bac": 165, "bacab": 180},
     }
-    print("add new systems")
+    print("add new systems - steric mimics on ls1 (ls3-ls8), ls10")
 
     pairs = {
         "lf_ls1": {
             "converging_name": "lf",
             "diverging_name": "ls1",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -518,25 +474,25 @@ def main() -> None:
             ),
             "multipliers": (1, 2, 3, 4),
         },
-        "lf_ls9": {
-            "converging_name": "lf",
-            "diverging_name": "ls9",
-            "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgx.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgx.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 3, 4),
-        },
+        # "lf_ls9": {
+        #     "converging_name": "lf",
+        #     "diverging_name": "ls9",
+        #     "stoichiometry_L_L_M": (1, 1, 1),
+        #     "converging": SixBead(
+        #         bead=cbead_c,
+        #         abead1=abead_c,
+        #         abead2=ebead_c,
+        #     ),
+        #     "diverging": cgx.molecular.TwoC1Arm(
+        #         bead=cbead_d,
+        #         abead1=abead_d,
+        #     ),
+        #     "tetra": cgx.molecular.FourC1Arm(
+        #         bead=tetra_bead,
+        #         abead1=binder_bead,
+        #     ),
+        #     "multipliers": (1, 2, 3, 4),
+        # },
     }
 
     if args.run:
@@ -595,105 +551,142 @@ def main() -> None:
             diverging_bb = diverging_bb.clone()
 
             for multiplier in pairs[pair]["multipliers"]:
-                raise SystemExit(
-                    "if you do this again - you should modify "
-                    "the iteration process such that its just building "
-                    "block dict, not bonding that changes"
-                )
-                raise SystemExit("change iterator and construction process")
-                # Define a connectivity based on a multiplier.
-                iterator = cgx.scram.TopologyIterator(
-                    multiplier=multiplier,
-                    stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
-                    tetra_bb=tetra_bb,
-                    converging_bb=converging_bb,
-                    diverging_bb=diverging_bb,
-                )
                 logging.info("doing: pair %s, multi %s", pair, multiplier)
-                raise SystemExit("change iterator and construction process")
-                for constructed in iterator.get_constructed_molecules():
-                    idx = constructed.idx
-                    acage = constructed.constructed_molecule
-                    name = f"{pair}_{multiplier}_{idx}"
-                    acage.write(structure_dir / f"{name}_unopt.mol")
+                # Define a connectivity based on a multiplier.
+                iterator = cgx.scram.IHomolepticTopologyIterator(
+                    building_block_counts={
+                        tetra_bb: pairs[pair]["stoichiometry_L_L_M"][2]
+                        * multiplier,
+                        diverging_bb: pairs[pair]["stoichiometry_L_L_M"][0]
+                        * multiplier,
+                        converging_bb: pairs[pair]["stoichiometry_L_L_M"][1]
+                        * multiplier,
+                    },
+                    graph_type=f"{1*multiplier}P{2*multiplier}",
+                    graph_set="rx",
+                )
+                logging.info(
+                    "graph iteration has %s graphs", iterator.count_graphs()
+                )
 
-                    raise SystemExit(
-                        "change iterator and construction process"
-                    )
-                    num_components = len(
-                        stko.Network.init_from_molecule(
-                            acage
-                        ).get_connected_components()
-                    )
-                    if num_components != 1:
-                        continue
+                possible_bbdicts = cgx.scram.get_custom_bb_configurations(
+                    iterator=iterator
+                )
+                logging.info(
+                    "building block iteration has %s options",
+                    len(possible_bbdicts),
+                )
 
-                    # Optimise and save.
-                    logging.info("building %s", name)
+                logging.info(
+                    "producing: %s structures",
+                    len(possible_bbdicts) * iterator.count_graphs(),
+                )
 
+                for (idx, topology_code), bb_config in it.product(
+                    enumerate(iterator.yield_graphs()), possible_bbdicts
+                ):
+                    # Do the construction.
+                    nx_graph = topology_code.get_nx_graph()
+                    # Handle problems with small topologies.
                     try:
-                        conformer = cgx.scram.optimise_cage(
-                            molecule=acage,
-                            name=name,
-                            output_dir=calculation_dir,
-                            forcefield=forcefield,
-                            platform=None,
-                            database_path=database_path,
+                        vertex_position_setters = (
+                            None,
+                            nx.spectral_layout(nx_graph, dim=3),
+                            nx.spring_layout(nx_graph, dim=3),
+                            nx.kamada_kawai_layout(nx_graph, dim=3),
                         )
-                        if conformer is not None:
-                            conformer.molecule.with_centroid((0, 0, 0)).write(
-                                str(structure_dir / f"{name}_optc.mol")
+                    except ValueError:
+                        vertex_position_setters = (None,)
+
+                    for mash_idx, nx_positions in enumerate(
+                        vertex_position_setters
+                    ):
+                        if nx_positions is not None:
+                            vertex_positions = {
+                                idx: np.array(nx_positions[idx]) * 10
+                                for idx in topology_code.get_nx_graph().nodes
+                            }
+                            opt_function = cgx.scram.optimise_cage
+                        else:
+                            vertex_positions = None
+                            opt_function = cgx.scram.graph_optimise_cage
+
+                        # Do the construction.
+                        constructed_molecule = (
+                            cgx.scram.try_except_construction(
+                                iterator=iterator,
+                                topology_code=topology_code,
+                                building_block_configuration=bb_config,
+                                vertex_positions=vertex_positions,
+                            )
+                        )
+                        name = (
+                            f"{pair}_{multiplier}_{idx}_{mash_idx}"
+                            f"_b{bb_config.idx}"
+                        )
+
+                        constructed_molecule.write(
+                            structure_dir / f"{name}_unopt.mol"
+                        )
+
+                        # Optimise and save.
+                        logging.info("building %s", name)
+
+                        try:
+                            conformer = opt_function(
+                                molecule=constructed_molecule,
+                                name=name,
+                                output_dir=calculation_dir,
+                                forcefield=forcefield,
+                                platform=None,
+                                database_path=database_path,
+                            )
+                            if conformer is not None:
+                                conformer.molecule.with_centroid(
+                                    (0, 0, 0)
+                                ).write(
+                                    str(structure_dir / f"{name}_optc.mol")
+                                )
+
+                            analyse_cage(
+                                database_path=database_path,
+                                name=name,
+                                forcefield=forcefield,
+                                iterator=iterator,
+                                topology_code=topology_code,
+                                bb_config=bb_config,
                             )
 
-                        save_vertex_positions(
-                            name=name,
-                            calculation_dir=calculation_dir,
-                            structure_dir=structure_dir,
-                            molecule=acage,
-                        )
+                        except OpenMMException:
+                            logging.info("failed optimisation of %s", name)
 
-                        analyse_cage(
-                            database_path=database_path,
-                            name=name,
-                            forcefield=forcefield,
-                            iterator=iterator,
-                            topology_code=constructed.topology_code,
-                        )
-
-                    except OpenMMException:
-                        pass
-
-        raise SystemExit("update plots")
-        _ = make_plot(
+        make_plot(
             database_path=database_path,
-            pair=pair,
+            target_pair=pair,
             structure_dir=structure_dir,
             figure_dir=figure_dir,
-            filename=f"rerun_1_{pair}.png",
+            filename=f"ufo_1_{pair}.png",
         )
 
-    raise SystemExit("update plots")
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="rerun_3.png",
+        filename="ufo_3.png",
     )
+    make_summary_plot2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="ufo_4.png",
+    )
+
     for pair in pairs:
-        raise SystemExit("update plots")
         make_plot(
             database_path=database_path,
-            pair=pair,
+            target_pair=pair,
             structure_dir=structure_dir,
             figure_dir=figure_dir,
-            filename=f"rerun_1_{pair}.png",
+            filename=f"ufo_1_{pair}.png",
         )
-    raise SystemExit("update plots")
-    make_parity_plot(
-        database_path=database_path,
-        steric_database_path=steric_database_path,
-        figure_dir=figure_dir,
-        filename="rerun_2.png",
-    )
 
 
 if __name__ == "__main__":
