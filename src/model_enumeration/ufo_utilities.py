@@ -4,8 +4,6 @@ import logging
 from copy import deepcopy
 
 import cgexplore as cgx
-import numpy as np
-import stk
 
 logging.basicConfig(
     level=logging.INFO,
@@ -121,7 +119,7 @@ def precursors_to_forcefield(
 
     cg_scale = 2
 
-    if isinstance(converging, SixBead):
+    if isinstance(converging, cgx.molecular.SixBead):
         beads = converging.get_bead_set()
         if "d" not in beads or "e" not in beads or "g" not in beads:
             raise RuntimeError
@@ -133,7 +131,7 @@ def precursors_to_forcefield(
         definer_dict["edde"] = ("tors", "0123", 180, 50, 1)
         definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
 
-    elif isinstance(converging, StericSixBead):
+    elif isinstance(converging, cgx.molecular.StericSixBead):
         beads = converging.get_bead_set()
 
         if (
@@ -178,104 +176,3 @@ def precursors_to_forcefield(
         present_beads=present_beads,
         definer_dict=definer_dict,
     )
-
-
-class SixBead(cgx.molecular.Precursor):
-    """A Precursor."""
-
-    def __init__(
-        self,
-        bead: cgx.molecular.CgBead,
-        abead1: cgx.molecular.CgBead,
-        abead2: cgx.molecular.CgBead,
-    ) -> None:
-        """Initialize a precursor."""
-        self._bead = bead
-        self._abead1 = abead1
-        self._abead2 = abead2
-        self._name = f"6C2{bead.bead_type}{abead1.bead_type}{abead2.bead_type}"
-        self._bead_set = {
-            bead.bead_type: bead,
-            abead1.bead_type: abead1,
-            abead2.bead_type: abead2,
-        }
-
-        new_fgs = stk.SmartsFunctionalGroupFactory(
-            smarts=f"[{abead2.element_string}X1][{abead1.element_string}]",
-            bonders=(0,),
-            deleters=(),
-            placers=(0, 1),
-        )
-        self._building_block = stk.BuildingBlock(
-            smiles=(
-                f"[{abead2.element_string}][{abead1.element_string}]"
-                f"[{bead.element_string}][{bead.element_string}]"
-                f"[{abead1.element_string}][{abead2.element_string}]"
-            ),
-            functional_groups=new_fgs,
-            position_matrix=np.array(
-                [
-                    [-6, 3, 0.2],
-                    [-4, 2, 0],
-                    [-2, 0.1, 0],
-                    [2, 0, 0],
-                    [4, 2, 0],
-                    [6, 3, 0.2],
-                ]
-            ),
-        )
-
-
-class StericSixBead(cgx.molecular.Precursor):
-    """A Precursor."""
-
-    def __init__(
-        self,
-        bead: cgx.molecular.CgBead,
-        abead1: cgx.molecular.CgBead,
-        abead2: cgx.molecular.CgBead,
-        sbead: cgx.molecular.CgBead,
-    ) -> None:
-        """Initialize a precursor."""
-        self._bead = bead
-        self._abead1 = abead1
-        self._abead2 = abead2
-        self._sbead = sbead
-        self._name = (
-            f"6S2{bead.bead_type}{abead1.bead_type}{abead2.bead_type}"
-            f"{sbead.bead_type}"
-        )
-        self._bead_set = {
-            bead.bead_type: bead,
-            abead1.bead_type: abead1,
-            abead2.bead_type: abead2,
-            sbead.bead_type: sbead,
-        }
-
-        new_fgs = stk.SmartsFunctionalGroupFactory(
-            smarts=f"[{abead2.element_string}X1][{abead1.element_string}]",
-            bonders=(0,),
-            deleters=(),
-            placers=(0, 1),
-        )
-        self._building_block = stk.BuildingBlock(
-            smiles=(
-                f"[{abead2.element_string}][{abead1.element_string}]"
-                f"[{bead.element_string}][{bead.element_string}]"
-                f"([{sbead.element_string}])[{bead.element_string}]"
-                f"[{abead1.element_string}][{abead2.element_string}]"
-            ),
-            functional_groups=new_fgs,
-            position_matrix=np.array(
-                [
-                    [-6, 3, 0.2],
-                    [-4, 2, 0],
-                    [-2, 0.1, 0],
-                    [0, 0.1, 0],
-                    [0, 1, 0],
-                    [2, 0, 0],
-                    [4, 2, 0],
-                    [6, 3, 0.2],
-                ]
-            ),
-        )

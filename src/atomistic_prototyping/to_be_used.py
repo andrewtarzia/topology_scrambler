@@ -500,3 +500,34 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
 
 if __name__ == "__main__":
     main()
+
+
+def save_vertex_positions(
+    name: str,
+    calculation_dir: pathlib.Path,
+    structure_dir: pathlib.Path,
+    molecule: stk.ConstructedMolecule,
+) -> None:
+    """Save vertex positions of molecule to file."""
+    vertex_file = calculation_dir / f"{name}_vertices.json"
+    if not vertex_file.exists():
+        constructed_molecule = molecule.with_structure_from_file(
+            structure_dir / f"{name}_optc.mol"
+        )
+
+        bbs = {}
+        for ai in constructed_molecule.get_atom_infos():
+            bbid = ai.get_building_block_id()
+            if bbid not in bbs:
+                bbs[bbid] = []
+            bbs[bbid].append(ai.get_atom().get_id())
+
+        centroids = {
+            i: tuple(
+                float(i)
+                for i in constructed_molecule.get_centroid(atom_ids=bbs[i])
+            )
+            for i in bbs
+        }
+        with vertex_file.open("w") as f:
+            json.dump(centroids, f, indent=4)
