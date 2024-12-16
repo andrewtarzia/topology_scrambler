@@ -1584,10 +1584,10 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         database_path = data_output / f"{prefix}.db"
         calculations_done_file = data_output / f"{prefix}.done"
 
-        possible_bbdicts = cgx.topologies.get_potential_bb_dicts(
+        possible_bbdicts = cgx.scram.get_potential_bb_dicts(
             tstr=cage_topology[0],
             ratio=studies[study]["bb_ratio"],
-            bb_type="ditopic",
+            study_type="ditopic",
         )
         logging.info(
             "there are %s possible BB dicts for %s",

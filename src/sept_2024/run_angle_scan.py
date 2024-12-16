@@ -11,7 +11,6 @@ import stk
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
 from utilities import (
-    SixBead,
     abead_c,
     abead_d,
     binder_bead,
@@ -219,7 +218,11 @@ def main() -> None:
     bac_range = [90, 100, 105, 110, 115, 120, 125, 130, 135, 140, 150]
 
     pair = "la_st5"
-    converging = SixBead(bead=cbead_c, abead1=abead_c, abead2=ebead_c)
+    converging = cgx.molecular.SixBead(
+        bead=cbead_c,
+        abead1=abead_c,
+        abead2=ebead_c,
+    )
     converging_name = "la"
     diverging = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
     diverging_name = "st5"

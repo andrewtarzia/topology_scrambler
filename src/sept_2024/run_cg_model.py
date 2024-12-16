@@ -12,7 +12,6 @@ import stko
 from openmm import OpenMMException, openmm
 from rdkit import RDLogger
 from utilities import (
-    SixBead,
     abead_c,
     abead_d,
     binder_bead,
@@ -21,7 +20,6 @@ from utilities import (
     eb_str,
     ebead_c,
     precursors_to_forcefield,
-    save_vertex_positions,
     tetra_bead,
 )
 
@@ -464,7 +462,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """Run script."""
     args = _parse_args()
 
@@ -495,7 +493,7 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st5",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -514,7 +512,7 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st52",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -533,7 +531,7 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c1",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -552,7 +550,7 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "c12",
             "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -571,7 +569,7 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st5",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -590,7 +588,7 @@ def main() -> None:
             "converging_name": "la",
             "diverging_name": "st52",
             "stoichiometry_L_L_M": (1, 1, 1),
-            "converging": SixBead(
+            "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
                 abead2=ebead_c,
@@ -702,13 +700,6 @@ def main() -> None:
                             conformer.molecule.with_centroid((0, 0, 0)).write(
                                 str(structure_dir / f"{name}_optc.mol")
                             )
-
-                        save_vertex_positions(
-                            name=name,
-                            calculation_dir=calculation_dir,
-                            structure_dir=structure_dir,
-                            molecule=acage,
-                        )
 
                         analyse_cage(
                             database_path=database_path,

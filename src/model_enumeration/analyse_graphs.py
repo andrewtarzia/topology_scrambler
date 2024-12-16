@@ -57,7 +57,7 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
             graph_type=f"{1*multi}P{2*multi}",
         )
 
-        for idx, topology_code in enumerate(iterator.get_graphs()):
+        for idx, topology_code in enumerate(iterator.yield_graphs()):
             nx_graph = topology_code.get_nx_graph()
             if len(list(nx.connected_components(nx_graph))) != 1:
                 continue

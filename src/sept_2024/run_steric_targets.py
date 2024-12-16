@@ -10,7 +10,6 @@ import stk
 from openmm import openmm
 from rdkit import RDLogger
 from utilities import (
-    StericSixBead,
     abead_c,
     abead_d,
     binder_bead,
@@ -221,7 +220,7 @@ def main() -> None:  # noqa: PLR0915
     database_path = data_dir / "tsteric.db"
 
     pair = "la_st5"
-    converging = StericSixBead(
+    converging = cgx.molecular.StericSixBead(
         bead=cbead_c,
         abead1=abead_c,
         abead2=ebead_c,

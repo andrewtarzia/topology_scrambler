@@ -198,6 +198,10 @@ def make_parity_plot(
 
     ax.set_xlabel(f"1st {eb_str()}", fontsize=16)
     ax.set_ylabel(f"2nd {eb_str()}", fontsize=16)
+    ax.set_title(
+        'this no longer makes sense because the "id" changes between rx '
+        "algorithms"
+    )
 
     leg = ax.legend(ncols=1, fontsize=12)
     for lh in leg.legend_handles:
@@ -459,7 +463,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 )
 
                 logging.info("doing: ligand %s, multi %s", lig, multiplier)
-                for idx, topology_code in enumerate(iterator.get_graphs()):
+                for idx, topology_code in enumerate(iterator.yield_graphs()):
                     if max_num is not None and idx > max_num:
                         break
 

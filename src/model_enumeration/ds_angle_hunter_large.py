@@ -1201,7 +1201,7 @@ def main() -> None:
         possible_bbdicts = cgx.scram.get_potential_bb_dicts(
             tstr=cage_topology[0],
             ratio=studies[study]["bb_ratio"],
-            bb_type=studies[study]["bb_type"],
+            study_type=studies[study]["bb_type"],
         )
         logging.info(
             "there are %s possible BB dicts for %s",
