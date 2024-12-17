@@ -23,7 +23,7 @@ from ufo_utilities import (
     precursors_to_forcefield,
     tetra_bead,
 )
-from utilities import eb_str
+from utilities import eb_str, pore_str
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +43,7 @@ def analyse_cage(  # noqa: C901, PLR0913
     """Analyse toy model cage."""
     database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
-    if "num_components" not in properties:
+    if "opt_pore_data" not in properties:
         energy_decomp = {}
         for component in properties["energy_decomposition"]:
             component_tup = properties["energy_decomposition"][component]
@@ -139,7 +139,6 @@ def analyse_cage(  # noqa: C901, PLR0913
         (l1, l2, multiplier, topology_idx, mash_idx, bbconfig_name) = (
             name.split("_")
         )
-
         database.add_properties(
             key=name,
             property_dict={
@@ -157,6 +156,11 @@ def analyse_cage(  # noqa: C901, PLR0913
                     (int(i[0]), int(i[1])) for i in topology_code.vertex_map
                 ),
                 "bb_config_idx": bb_config.idx,
+                "min_distance": (
+                    cgx.analysis.GeomMeasure().calculate_min_distance(
+                        database.get_molecule(key=name)
+                    )["min_distance"]
+                ),
             },
         )
 
@@ -169,7 +173,7 @@ def make_plot(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(5, 5))
     energies = {}
     cmap = {
         "1": "tab:blue",
@@ -187,15 +191,15 @@ def make_plot(
             continue
 
         energy = entry.properties["energy_per_bb"]
+        min_distance = entry.properties["min_distance"]
 
         if multi not in energies:
             energies[multi] = []
 
         if entry.properties["num_components"] > 1:
             continue
-        energies[multi].append((round(energy, 4), entry.key))
+        energies[multi].append((round(energy, 4), entry.key, min_distance))
 
-    print(energies)
     with (figure_dir / f"min_{pair}.txt").open("w") as f:
         for multi in energies:
             if len(energies[multi]) == 0:
@@ -204,22 +208,69 @@ def make_plot(
             sorted_energies = sorted(energies[multi], key=lambda p: p[0])
             min_energy = sorted_energies[0]
 
-            ax.plot(
+            sorted_pores = sorted(
+                energies[multi], key=lambda p: p[2], reverse=True
+            )
+            max_pore = sorted_pores[0]
+
+            offset = 20 * int(multi)
+            bbox = {"boxstyle": "round", "fc": "1.0"}
+            arrowprops = {
+                "arrowstyle": "->",
+                "connectionstyle": "angle,angleA=0,angleB=90,rad=10",
+            }
+            ax.annotate(
+                text=f"E: {round(min_energy[0],3)} @ {min_energy[1]}",
+                xy=(min_energy[2], min_energy[0]),
+                xycoords="data",
+                xytext=(-0.5 * offset, -offset),
+                textcoords="offset points",
+                bbox=bbox,
+                arrowprops=arrowprops,
+                color=cmap[multi],
+                fontsize=8,
+            )
+            offset = -20 * int(multi)
+            ax.annotate(
+                text=f"P: {round(max_pore[2],3)} @ {max_pore[1]}",
+                xy=(max_pore[2], max_pore[0]),
+                xycoords="data",
+                xytext=(0.5 * offset, -offset),
+                textcoords="offset points",
+                bbox=bbox,
+                arrowprops=arrowprops,
+                color=cmap[multi],
+                fontsize=8,
+            )
+
+            ax.scatter(
+                [i[2] for i in energies[multi]],
                 [i[0] for i in energies[multi]],
                 marker="o",
                 c=cmap[multi],
-                markersize=4,
-                label=f"{multi}: {round(min_energy[0],3)} @ {min_energy[1]}",
+                s=20,
+                ec="none",
+                alpha=0.3,
+                label=f"M={multi}",
             )
-
+            ax.scatter(
+                min_energy[2],
+                min_energy[0],
+                marker="o",
+                c=cmap[multi],
+                s=20,
+                ec="k",
+            )
             opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
             f.write(f"{opt_file} ")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(pore_str(), fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_ylim(0.01, 1000)
+    ax.set_xlim(0, 10)
     ax.axhline(y=0.3, c="k", ls="--")
+    ax.set_ylim(None, 1000)
     ax.legend(ncols=1, fontsize=16)
     fig.tight_layout()
     fig.savefig(
@@ -233,8 +284,6 @@ def make_plot(
         bbox_inches="tight",
     )
     plt.close()
-
-    raise SystemExit
 
 
 def make_summary_plot(
@@ -339,8 +388,8 @@ def make_summary_plot2(
     systems = {
         ("lf_ls1", "1"): {"name": "lf-ls1-1", "data": []},
         ("lf_ls1", "2"): {"name": "lf-ls1-2", "data": []},
-        ("lf_ls1", "3"): {"name": "lf-ls1-4", "data": []},
-        ("lf_ls1", "4"): {"name": "lf-ls1-1", "data": []},
+        ("lf_ls1", "3"): {"name": "lf-ls1-3", "data": []},
+        ("lf_ls1", "4"): {"name": "lf-ls1-4", "data": []},
     }
 
     count = 0
@@ -419,6 +468,63 @@ def make_summary_plot2(
     plt.close()
 
 
+def make_opt_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise stage of the optimisation produces the low-E conformer."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    stages = ("opt1", "nx0", "nx1", "nx2", "nx3", "shifted", "smd")
+    sources = {i: 0 for i in stages}
+    lowe_sources = {i: 0 for i in stages}  # Produces low energy structures.
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        sources[entry.properties["source"]] += 1
+        energy = entry.properties["energy_per_bb"]
+        if energy < 1:
+            lowe_sources[entry.properties["source"]] += 1
+
+    ax.bar(
+        stages,
+        [lowe_sources[i] for i in stages],
+        color="#086788",
+        edgecolor="none",
+        lw=2,
+        label=f"{eb_str()} < 1.0",
+    )
+    ax.bar(
+        stages,
+        [sources[i] for i in stages],
+        color="none",
+        edgecolor="k",
+        lw=2,
+        label="all",
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel("count", fontsize=16)  # , color=color)
+
+    ax.legend(fontsize=16)
+    ax.set_xticks(range(len(stages)))
+    ax.set_xticklabels(stages, rotation=45)
+    ax.set_xlabel("stage", fontsize=16)
+    ax.set_yscale("log")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -430,7 +536,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:  # noqa: C901, PLR0915
+def main() -> None:  # noqa: C901, PLR0915, PLR0912
     """Run script."""
     args = _parse_args()
 
@@ -448,16 +554,27 @@ def main() -> None:  # noqa: C901, PLR0915
     database_path = data_dir / "ufo.db"
 
     ligand_measures = {
+        # From prep.
         "lf": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
+        # From optl.
         "ls1": {"ba": 2.8, "aa": 4.9, "bac": 150, "bacab": 180},
-        "ls9": {"ba": 2.8, "aa": 5.5, "bac": 165, "bacab": 180},
+        "ls2": {"ba": 2.8, "aa": 4.7, "bac": 155, "bacab": 180},
+        "ls3": {"ba": 2.8, "aa": 5.0, "bac": 145, "bacab": 180},
+        "ls4": {"ba": 2.8, "aa": 5.0, "bac": 150, "bacab": 180},
+        "ls5": {"ba": 2.8, "aa": 5.0, "bac": 150, "bacab": 180},
+        "ls7": {"ba": 2.8, "aa": 5.0, "bac": 150, "bacab": 180},
+        "ls8": {"ba": 2.8, "aa": 5.0, "bac": 150, "bacab": 180},
+        "ls9": {"ba": 2.8, "aa": 5.3, "bac": 165, "bacab": 180},
+        "ls10": {"ba": 2.8, "aa": 5.4, "bac": 167, "bacab": 180},
     }
-    print("add new systems - steric mimics on ls1 (ls3-ls8), ls10")
 
-    pairs = {
-        "lf_ls1": {
+    l2s = ("ls1", "ls2", "ls3", "ls4", "ls5", "ls7", "ls8", "ls9", "ls10")
+    pairs = {}
+    for l2 in l2s:
+        name = f"lf_{l2}"
+        pairs[name] = {
             "converging_name": "lf",
-            "diverging_name": "ls1",
+            "diverging_name": l2,
             "stoichiometry_L_L_M": (1, 1, 1),
             "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
@@ -473,32 +590,15 @@ def main() -> None:  # noqa: C901, PLR0915
                 abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3, 4),
-        },
-        # "lf_ls9": {
-        #     "converging_name": "lf",
-        #     "diverging_name": "ls9",
-        #     "stoichiometry_L_L_M": (1, 1, 1),
-        #     "converging": SixBead(
-        #         bead=cbead_c,
-        #         abead1=abead_c,
-        #         abead2=ebead_c,
-        #     ),
-        #     "diverging": cgx.molecular.TwoC1Arm(
-        #         bead=cbead_d,
-        #         abead1=abead_d,
-        #     ),
-        #     "tetra": cgx.molecular.FourC1Arm(
-        #         bead=tetra_bead,
-        #         abead1=binder_bead,
-        #     ),
-        #     "multipliers": (1, 2, 3, 4),
-        # },
-    }
+        }
 
     if args.run:
         for pair in pairs:
             converging_name = pairs[pair]["converging_name"]
             diverging_name = pairs[pair]["diverging_name"]
+            if diverging_name in ("ls3", "ls4", "ls5", "ls7", "ls8"):
+                logging.info("add sterics, or remove")
+                continue
             converging = pairs[pair]["converging"]
             diverging = pairs[pair]["diverging"]
             tetra = pairs[pair]["tetra"]
@@ -578,12 +678,13 @@ def main() -> None:  # noqa: C901, PLR0915
                 )
 
                 logging.info(
-                    "producing: %s structures",
-                    len(possible_bbdicts) * iterator.count_graphs(),
+                    "producing bewteen %s and %s structures",
+                    len(possible_bbdicts) * iterator.count_graphs() * 1,
+                    len(possible_bbdicts) * iterator.count_graphs() * 4,
                 )
 
-                for (idx, topology_code), bb_config in it.product(
-                    enumerate(iterator.yield_graphs()), possible_bbdicts
+                for bb_config, (idx, topology_code) in it.product(
+                    possible_bbdicts, enumerate(iterator.yield_graphs())
                 ):
                     # Do the construction.
                     nx_graph = topology_code.get_nx_graph()
@@ -677,6 +778,11 @@ def main() -> None:  # noqa: C901, PLR0915
         database_path=database_path,
         figure_dir=figure_dir,
         filename="ufo_4.png",
+    )
+    make_opt_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="ufo_5.png",
     )
 
     for pair in pairs:
