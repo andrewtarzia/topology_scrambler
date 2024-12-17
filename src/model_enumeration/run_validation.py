@@ -49,6 +49,63 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def make_opt_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise stage of the optimisation produces the low-E conformer."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    stages = ("opt1", "nx0", "nx1", "nx2", "nx3", "shifted", "smd")
+    sources = {i: 0 for i in stages}
+    lowe_sources = {i: 0 for i in stages}  # Produces low energy structures.
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        sources[entry.properties["source"]] += 1
+        energy = entry.properties["energy_per_bb"]
+        if energy < 1:
+            lowe_sources[entry.properties["source"]] += 1
+
+    ax.bar(
+        stages,
+        [lowe_sources[i] for i in stages],
+        color="#086788",
+        edgecolor="none",
+        lw=2,
+        label=f"{eb_str()} < 1.0",
+    )
+    ax.bar(
+        stages,
+        [sources[i] for i in stages],
+        color="none",
+        edgecolor="k",
+        lw=2,
+        label="all",
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel("count", fontsize=16)  # , color=color)
+
+    ax.legend(fontsize=16)
+    ax.set_xticks(range(len(stages)))
+    ax.set_xticklabels(stages, rotation=45)
+    ax.set_xlabel("stage", fontsize=16)
+    ax.set_yscale("log")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def make_plot(
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
@@ -563,6 +620,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         filename="validationd_2.png"
         if args.nodoubles
         else "validationi_2.png",
+    )
+    make_opt_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationd_5.png"
+        if args.nodoubles
+        else "validationi_5.png",
     )
     make_plot(
         database_path=database_path,
