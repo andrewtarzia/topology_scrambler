@@ -259,23 +259,23 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
         },
     }
 
-    lf_bb = get_ligand_bb(
+    lf_bb = cgx.atomistic.get_ditopic_aligned_bb(
         path=wd / "ligands" / "lf_prep.mol",
         optl_path=wd / "ligands" / "lf_optl.mol",
     )
-    ls1_bb = get_ligand_bb(
+    ls1_bb = cgx.atomistic.get_ditopic_aligned_bb(
         path=wd / "ligands" / "ls1_prep.mol",
         optl_path=wd / "ligands" / "ls1_optl.mol",
     )
-    ls9_bb = get_ligand_bb(
+    ls9_bb = cgx.atomistic.get_ditopic_aligned_bb(
         path=wd / "ligands" / "ls9_prep.mol",
         optl_path=wd / "ligands" / "ls9_optl.mol",
     )
-    st5_bb = get_ligand_bb(
+    st5_bb = cgx.atomistic.get_ditopic_aligned_bb(
         path=wd / "ligands" / "st5_prep.mol",
         optl_path=wd / "ligands" / "st5_optl.mol",
     )
-    la_bb = get_ligand_bb(
+    la_bb = cgx.atomistic.get_ditopic_aligned_bb(
         path=wd / "ligands" / "la_prep.mol",
         optl_path=wd / "ligands" / "la_optl.mol",
     )
