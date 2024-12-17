@@ -1,13 +1,6 @@
 """Utilities module."""
 
-import logging
-
 import matplotlib as mpl
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
 
 tstr_cmap = mpl.colormaps["tab20"].resampled(20)
 multi_cmap = {
@@ -32,3 +25,8 @@ def eb_str(no_unit: bool = False) -> str:
         return r"$E_{\mathrm{b}}$"
 
     return r"$E_{\mathrm{b}}$ [kJmol$^{-1}$]"
+
+
+def pore_str() -> str:
+    """A unit str."""
+    return r"pore size [$\mathrm{\AA}$]"
