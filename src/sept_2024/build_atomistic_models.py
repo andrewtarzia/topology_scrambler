@@ -8,8 +8,6 @@ import stk
 import stko
 from rdkit import RDLogger
 
-from .utilities import get_ligand_bb
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -240,11 +238,11 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     xtb_path = pathlib.Path("/home/atarzia/miniforge3/envs/tscram/bin/xtb")
 
     buildingblocks = {
-        "la": get_ligand_bb(
+        "la": cgx.atomistic.get_ditopic_aligned_bb(
             path=ligand_dir / "la_prep.mol",
             optl_path=ligand_dir / "la_optl.mol",
         ),
-        "las": get_ligand_bb(
+        "las": cgx.atomistic.get_ditopic_aligned_bb(
             path=ligand_dir / "las_prep.mol",
             optl_path=ligand_dir / "las_optl.mol",
         ),

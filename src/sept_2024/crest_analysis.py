@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import stk
 import stko
-from utilities import get_ligand_bb, plot_xy
+from utilities import plot_xy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,7 +115,7 @@ def main() -> None:
                 ligand_name=ligand,
             )
 
-        _ = get_ligand_bb(
+        _ = cgx.atomistic.get_ditopic_aligned_bb(
             path=wd / "ligands" / f"{ligand}_prep.mol",
             optl_path=wd / "ligands" / f"{ligand}_optl.mol",
         )

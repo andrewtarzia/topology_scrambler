@@ -5,49 +5,13 @@ import pathlib
 from collections import Counter
 from copy import deepcopy
 
-import bbprep
 import cgexplore as cgx
 import matplotlib.pyplot as plt
-import stk
-import stko
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
-
-
-def get_ligand_bb(
-    path: pathlib.Path,
-    optl_path: pathlib.Path,
-) -> stk.BuildingBlock:
-    """Get building block for the target ligand and prepare for cage model."""
-    try:
-        return stk.BuildingBlock.init_from_file(
-            path=path,
-            functional_groups=(
-                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-            ),
-        )
-    except OSError:
-        temp = stk.BuildingBlock.init_from_file(
-            path=optl_path,
-            functional_groups=(
-                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-            ),
-        )
-        generator = bbprep.generators.ETKDG(num_confs=100)
-        ensemble = generator.generate_conformers(temp)
-        process = bbprep.DitopicFitter(ensemble=ensemble)
-        min_molecule = process.get_minimum()
-        min_molecule.molecule.write(path)
-
-    return stk.BuildingBlock.init_from_file(
-        path=path,
-        functional_groups=(
-            stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-        ),
-    )
 
 
 def eb_str(no_unit: bool = False) -> str:
