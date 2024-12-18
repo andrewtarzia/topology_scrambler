@@ -78,27 +78,6 @@ trigonal_bead2 = cgx.molecular.CgBead(
 )
 
 
-def stoich_map(tstr: str) -> int:
-    """Stoichiometry maps to the number of building blocks."""
-    return {
-        "2P3": 5,
-        "4P6": 10,
-        "4P62": 10,
-        "6P9": 15,
-        "8P12": 20,
-        "2P4": 6,
-        "3P6": 9,
-        "4P8": 12,
-        "4P82": 12,
-        "6P12": 18,
-        "8P16": 24,
-        "6P122": 18,
-        "8P162": 24,
-        "12P24": 36,
-        "6P8": 14,
-    }[tstr]
-
-
 def convert_topo(topo_str: str) -> str:
     """Convert topology to fancy name."""
     return {
@@ -135,11 +114,6 @@ class EnvVariables:
     cg_calculations.mkdir(exist_ok=True, parents=True)
     cg_outputdata = project_dir / pathlib.Path("outputdata/")
     cg_outputdata.mkdir(exist_ok=True, parents=True)
-
-    isomer_energy = 0.3
-    eb_str = r"$E_{\mathrm{b}}$ [kJmol$^{-1}$]"
-    max_uniformity_threshold = 0.3
-    dihedral_state_threshold = 5
 
 
 def create_zone(dmin: float, dmax: float, resolution: int) -> list[float]:

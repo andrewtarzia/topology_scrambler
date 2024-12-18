@@ -19,11 +19,14 @@ from ds_utilities import (
     binder_bead,
     core_bead,
     get_forcefield_dict,
-    stoich_map,
     tetragonal_bead,
     trigonal_bead,
 )
 from rdkit import RDLogger
+from utilities import (
+    dihedral_state_threshold,
+    isomer_energy,
+)
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(
@@ -300,7 +303,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
         res_dict = {
             "strain_energy": fin_energy,
-            "energy_per_bb": fin_energy / stoich_map(tstr),
+            "energy_per_bb": fin_energy / cgx.topologies.stoich_map(tstr),
         }
         database.add_properties(key=name, property_dict=res_dict)
 
@@ -388,7 +391,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
                 within_distance_from_env = [
                     (de, d)
                     for de in envs
-                    if abs(d - de) < EnvVariables.dihedral_state_threshold
+                    if abs(d - de) < dihedral_state_threshold()
                 ]
 
                 if len(within_distance_from_env) == 0:
@@ -494,7 +497,7 @@ def bar_function(
             if len(pdata) != 1:
                 continue
 
-            if pdata["$.energy_per_bb"].item(0) <= EnvVariables.isomer_energy:
+            if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
                 if pdata["$.dihedral_num_states"].item(0) == 2:  # noqa: PLR2004
                     colour = "tab:orange"
 
@@ -617,7 +620,7 @@ def plot_torsion_data(
 
             states = pdata["$.dihedral_states"].item(0).to_list()
 
-            if pdata["$.energy_per_bb"].item(0) <= EnvVariables.isomer_energy:
+            if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
                 c = "tab:orange" if len(states) == 3 else "tab:blue"  # noqa: PLR2004
                 c2 = "tab:red"
             else:
@@ -723,7 +726,7 @@ def plot_specific_torsion_data(
 
             states = pdata["$.dihedral_states"].item(0).to_list()
 
-            if pdata["$.energy_per_bb"].item(0) <= EnvVariables.isomer_energy:
+            if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
                 c = "tab:orange" if len(states) == 3 else "tab:blue"  # noqa: PLR2004
                 c2 = "tab:red"
             else:

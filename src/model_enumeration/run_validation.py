@@ -15,7 +15,7 @@ import numpy as np
 import polars as pl
 from openmm import OpenMMException
 from rdkit import RDLogger
-from utilities import eb_str, multi_cmap
+from utilities import eb_str, isomer_energy, multi_cmap
 from validation_utilities import (
     abead_d,
     analyse_cage,
@@ -144,7 +144,7 @@ def make_plot(
             stable = [
                 i
                 for i in energies[idx]
-                if i[0] == bac_angle and i[1] < 0.3  # noqa: PLR2004
+                if i[0] == bac_angle and i[1] < isomer_energy()
             ]
             if len(stable) > 0:
                 logging.info("stable cages: %s", stable)
@@ -172,7 +172,7 @@ def make_plot(
         ax.tick_params(axis="both", which="major", labelsize=16)
 
         ax.set_yscale("log")
-        ax.axhline(y=0.3, c="k", ls="--")
+        ax.axhline(y=isomer_energy(), c="k", ls="--")
 
     axx.plot(
         list(countsx),
@@ -249,8 +249,8 @@ def make_parity_plot(
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.axhline(y=0.3, c="k", ls="--")
-    ax.axvline(x=0.3, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
+    ax.axvline(x=isomer_energy(), c="k", ls="--")
     ax.plot((0.001, 100), (0.001, 100), c="gray", ls="-", zorder=-1)
 
     ax.set_xlabel(f"1st {eb_str()}", fontsize=16)
@@ -354,7 +354,7 @@ def make_summary_plot(
         if entry.properties["num_components"] > 1:
             continue
         energies[(multi, bite_angle)].append((round(energy, 4), vstr))
-        if energy < 0.3:  # noqa: PLR2004
+        if energy < isomer_energy():
             to_save.append(entry.key)
 
     with tops.open("w") as f:

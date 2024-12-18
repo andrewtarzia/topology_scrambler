@@ -21,13 +21,17 @@ from ds_utilities import (
     core_bead,
     create_zone,
     get_forcefield_dict,
-    stoich_map,
     tetragonal_bead,
     tetragonal_bead2,
     trigonal_bead,
     trigonal_bead2,
 )
 from rdkit import RDLogger
+from utilities import (
+    dihedral_state_threshold,
+    eb_str,
+    isomer_energy,
+)
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(
@@ -507,7 +511,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
         res_dict = {
             "strain_energy": fin_energy,
-            "energy_per_bb": fin_energy / stoich_map(tstr),
+            "energy_per_bb": fin_energy / cgx.topologies.stoich_map(tstr),
         }
         database.add_properties(key=name, property_dict=res_dict)
 
@@ -608,7 +612,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
                 within_distance_from_env = [
                     d
                     for de in envs
-                    if abs(d - de) < EnvVariables.dihedral_state_threshold
+                    if abs(d - de) < dihedral_state_threshold()
                 ]
                 if len(within_distance_from_env) == 0:
                     envs.append(round(d, 0))
@@ -708,9 +712,7 @@ def low_resolution_function(  # noqa: PLR0915, C901
 
         min_energy = min(pdata["$.energy_per_bb"])
         # Get stable states.
-        pdata = pdata.filter(
-            pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
-        )
+        pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
 
         if len(pdata) > 1:
             colour = "tab:orange"
@@ -783,7 +785,7 @@ def low_resolution_function(  # noqa: PLR0915, C901
         labelsize=16,
         labelcolor="tab:red",
     )
-    ax1a.set_ylabel(f"min {EnvVariables.eb_str}", fontsize=16, color="tab:red")
+    ax1a.set_ylabel(f"min {eb_str()}", fontsize=16, color="tab:red")
     ax1a.set_ylim(0, 2.0)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
@@ -795,7 +797,7 @@ def low_resolution_function(  # noqa: PLR0915, C901
         orientation="vertical",
     )
     cbar.ax.tick_params(labelsize=16)
-    cbar.set_label(f"min {EnvVariables.eb_str}", fontsize=16)
+    cbar.set_label(f"min {eb_str()}", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -875,9 +877,7 @@ def high_resolution_function(  # noqa: PLR0915, PLR0912, C901
 
         min_energy = min(pdata["$.energy_per_bb"])
         # Get stable states.
-        pdata = pdata.filter(
-            pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
-        )
+        pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
 
         if len(pdata) > 1:
             colour = "tab:orange"
@@ -932,9 +932,7 @@ def high_resolution_function(  # noqa: PLR0915, PLR0912, C901
 
         min_energy = min(pdata["$.energy_per_bb"])
         # Get stable states.
-        pdata = pdata.filter(
-            pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
-        )
+        pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
 
         if len(pdata) > 1:
             colour = "tab:orange"
@@ -1007,7 +1005,7 @@ def high_resolution_function(  # noqa: PLR0915, PLR0912, C901
         labelsize=16,
         labelcolor="tab:red",
     )
-    ax1a.set_ylabel(f"min {EnvVariables.eb_str}", fontsize=16, color="tab:red")
+    ax1a.set_ylabel(f"min {eb_str()}", fontsize=16, color="tab:red")
     ax1a.set_ylim(0, 2.0)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
@@ -1019,7 +1017,7 @@ def high_resolution_function(  # noqa: PLR0915, PLR0912, C901
         orientation="vertical",
     )
     cbar.ax.tick_params(labelsize=16)
-    cbar.set_label(f"min {EnvVariables.eb_str}", fontsize=16)
+    cbar.set_label(f"min {eb_str()}", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(

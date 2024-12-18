@@ -19,6 +19,7 @@ from utilities import (
     cbead_d,
     eb_str,
     ebead_c,
+    isomer_energy,
     precursors_to_forcefield,
     tetra_bead,
 )
@@ -221,7 +222,7 @@ def make_plot(
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_ylim(0.01, 1000)
-    ax.axhline(y=0.3, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
     ax.legend(ncols=1, fontsize=16)
     fig.tight_layout()
     fig.savefig(
@@ -435,7 +436,7 @@ def make_summary_plot2(
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_ylim(0.1, None)
-    ax.axhline(y=0.3, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
 
     fig.tight_layout()
     fig.savefig(

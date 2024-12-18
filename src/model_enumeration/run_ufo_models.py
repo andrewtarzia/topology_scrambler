@@ -23,7 +23,7 @@ from ufo_utilities import (
     precursors_to_forcefield,
     tetra_bead,
 )
-from utilities import eb_str, pore_str
+from utilities import eb_str, isomer_energy, pore_str
 
 logging.basicConfig(
     level=logging.INFO,
@@ -269,7 +269,7 @@ def make_plot(
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_xlim(0, 10)
-    ax.axhline(y=0.3, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
     ax.set_ylim(None, 1000)
     ax.legend(ncols=1, fontsize=16)
     fig.tight_layout()
@@ -452,7 +452,7 @@ def make_summary_plot2(
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_ylim(0.1, None)
-    ax.axhline(y=0.3, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
 
     fig.tight_layout()
     fig.savefig(

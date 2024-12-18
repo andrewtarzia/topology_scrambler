@@ -9,7 +9,7 @@ import cgexplore as cgx
 import matplotlib.pyplot as plt
 import stko
 from openmm import openmm
-from utilities import eb_str
+from utilities import eb_str, isomer_energy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -280,7 +280,7 @@ def make_plot(
         ax.tick_params(axis="both", which="major", labelsize=16)
 
         ax.set_yscale("log")
-        ax.axhline(y=0.3, c="k", ls="--")
+        ax.axhline(y=isomer_energy(), c="k", ls="--")
 
         axx.plot(
             list(countsx),

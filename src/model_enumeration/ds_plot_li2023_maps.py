@@ -13,6 +13,7 @@ import polars as pl
 import stk
 import stko
 from ds_utilities import EnvVariables
+from utilities import eb_str, isomer_energy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -287,7 +288,7 @@ def li2023_bite_angle(
         orientation="vertical",
     )
     cbar.ax.tick_params(labelsize=16)
-    cbar.set_label(f"min {EnvVariables.eb_str}", fontsize=16)
+    cbar.set_label(f"min {eb_str()}", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(figure_output / "li2023_ba.png", dpi=720, bbox_inches="tight")
@@ -339,9 +340,7 @@ def li2023_ss(
                 continue
 
             # Get stable states.
-            pdata = pdata.filter(
-                pl.col("$.energy_per_bb") <= EnvVariables.isomer_energy
-            )
+            pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
 
             if len(pdata) > 1:
                 colour = "tab:orange"

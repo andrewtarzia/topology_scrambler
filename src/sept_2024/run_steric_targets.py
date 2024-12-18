@@ -18,6 +18,7 @@ from utilities import (
     eb_str,
     ebead_c,
     inner_bead,
+    isomer_energy,
     precursors_to_forcefield,
     steric_bead,
     tetra_bead,
@@ -181,7 +182,7 @@ def make_plot(
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel(r"$\sigma_{s}$  [\AA]", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
-    ax.axhline(y=0.3, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
     ax.legend(fontsize=16)
     fig.tight_layout()
     fig.savefig(

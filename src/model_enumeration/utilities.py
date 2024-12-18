@@ -30,3 +30,18 @@ def eb_str(no_unit: bool = False) -> str:
 def pore_str() -> str:
     """A unit str."""
     return r"pore size [$\mathrm{\AA}$]"
+
+
+def isomer_energy() -> float:
+    """Get constant."""
+    return 0.3
+
+
+def max_uniformity_threshold() -> float:
+    """Get constant."""
+    return 0.3
+
+
+def dihedral_state_threshold() -> float:
+    """Get constant."""
+    return 5.0
