@@ -474,16 +474,21 @@ def make_opt_plot(
     filename: str,
 ) -> dict:
     """Visualise stage of the optimisation produces the low-E conformer."""
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(10, 5))
 
     stages = ("opt1", "nx0", "nx1", "nx2", "nx3", "shifted", "smd")
+    mash_ids = ("0", "1", "2", "3")
     sources = {i: 0 for i in stages}
+    mashes = {i: 0 for i in mash_ids}
     lowe_sources = {i: 0 for i in stages}  # Produces low energy structures.
+    lowe_mashes = {i: 0 for i in mash_ids}  # Produces low energy structures.
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         sources[entry.properties["source"]] += 1
+        mashes[entry.properties["mash_idx"]] += 1
         energy = entry.properties["energy_per_bb"]
         if energy < 1:
             lowe_sources[entry.properties["source"]] += 1
+            lowe_mashes[entry.properties["mash_idx"]] += 1
 
     ax.bar(
         stages,
@@ -502,14 +507,36 @@ def make_opt_plot(
         label="all",
     )
 
+    ax1.bar(
+        [int(i) for i in mash_ids],
+        [lowe_mashes[i] for i in mash_ids],
+        color="#086788",
+        edgecolor="none",
+        lw=2,
+        label=f"{eb_str()} < 1.0",
+    )
+    ax1.bar(
+        [int(i) for i in mash_ids],
+        [mashes[i] for i in mash_ids],
+        color="none",
+        edgecolor="k",
+        lw=2,
+        label="all",
+    )
+
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel("count", fontsize=16)  # , color=color)
-
     ax.legend(fontsize=16)
     ax.set_xticks(range(len(stages)))
     ax.set_xticklabels(stages, rotation=45)
     ax.set_xlabel("stage", fontsize=16)
     ax.set_yscale("log")
+
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_ylabel("count", fontsize=16)  # , color=color)
+    ax1.set_xticks(range(len(mash_ids)))
+    ax1.set_xticklabels(mash_ids)
+    ax1.set_xlabel("mash idx", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -678,7 +705,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                 )
 
                 logging.info(
-                    "producing bewteen %s and %s structures",
+                    "producing between %s and %s structures",
                     len(possible_bbdicts) * iterator.count_graphs() * 1,
                     len(possible_bbdicts) * iterator.count_graphs() * 4,
                 )
@@ -761,13 +788,13 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                         except OpenMMException:
                             logging.info("failed optimisation of %s", name)
 
-        make_plot(
-            database_path=database_path,
-            target_pair=pair,
-            structure_dir=structure_dir,
-            figure_dir=figure_dir,
-            filename=f"ufo_1_{pair}.png",
-        )
+            make_plot(
+                database_path=database_path,
+                target_pair=pair,
+                structure_dir=structure_dir,
+                figure_dir=figure_dir,
+                filename=f"ufo_1_{pair}.png",
+            )
 
     make_summary_plot(
         database_path=database_path,
