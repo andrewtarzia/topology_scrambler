@@ -1,5 +1,6 @@
 """Script to generate and optimise CG models."""
 
+import argparse
 import logging
 import pathlib
 from collections import defaultdict
@@ -9,7 +10,7 @@ import cgexplore as cgx
 import matplotlib.pyplot as plt
 import stk
 from matplotlib.lines import Line2D
-from utilities import eb_str, pore_str
+from utilities import eb_str, isomer_energy, pore_str
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +19,7 @@ logging.basicConfig(
 
 
 def make_plot(
-    fit_entries: dict[str, atomlite.Entry],
+    fit_db: cgx.utilities.AtomliteDatabase,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
@@ -28,9 +29,9 @@ def make_plot(
     cmap = {
         "at": ("tab:blue", "scan"),
         "kt": ("tab:blue", "scan"),
-        "st": ("tab:blue", "scan"),
         "lt": ("tab:blue", "scan"),
         "tt": ("tab:blue", "scan"),
+        "st": ("tab:purple", "torsion"),
         "dval": ("tab:orange", "nodoubles"),
         "ival": ("tab:green", "graph"),
         "ufo": ("tab:red", "ufo"),
@@ -39,7 +40,8 @@ def make_plot(
     option_xs = defaultdict(list)
     option_ys = defaultdict(list)
 
-    for (db_name, _), entry in fit_entries.items():
+    for entry in fit_db.get_entries():
+        db_name = entry.properties["db_name"]
         energy = entry.properties["energy_per_bb"]
         min_distance = entry.properties["min_distance"]
 
@@ -52,27 +54,20 @@ def make_plot(
         option_xs[prefix].append(min_distance)
         option_ys[prefix].append(energy)
 
-    for option, c in cmap.items():
+    legend_elements = []
+    for option, (c, labl) in cmap.items():
         ax.scatter(
             option_xs[option],
             option_ys[option],
             marker="o",
-            c=c[0],
-            s=20,
-            ec="k",
+            c=c,
+            s=50,
+            ec="k" if labl != "scan" else "none",
             alpha=1,
             rasterized=True,
         )
 
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(pore_str(), fontsize=16)
-    ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_yscale("log")
-    ax.set_xlim(0, 10)
-
-    legend_elements = []
-    for prefix, (c, labl) in cmap.items():
-        if prefix in ("kt", "st", "lt", "tt"):
+        if option in ("kt", "lt", "tt"):
             continue
         legend_elements.append(
             Line2D(
@@ -83,10 +78,17 @@ def make_plot(
                 label=labl,
                 markerfacecolor=c,
                 markersize=8,
-                markeredgecolor="k",
+                markeredgecolor="k" if labl != "scan" else "none",
                 alpha=1,
             )
         )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(pore_str(), fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.set_xlim(0, 10)
+
     ax.legend(handles=legend_elements, ncols=1, fontsize=16)
     fig.tight_layout()
     fig.savefig(
@@ -103,7 +105,7 @@ def make_plot(
 
 
 def make_opt_plot(
-    fit_entries: dict[str, atomlite.Entry],
+    fit_db: cgx.utilities.AtomliteDatabase,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
@@ -113,7 +115,7 @@ def make_opt_plot(
     stages = ("opt1", "nx0", "nx1", "nx2", "nx3", "shifted", "smd")
 
     lowe_sources = {i: 0 for i in stages}  # Produces low energy structures.
-    for entry in fit_entries.values():
+    for entry in fit_db.get_entries():
         # Skip those built from templates.
         if "temp" in entry.properties["source"]:
             continue
@@ -149,15 +151,19 @@ def make_opt_plot(
     plt.close()
 
 
-def compute_fitness(entry: atomlite.Entry, db_name: str) -> int:
+def compute_fitness(entry: atomlite.Entry, db_name: str) -> int:  # noqa: C901, PLR0911, PLR0912
     """Return fitness value. 0 for not, 1 for fit."""
     try:
-        if entry.properties["energy_per_bb"] > 0.3:  # noqa: PLR2004
+        if entry.properties["energy_per_bb"] > isomer_energy():
             return 0
     except KeyError:
         return 0
 
-    if "at" in db_name:
+    if db_name in ("dvalidation_run", "ivalidation_run", "ufo"):
+        # Only energy for this one.
+        return 1
+
+    if db_name[:2] == "at" or db_name[:2] == "tt":
         angle_diff = abs(
             entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
             - entry.properties["forcefield_dict"]["v_dict"]["b_a_o"]
@@ -166,16 +172,66 @@ def compute_fitness(entry: atomlite.Entry, db_name: str) -> int:
             return 1
         return 0
 
-    print(entry, db_name)
-    raise SystemExit
+    if db_name[:2] == "kt":
+        if "b_m_b" in entry.properties["forcefield_dict"]["v_dict"]:
+            target = 90
+            angle_str = "b_m_b"
+        elif "b_n_b" in entry.properties["forcefield_dict"]["v_dict"]:
+            target = 120
+            angle_str = "b_n_b"
+        angle_diff = abs(
+            target - entry.properties["forcefield_dict"]["v_dict"][angle_str]
+        )
+        if angle_diff > 10:  # noqa: PLR2004
+            return 1
+        return 0
+
+    if db_name[:2] == "lt":
+        if "b_m_b" in entry.properties["forcefield_dict"]["v_dict"]:
+            angle_str1 = "b_m_b"
+            angle_str2 = "b_y_b"
+        elif "b_n_b" in entry.properties["forcefield_dict"]["v_dict"]:
+            angle_str1 = "b_n_b"
+            angle_str2 = "b_x_b"
+        angle_diff = abs(
+            entry.properties["forcefield_dict"]["v_dict"][angle_str1]
+            - entry.properties["forcefield_dict"]["v_dict"][angle_str2]
+        )
+
+        if angle_diff > 10:  # noqa: PLR2004
+            return 1
+        return 0
+
+    if db_name[:2] == "st":
+        num_states = entry.properties["dihedral_num_states"]
+
+        if num_states == 3:  # noqa: PLR2004
+            return 1
+        return 0
+
+    return None
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="set to iterate through structure functions",
+    )
+
+    return parser.parse_args()
 
 
 def main() -> None:  # noqa: C901, PLR0912
     """Run script."""
+    args = _parse_args()
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
 
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
+    fit_db_path = figure_dir / "fit_structures.db"
+    fit_db = cgx.utilities.AtomliteDatabase(fit_db_path)
     database_paths = {
         # Angle hunter.
         "at1r1_3P6": wd / "desymm_finder" / "outputdata" / "at1r1_3P6.db",
@@ -185,21 +241,26 @@ def main() -> None:  # noqa: C901, PLR0912
         "at1r1_8P16": wd / "desymm_finder" / "outputdata" / "at1r1_8P16.db",
         "at2r1_3P6": wd / "desymm_finder" / "outputdata" / "at2r1_3P6.db",
         "at2r1_6P12": wd / "desymm_finder" / "outputdata" / "at2r1_6P12.db",
-        "at3r1_3P6": wd / "desymm_finder" / "outputdata" / "at3r1_3P6.db",
-        "at3r1_6P12": wd / "desymm_finder" / "outputdata" / "at3r1_6P12.db",
+        # "at3r1_3P6":
+        # wd / "desymm_finder" / "outputdata" / "at3r1_3P6.db",  # noqa: ERA001
+        # "at3r1_6P12":
+        # wd / "desymm_finder" / "outputdata" / "at3r1_6P12.db",# noqa: ERA001
         "at4r1_6P122": wd / "desymm_finder" / "outputdata" / "at4r1_6P122.db",
         "at5r1_2P3": wd / "desymm_finder" / "outputdata" / "at5r1_2P3.db",
         "at5r1_4P62": wd / "desymm_finder" / "outputdata" / "at5r1_4P62.db",
         "at5r1_4P6": wd / "desymm_finder" / "outputdata" / "at5r1_4P6.db",
-        "at5r1_6P9": wd / "desymm_finder" / "outputdata" / "at5r1_6P9.db",
-        "at5r1_8P12": wd / "desymm_finder" / "outputdata" / "at5r1_8P12.db",
+        # Removed due to noise.
+        # "at5r1_6P9":
+        # wd / "desymm_finder" / "outputdata" / "at5r1_6P9.db",# noqa: ERA001
+        # "at5r1_8P12":
+        # wd / "desymm_finder" / "outputdata" / "at5r1_8P12.db",# noqa: ERA001
         "at6r1_4P6": wd / "desymm_finder" / "outputdata" / "at6r1_4P6.db",
         "at7r1_4P6": wd / "desymm_finder" / "outputdata" / "at7r1_4P6.db",
         "at8r1_4P62": wd / "desymm_finder" / "outputdata" / "at8r1_4P62.db",
-        # Angle hunter large-small.
+        # # Angle hunter large-small.
         "kt1r1_6P12": wd / "desymm_finder" / "outputdata" / "kt1r1_6P12.db",
         "kt2r1_4P6": wd / "desymm_finder" / "outputdata" / "kt2r1_4P6.db",
-        # Angle hunter large.
+        # # Angle hunter large.
         "lt1r1_6P12": wd / "desymm_finder" / "outputdata" / "lt1r1_6P12.db",
         "lt2r1_4P6": wd / "desymm_finder" / "outputdata" / "lt2r1_4P6.db",
         # Environment hunter.
@@ -225,54 +286,69 @@ def main() -> None:  # noqa: C901, PLR0912
         "ufo": wd / "ufo_data" / "ufo.db",
     }
 
-    total_num_structures = 0
-    total_fit_structures = 0
-    fit_entries = defaultdict(atomlite.Entry)
-    for db_name, db_path in database_paths.items():
-        db = cgx.utilities.AtomliteDatabase(db_path)
-        num_entries = db.get_num_entries()
-        total_num_structures += num_entries
-        logging.info("there are %s structures in %s", num_entries, db_name)
+    if args.run:
+        for db_name, db_path in database_paths.items():
+            total_fit_structures = 0
+            db = cgx.utilities.AtomliteDatabase(db_path)
+            num_entries = db.get_num_entries()
 
-        for entry in db.get_entries():
-            try:
-                fitness = entry.properties["all_fitness"]
-            except KeyError:
+            for entry in db.get_entries():
+                if fit_db.has_molecule(entry.key):
+                    continue
+
                 fitness = compute_fitness(entry, db_name)
-                db.add_properties(
-                    key=entry.key,
-                    property_dict={"all_fitness": fitness},
-                )
 
-            if fitness == 1:
-                total_fit_structures += 1
-                if "min_distance" not in entry.properties:
-                    db.add_properties(
-                        key=entry.key,
-                        property_dict={
-                            "min_distance": (
-                                cgx.analysis.GeomMeasure().calculate_min_distance(
-                                    db.get_molecule(key=entry.key)
-                                )["min_distance"]
-                            ),
-                        },
+                if fitness == 1:
+                    total_fit_structures += 1
+                    if "min_distance" not in entry.properties:
+                        db.add_properties(
+                            key=entry.key,
+                            property_dict={
+                                "min_distance": (
+                                    cgx.analysis.GeomMeasure().calculate_min_distance(
+                                        db.get_molecule(key=entry.key)
+                                    )["min_distance"]
+                                ),
+                            },
+                        )
+                        # Reload.
+                        fit_entry = db.get_entry(entry.key)
+                    else:
+                        fit_entry = entry
+
+                    fit_db.add_molecule(
+                        molecule=db.get_molecule(key=fit_entry.key),
+                        key=fit_entry.key,
                     )
-                    # Reload.
-                    fit_entries[(db_name, entry.key)] = db.get_entry(entry.key)
-                else:
-                    fit_entries[(db_name, entry.key)] = entry
+                    fit_db.add_properties(
+                        key=fit_entry.key,
+                        property_dict=fit_entry.properties,
+                    )
+                    fit_db.add_properties(
+                        key=fit_entry.key,
+                        property_dict={"db_name": db_name},
+                    )
 
-    logging.info("there are %s structures in total", total_num_structures)
-    logging.info("there are %s FIT structures in total", total_fit_structures)
+            logging.info(
+                "there are %s FIT structures of %s in %s",
+                total_fit_structures,
+                num_entries,
+                db_name,
+            )
+
+    logging.info(
+        "there are %s FIT structuresin total",
+        fit_db.get_num_entries(),
+    )
 
     make_opt_plot(
-        fit_entries=fit_entries,
+        fit_db=fit_db,
         figure_dir=figure_dir,
         filename="alldb_1.png",
     )
 
     make_plot(
-        fit_entries=fit_entries,
+        fit_db=fit_db,
         figure_dir=figure_dir,
         filename="alldb_2.png",
     )
@@ -300,7 +376,8 @@ def main() -> None:  # noqa: C901, PLR0912
     prefixes = {"at", "kt", "st", "lt", "tt", "dval", "ival", "ufo"}
     structures = []
     properties = {}
-    for (db_name, _), entry in fit_entries.items():
+    for entry in fit_db.get_entries():
+        db_name = entry.properties["db_name"]
         structures.append(
             stk.BuildingBlock.init_from_rdkit_mol(
                 atomlite.json_to_rdkit(entry.molecule)
@@ -324,7 +401,7 @@ def main() -> None:  # noqa: C901, PLR0912
             properties[prop].append(value)
 
     cgx.utilities.write_chemiscope_json(
-        json_file=wd / "figures" / "allstructures.json.gz",
+        json_file=wd / "figures" / "fit_structures.json.gz",
         structures=structures,
         properties=properties,
         bonds_as_shapes=True,
