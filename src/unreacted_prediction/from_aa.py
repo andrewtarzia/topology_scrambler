@@ -94,6 +94,10 @@ def main() -> None:
             "smiles": "O=C1N(c2cccnc2)C(=O)c3cc4CN5CN(Cc6cc7C(=O)N(c8cccnc8)C"
             "(=O)c9cccc(c56)c79)c4c%10cccc1c3%10"
         },
+        "alcltp": {
+            "smiles": "O=C1NC(=O)c2cc3CN4CN(Cc5cc6C(=O)NC(=O)c7cccc(c45)c67)"
+            "c3c8cccc1c28"
+        },
     }
 
     for ligand in ligands:
@@ -140,6 +144,8 @@ def main() -> None:
             ligand_dir / f"{ligand}_lowe.mol"
         )
 
+        if ligand == "alcltp":
+            continue
         # Get the prepared conformer.
         process = bbprep.DitopicFitter(ensemble=opt_ensemble)
         min_molecule = process.get_minimum()

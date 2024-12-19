@@ -42,11 +42,14 @@ def make_plot(
     energies = {}
     cmap = {
         "ltp110": "tab:blue",
-        "ltp130": "tab:orange",
-        "ltp150": "tab:green",
+        "ltp130": "tab:blue",
+        "ltp150": "tab:blue",
         "sltp110": "tab:red",
-        "sltp130": "tab:purple",
-        "sltp150": "tab:cyan",
+        "sltp130": "tab:red",
+        "sltp150": "tab:red",
+        "fltp130": "tab:pink",
+        "cltp": "tab:orange",
+        "cltpunr": "tab:green",
     }
 
     knowns = {}
@@ -84,7 +87,7 @@ def make_plot(
             text=f"E: {round(min_energy[0],3)} @ {min_energy[1]}",
             xy=(min_energy[2], min_energy[0]),
             xycoords="data",
-            xytext=(-0.5 * offset, -offset),
+            xytext=(0.5 * offset, -offset),
             textcoords="offset points",
             bbox=bbox,
             arrowprops=arrowprops,
@@ -333,20 +336,35 @@ def main() -> None:  # noqa: PLR0915
 
     ligand_measures = {
         # From prep.
-        "ltp110": {"dd": 5.1, "de": 5.0, "dde": 110, "eg": 1.4, "gb": 1.4},
-        "ltp130": {"dd": 5.1, "de": 5.0, "dde": 130, "eg": 1.4, "gb": 1.4},
-        "ltp150": {"dd": 5.1, "de": 5.0, "dde": 150, "eg": 1.4, "gb": 1.4},
-        "sltp110": {"dd": 3.0, "de": 3.0, "dde": 110, "eg": 1.4, "gb": 1.4},
-        "sltp130": {"dd": 3.0, "de": 3.0, "dde": 130, "eg": 1.4, "gb": 1.4},
-        "sltp150": {"dd": 3.0, "de": 3.0, "dde": 150, "eg": 1.4, "gb": 1.4},
+        # With flexibile backbone.
         "fltp130": {
             "dd": 5.1,
             "de": 5.0,
-            "dde": 150,
+            "dde": 130,
             "eg": 1.4,
             "gb": 1.4,
-            "edde": 0,
+            "edde_v": 180,
+            "edde_k": 0,
         },
+        # With and without chiral torsion on a new dde definition.
+        "cltp": {
+            "dd": 7.4,
+            "de": 2.9,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 75,
+            "edde_k": 50,
+        },
+        "cltpunr": {"dd": 7.4, "de": 2.9, "dde": 125, "eg": 1.4, "gb": 1.4},
+        # Rigid, with measured values, varying angle.
+        "ltp110": {"dd": 5.1, "de": 5.0, "dde": 110, "eg": 1.4, "gb": 1.4},
+        "ltp130": {"dd": 5.1, "de": 5.0, "dde": 130, "eg": 1.4, "gb": 1.4},
+        "ltp150": {"dd": 5.1, "de": 5.0, "dde": 150, "eg": 1.4, "gb": 1.4},
+        # Small, rigid, varying angle.
+        "sltp110": {"dd": 3.0, "de": 3.0, "dde": 110, "eg": 1.4, "gb": 1.4},
+        "sltp130": {"dd": 3.0, "de": 3.0, "dde": 130, "eg": 1.4, "gb": 1.4},
+        "sltp150": {"dd": 3.0, "de": 3.0, "dde": 150, "eg": 1.4, "gb": 1.4},
     }
 
     if args.run:
