@@ -476,7 +476,23 @@ def make_opt_plot(
     """Visualise stage of the optimisation produces the low-E conformer."""
     fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(10, 5))
 
-    stages = ("opt1", "nx0", "nx1", "nx2", "nx3", "shifted", "smd")
+    stages = (
+        "opt1",
+        "nx00",
+        "nx10",
+        "nx20",
+        "nx30",
+        "shifted",
+        "smd",
+        "nx01",
+        "nx11",
+        "nx21",
+        "nx31",
+        "nx02",
+        "nx12",
+        "nx22",
+        "nx32",
+    )
     mash_ids = ("0", "1", "2", "3")
     sources = {i: 0 for i in stages}
     mashes = {i: 0 for i in mash_ids}
