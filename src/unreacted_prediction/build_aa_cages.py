@@ -352,7 +352,7 @@ def desymm_optimisation_sequence(  # noqa: PLR0915, PLR0913, PLR0912
     else:
         logging.info("    loading %s", gulp2_output)
         gulp2_mol = mol.with_structure_from_file(str(gulp2_output))
-    return None
+
     if not gulpmd_output.exists():
         logging.info("    UFF4MOF equilib MD of %s", name)
         gulp_md = stko.GulpUFFMDOptimizer(
