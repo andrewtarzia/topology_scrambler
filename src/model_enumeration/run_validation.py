@@ -104,6 +104,7 @@ def make_opt_plot(
         bbox_inches="tight",
     )
     plt.close()
+    raise SystemExit("update stages?")
 
 
 def make_plot(
@@ -449,6 +450,15 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         timing_file = data_dir / "dvalidation_times.csv"
         max_num = 1000
 
+    # Removing all mash_idx == 0 to be rerun.
+    database = cgx.utilities.AtomliteDatabase(database_path)
+    for entry in database.get_entries():
+        print(entry.properties["mash_idx"])
+
+    print(database.get_num_entries())
+
+    # raise SystemExit
+
     calculation_dir.mkdir(exist_ok=True)
     structure_dir.mkdir(exist_ok=True)
     ligand_dir.mkdir(exist_ok=True)
@@ -621,13 +631,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validationi_2.png",
     )
-    make_opt_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="validationd_5.png"
-        if args.nodoubles
-        else "validationi_5.png",
-    )
     make_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -649,6 +652,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             figure_dir=figure_dir,
             filename="validationd_3.png",
         )
+    make_opt_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationd_5.png"
+        if args.nodoubles
+        else "validationi_5.png",
+    )
 
 
 if __name__ == "__main__":
