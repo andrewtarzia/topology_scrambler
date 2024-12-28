@@ -55,11 +55,28 @@ def make_opt_plot(
     filename: str,
 ) -> dict:
     """Visualise stage of the optimisation produces the low-E conformer."""
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
-    stages = ("opt1", "nx0", "nx1", "nx2", "nx3", "shifted", "smd")
+    stages = (
+        "opt1",
+        "smd",
+        "shifted",
+        "nx00",
+        "nx10",
+        "nx20",
+        "nx30",
+        "nx01",
+        "nx11",
+        "nx21",
+        "nx31",
+        "nx02",
+        "nx12",
+        "nx22",
+        "nx32",
+    )
     sources = {i: 0 for i in stages}
-    lowe_sources = {i: 0 for i in stages}  # Produces low energy structures.
+    # Produces low energy structures.
+    lowe_sources = {i: 0 for i in stages}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         sources[entry.properties["source"]] += 1
         energy = entry.properties["energy_per_bb"]
@@ -104,7 +121,6 @@ def make_opt_plot(
         bbox_inches="tight",
     )
     plt.close()
-    raise SystemExit("update stages?")
 
 
 def make_plot(
@@ -450,15 +466,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         timing_file = data_dir / "dvalidation_times.csv"
         max_num = 1000
 
-    # Removing all mash_idx == 0 to be rerun.
-    database = cgx.utilities.AtomliteDatabase(database_path)
-    for entry in database.get_entries():
-        print(entry.properties["mash_idx"])
-
-    print(database.get_num_entries())
-
-    # raise SystemExit
-
     calculation_dir.mkdir(exist_ok=True)
     structure_dir.mkdir(exist_ok=True)
     ligand_dir.mkdir(exist_ok=True)
@@ -623,6 +630,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     else "validationi_1.png",
                 )
 
+    make_opt_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationd_5.png"
+        if args.nodoubles
+        else "validationi_5.png",
+    )
     make_summary_plot(
         database_path=database_path,
         structure_dir=structure_dir,
@@ -652,13 +666,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             figure_dir=figure_dir,
             filename="validationd_3.png",
         )
-    make_opt_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="validationd_5.png"
-        if args.nodoubles
-        else "validationi_5.png",
-    )
 
 
 if __name__ == "__main__":
