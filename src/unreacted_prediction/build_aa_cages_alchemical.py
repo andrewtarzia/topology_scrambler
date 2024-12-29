@@ -518,7 +518,7 @@ def main() -> None:
                 ditopic: (4, 5, 6, 7, 8, 9),
             },
             "vas": {0: 0, 1: 1, 2: 0, 3: 2},
-            "charge": 4,
+            "charge": 8,
         },
         "4P6C4_2": {
             "graph": M4L6C4_2,
@@ -526,7 +526,7 @@ def main() -> None:
                 complex_bbs["c2"]: (0, 1, 2, 3),
                 ditopic: (4, 5, 6, 7, 8, 9),
             },
-            "charge": 4,
+            "charge": 8,
             "vas": {0: 0, 1: 0, 2: 1, 3: 0},
         },
         "4P6C4_3": {
@@ -535,7 +535,7 @@ def main() -> None:
                 complex_bbs["c2"]: (0, 1, 2, 3),
                 ditopic: (4, 5, 6, 7, 8, 9),
             },
-            "charge": 4,
+            "charge": 8,
             "vas": {0: 0, 1: 0, 2: 2, 3: 2},
         },
         "4P6C4_4": {
@@ -545,7 +545,7 @@ def main() -> None:
                 complex_bbs["c3"]: (1, 3),
                 ditopic: (4, 5, 6, 7, 8, 9),
             },
-            "charge": 4,
+            "charge": 8,
             "vas": {0: 0, 1: 0, 2: 0, 3: 0},
         },
     }
