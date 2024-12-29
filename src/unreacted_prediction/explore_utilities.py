@@ -121,16 +121,15 @@ def precursors_to_forcefield(
         definer_dict["eg"] = ("bond", ditopic_meas["eg"] / cg_scale, 1e5)
         definer_dict["gb"] = ("bond", ditopic_meas["gb"] / cg_scale, 1e5)
         definer_dict["dde"] = ("angle", ditopic_meas["dde"], 1e2)
-        if "edde_v" in ditopic_meas or "edde_k" in ditopic_meas:
-            definer_dict["edde"] = (
-                "tors",
-                "0123",
-                ditopic_meas.get("edde_v", 180),
-                ditopic_meas.get("edde_k", 50),
-                1,
-            )
-        else:
-            definer_dict["edde"] = ("tors", "0123", 180, 50, 1)
+
+        definer_dict["edde"] = (
+            "tors",
+            "0123",
+            ditopic_meas.get("edde_v", 180),
+            ditopic_meas.get("edde_k", 50),
+            1,
+        )
+
         definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
 
     return cgx.systems_optimisation.get_forcefield_from_dict(
