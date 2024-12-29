@@ -1,6 +1,7 @@
 """Script to generate and optimise CG models."""
 
 import argparse
+import itertools as it
 import logging
 import pathlib
 
@@ -18,7 +19,6 @@ from explore_utilities import (
     eb_str,
     ebead_c,
     isomer_energy,
-    pore_str,
     precursors_to_forcefield,
     tetra_bead,
 )
@@ -38,106 +38,126 @@ def make_plot(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 5))
-    energies = {}
-    cmap = {
-        "ltp110": "tab:blue",
-        "ltp130": "tab:blue",
-        "ltp150": "tab:blue",
-        "sltp110": "tab:red",
-        "sltp130": "tab:red",
-        "sltp150": "tab:red",
-        "fltp130": "tab:pink",
-        "cltp": "tab:orange",
-        "cltpunr": "tab:green",
+    fig, ax = plt.subplots(figsize=(16, 5))
+
+    systems = {
+        ("fltp130", "1", "", "1"): {"name": "f130-232-1", "data": []},
+        ("fltp130", "2", "", "1"): {"name": "f130-464-1", "data": []},
+        ("fltp130", "2", "", "2"): {"name": "f130-464-2", "data": []},
+        ("fltp130", "1", "nocap", "1"): {"name": "f130-12-1", "data": []},
+        ("fltp130", "2", "nocap", "1"): {"name": "f130-24-1", "data": []},
+        ("fltp130", "2", "nocap", "2"): {"name": "f130-24-2", "data": []},
+        ("cltp", "1", "", "1"): {"name": "c-232-1", "data": []},
+        ("cltp", "2", "", "1"): {"name": "c-464-1", "data": []},
+        ("cltp", "2", "", "2"): {"name": "c-464-2", "data": []},
+        ("cltp", "1", "nocap", "1"): {"name": "c-12-1", "data": []},
+        ("cltp", "2", "nocap", "1"): {"name": "c-24-1", "data": []},
+        ("cltp", "2", "nocap", "2"): {"name": "c-24-2", "data": []},
+        ("cltpunr", "1", "", "1"): {"name": "cu-232-1", "data": []},
+        ("cltpunr", "2", "", "1"): {"name": "cu-464-1", "data": []},
+        ("cltpunr", "2", "", "2"): {"name": "cu-464-2", "data": []},
+        ("cltpunr", "1", "nocap", "1"): {"name": "cu-12-1", "data": []},
+        ("cltpunr", "2", "nocap", "1"): {"name": "cu-24-1", "data": []},
+        ("cltpunr", "2", "nocap", "2"): {"name": "cu-24-2", "data": []},
+        ("ltp110", "1", "", "1"): {"name": "l110-232-1", "data": []},
+        ("ltp110", "2", "", "1"): {"name": "l110-464-1", "data": []},
+        ("ltp110", "2", "", "2"): {"name": "l110-464-2", "data": []},
+        ("ltp110", "1", "nocap", "1"): {"name": "l110-12-1", "data": []},
+        ("ltp110", "2", "nocap", "1"): {"name": "l110-24-1", "data": []},
+        ("ltp110", "2", "nocap", "2"): {"name": "l110-24-2", "data": []},
+        ("ltp130", "1", "", "1"): {"name": "l130-232-1", "data": []},
+        ("ltp130", "2", "", "1"): {"name": "l130-464-1", "data": []},
+        ("ltp130", "2", "", "2"): {"name": "l130-464-2", "data": []},
+        ("ltp130", "1", "nocap", "1"): {"name": "l130-12-1", "data": []},
+        ("ltp130", "2", "nocap", "1"): {"name": "l130-24-1", "data": []},
+        ("ltp130", "2", "nocap", "2"): {"name": "l130-24-2", "data": []},
+        ("ltp150", "1", "", "1"): {"name": "l150-232-1", "data": []},
+        ("ltp150", "2", "", "1"): {"name": "l150-464-1", "data": []},
+        ("ltp150", "2", "", "2"): {"name": "l150-464-2", "data": []},
+        ("ltp150", "1", "nocap", "1"): {"name": "l150-12-1", "data": []},
+        ("ltp150", "2", "nocap", "1"): {"name": "l150-24-1", "data": []},
+        ("ltp150", "2", "nocap", "2"): {"name": "l150-24-2", "data": []},
+        ("sltp110", "1", "", "1"): {"name": "s110-232-1", "data": []},
+        ("sltp110", "2", "", "1"): {"name": "s110-464-1", "data": []},
+        ("sltp110", "2", "", "2"): {"name": "s110-464-2", "data": []},
+        ("sltp110", "1", "nocap", "1"): {"name": "s110-12-1", "data": []},
+        ("sltp110", "2", "nocap", "1"): {"name": "s110-24-1", "data": []},
+        ("sltp110", "2", "nocap", "2"): {"name": "s110-24-2", "data": []},
+        ("sltp130", "1", "", "1"): {"name": "s130-232-1", "data": []},
+        ("sltp130", "2", "", "1"): {"name": "s130-464-1", "data": []},
+        ("sltp130", "2", "", "2"): {"name": "s130-464-2", "data": []},
+        ("sltp130", "1", "nocap", "1"): {"name": "s130-12-1", "data": []},
+        ("sltp130", "2", "nocap", "1"): {"name": "s130-24-1", "data": []},
+        ("sltp130", "2", "nocap", "2"): {"name": "s130-24-2", "data": []},
+        ("sltp150", "1", "", "1"): {"name": "s150-232-1", "data": []},
+        ("sltp150", "2", "", "1"): {"name": "s150-464-1", "data": []},
+        ("sltp150", "2", "", "2"): {"name": "s150-464-2", "data": []},
+        ("sltp150", "1", "nocap", "1"): {"name": "s150-12-1", "data": []},
+        ("sltp150", "2", "nocap", "1"): {"name": "s150-24-1", "data": []},
+        ("sltp150", "2", "nocap", "2"): {"name": "s150-24-2", "data": []},
     }
 
-    knowns = {}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        study = entry.properties["ligname"]
+        system = (
+            entry.properties["ligname"],
+            entry.properties["multiplier"],
+            entry.properties["name_prefix"],
+            entry.properties["allowed_num_components"],
+        )
 
         energy = entry.properties["energy_per_bb"]
-        min_distance = entry.properties["min_distance"]
+        if energy < isomer_energy():
+            logging.info("low energy system: %s", entry.key)
 
-        if study not in energies:
-            energies[study] = []
-        if study not in knowns:
-            knowns[study] = []
+        systems[system]["data"].append(energy)
 
-        if entry.properties["num_components"] > 1:
+    rng = np.random.default_rng(seed=2)
+    for i, system in enumerate(systems):
+        if len(systems[system]["data"]) == 0:
             continue
-        energies[study].append((round(energy, 4), entry.key, min_distance))
-        if int(entry.properties["topology_idx"]) in (15, 12, 29):
-            knowns[study].append((round(energy, 4), entry.key, min_distance))
-
-    for sidx, study in enumerate(energies):
-        if len(energies[study]) == 0:
-            continue
-
-        sorted_energies = sorted(energies[study], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-
-        offset = 20 * (sidx + 1)
-        bbox = {"boxstyle": "round", "fc": "1.0"}
-        arrowprops = {
-            "arrowstyle": "->",
-            "connectionstyle": "angle,angleA=0,angleB=90,rad=10",
-        }
-        ax.annotate(
-            text=f"E: {round(min_energy[0],3)} @ {min_energy[1]}",
-            xy=(min_energy[2], min_energy[0]),
-            xycoords="data",
-            xytext=(0.5 * offset, -offset),
-            textcoords="offset points",
-            bbox=bbox,
-            arrowprops=arrowprops,
-            color=cmap[study],
-            fontsize=8,
-        )
+        min_energy = min(systems[system]["data"])
 
         ax.scatter(
-            [i[2] for i in energies[study]],
-            [i[0] for i in energies[study]],
+            [
+                i + (2 * rng.random() - 1) * 0.3
+                for j in range(len(systems[system]["data"]))
+            ],
+            systems[system]["data"],
+            c="tab:blue",
+            alpha=0.4,
+            edgecolor="none",
+            s=30,
             marker="o",
-            c=cmap[study],
-            s=20,
-            ec="none",
-            alpha=0.3,
-            label=f"{study}",
+            zorder=1,
         )
         ax.scatter(
-            min_energy[2],
-            min_energy[0],
+            i,
+            min_energy,
+            c="tab:orange",
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
             marker="o",
-            c=cmap[study],
-            s=20,
-            ec="k",
             zorder=2,
         )
 
-    for study in knowns:
-        if len(knowns[study]) == 0:
-            continue
-        sorted_energies = sorted(knowns[study], key=lambda p: p[0])
-        min_energy = sorted_energies[0]
-        ax.scatter(
-            [i[2] for i in knowns[study]],
-            [i[0] for i in knowns[study]],
-            marker="D",
-            c=cmap[study],
-            s=20,
-            ec="k",
-            zorder=-1,
-        )
+    ax.axvline(x=5 + 0.5, c="gray")
+    ax.axvline(x=11 + 0.5, c="gray")
+    ax.axvline(x=17 + 0.5, c="gray")
+    ax.axvline(x=23 + 0.5, c="gray")
+    ax.axvline(x=29 + 0.5, c="gray")
+    ax.axvline(x=35 + 0.5, c="gray")
+    ax.axvline(x=41 + 0.5, c="gray")
+    ax.axvline(x=47 + 0.5, c="gray")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(pore_str(), fontsize=16)
+    ax.set_xticks(list(range(len(systems))))
+    ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_xlim(0, 10)
+    ax.set_xlim(-1, 55)
     ax.axhline(y=isomer_energy(), c="k", ls="--")
-    ax.set_ylim(None, 1000)
-    ax.legend(ncols=1, fontsize=16)
+
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -152,7 +172,245 @@ def make_plot(
     plt.close()
 
 
-def analyse_cage(  # noqa: C901
+def analyse_twist(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(16, 5))
+
+    systems = {
+        ("cltp0", "2", "nocap", "1"): {
+            "name": "c-24-1-0",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp10", "2", "nocap", "1"): {
+            "name": "c-24-1-10",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp20", "2", "nocap", "1"): {
+            "name": "c-24-1-20",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp30", "2", "nocap", "1"): {
+            "name": "c-24-1-30",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp40", "2", "nocap", "1"): {
+            "name": "c-24-1-40",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp50", "2", "nocap", "1"): {
+            "name": "c-24-1-50",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp60", "2", "nocap", "1"): {
+            "name": "c-24-1-60",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp70", "2", "nocap", "1"): {
+            "name": "c-24-1-70",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp75", "2", "nocap", "1"): {
+            "name": "c-24-1-75",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "2", "nocap", "1"): {
+            "name": "c-24-1-75*2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp80", "2", "nocap", "1"): {
+            "name": "c-24-1-80",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp90", "2", "nocap", "1"): {
+            "name": "c-24-1-90",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltpunr", "2", "nocap", "1"): {
+            "name": "cu-24-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp0", "2", "nocap", "1"): {
+            "name": "l-24-1-0",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp10", "2", "nocap", "1"): {
+            "name": "l-24-1-10",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp20", "2", "nocap", "1"): {
+            "name": "l-24-1-20",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp30", "2", "nocap", "1"): {
+            "name": "l-24-1-30",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp40", "2", "nocap", "1"): {
+            "name": "l-24-1-40",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp50", "2", "nocap", "1"): {
+            "name": "l-24-1-50",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp60", "2", "nocap", "1"): {
+            "name": "l-24-1-60",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp70", "2", "nocap", "1"): {
+            "name": "l-24-1-70",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "2", "nocap", "1"): {
+            "name": "l-24-1-75",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "2", "nocap", "1"): {
+            "name": "l-24-1-75*2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp80", "2", "nocap", "1"): {
+            "name": "l-24-1-80",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp90", "2", "nocap", "1"): {
+            "name": "l-24-1-90",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltpunr", "2", "nocap", "1"): {
+            "name": "lu-24-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+    }
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "ligname" not in entry.properties:
+            continue
+        system = (
+            entry.properties["ligname"],
+            entry.properties["multiplier"],
+            entry.properties["name_prefix"],
+            entry.properties["allowed_num_components"],
+        )
+        if system not in systems:
+            continue
+
+        energy = entry.properties["energy_per_bb"]
+        if energy < systems[system]["min_energy"]:
+            systems[system]["min_energy"] = energy
+            systems[system]["min_key"] = entry.key
+
+        systems[system]["data"].append(energy)
+
+    rng = np.random.default_rng(seed=2)
+    for i, system in enumerate(systems):
+        if len(systems[system]["data"]) == 0:
+            continue
+        min_energy = min(systems[system]["data"])
+
+        ax.scatter(
+            [
+                i + (2 * rng.random() - 1) * 0.3
+                for j in range(len(systems[system]["data"]))
+            ],
+            systems[system]["data"],
+            c="tab:blue",
+            alpha=0.4,
+            edgecolor="none",
+            s=30,
+            marker="o",
+            zorder=1,
+        )
+        ax.scatter(
+            i,
+            min_energy,
+            c="tab:orange",
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
+            marker="o",
+            zorder=2,
+        )
+        logging.info("%s_optc.mol", systems[system]["min_key"])
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xticks(list(range(len(systems))))
+    ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.axhline(y=isomer_energy(), c="k", ls="--")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def analyse_cage(  # noqa: C901, PLR0912
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
@@ -163,7 +421,7 @@ def analyse_cage(  # noqa: C901
     database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
 
-    if "min_distance" not in properties:
+    if "name_prefix" not in properties:
         energy_decomp = {}
         for component in properties["energy_decomposition"]:
             component_tup = properties["energy_decomposition"][component]
@@ -256,7 +514,25 @@ def analyse_cage(  # noqa: C901
             ).get_connected_components()
         )
 
-        ligname, topology_idx, mash_idx = name.split("_")
+        try:
+            (
+                ligname,
+                multiplier,
+                allowed_num_components,
+                topology_idx,
+                mash_idx,
+            ) = name.split("_")
+            name_prefix = ""
+        except ValueError:
+            (
+                name_prefix,
+                ligname,
+                multiplier,
+                allowed_num_components,
+                topology_idx,
+                mash_idx,
+            ) = name.split("_")
+
         database.add_properties(
             key=name,
             property_dict={
@@ -266,8 +542,11 @@ def analyse_cage(  # noqa: C901
                 / iterator.get_num_building_blocks(),
                 "num_components": num_components,
                 "ligname": ligname,
+                "multiplier": multiplier,
+                "allowed_num_components": allowed_num_components,
                 "topology_idx": topology_idx,
                 "mash_idx": mash_idx,
+                "name_prefix": name_prefix,
                 "topology_code_vmap": tuple(
                     (int(i[0]), int(i[1])) for i in topology_code.vertex_map
                 ),
@@ -317,7 +596,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:  # noqa: PLR0915
+def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
 
@@ -336,8 +615,236 @@ def main() -> None:  # noqa: PLR0915
 
     ligand_measures = {
         # From prep.
+        # With and without chiral torsion on a new dde definition.
+        "cltp0": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180,
+            "edde_k": 50,
+        },
+        "cltp10": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 10,
+            "edde_k": 50,
+        },
+        "cltp20": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 20,
+            "edde_k": 50,
+        },
+        "cltp30": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 30,
+            "edde_k": 50,
+        },
+        "cltp40": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 40,
+            "edde_k": 50,
+        },
+        "cltp50": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 50,
+            "edde_k": 50,
+        },
+        "cltp60": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 60,
+            "edde_k": 50,
+        },
+        "cltp70": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 70,
+            "edde_k": 50,
+        },
+        "cltp75": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 75,
+            "edde_k": 50,
+        },
+        "cltp80": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 80,
+            "edde_k": 50,
+        },
+        "cltp90": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 90,
+            "edde_k": 50,
+        },
+        "cltp752": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 75,
+            "edde_k": 100,
+        },
+        "cltpunr": {
+            "dd": 7.4,
+            "de": 4.3,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180,
+            "edde_k": 0,
+        },
+        # Rigid, with measured values, varying angle.
+        "ltp0": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180,
+            "edde_k": 50,
+        },
+        "ltp10": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 10,
+            "edde_k": 50,
+        },
+        "ltp20": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 20,
+            "edde_k": 50,
+        },
+        "ltp30": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 30,
+            "edde_k": 50,
+        },
+        "ltp40": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 40,
+            "edde_k": 50,
+        },
+        "ltp50": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 50,
+            "edde_k": 50,
+        },
+        "ltp60": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 60,
+            "edde_k": 50,
+        },
+        "ltp70": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 70,
+            "edde_k": 50,
+        },
+        "ltp75": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 75,
+            "edde_k": 50,
+        },
+        "ltp80": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 80,
+            "edde_k": 50,
+        },
+        "ltp90": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 90,
+            "edde_k": 50,
+        },
+        "ltp752": {
+            "dd": 5.1,
+            "de": 5.0,
+            "dde": 130,
+            "eg": 1.4,
+            "gb": 1.4,
+            "edde_v": 180 - 75,
+            "edde_k": 100,
+        },
+        # Small, rigid, varying angle.
         # With flexibile backbone.
-        "fltp130": {
+        "ltpunr": {
             "dd": 5.1,
             "de": 5.0,
             "dde": 130,
@@ -346,33 +853,20 @@ def main() -> None:  # noqa: PLR0915
             "edde_v": 180,
             "edde_k": 0,
         },
-        # With and without chiral torsion on a new dde definition.
-        "cltp": {
-            "dd": 7.4,
-            "de": 2.9,
-            "dde": 125,
-            "eg": 1.4,
-            "gb": 1.4,
-            "edde_v": 180 - 75,
-            "edde_k": 50,
-        },
-        "cltpunr": {"dd": 7.4, "de": 2.9, "dde": 125, "eg": 1.4, "gb": 1.4},
-        # Rigid, with measured values, varying angle.
-        "ltp110": {"dd": 5.1, "de": 5.0, "dde": 110, "eg": 1.4, "gb": 1.4},
-        "ltp130": {"dd": 5.1, "de": 5.0, "dde": 130, "eg": 1.4, "gb": 1.4},
-        "ltp150": {"dd": 5.1, "de": 5.0, "dde": 150, "eg": 1.4, "gb": 1.4},
-        # Small, rigid, varying angle.
-        "sltp110": {"dd": 3.0, "de": 3.0, "dde": 110, "eg": 1.4, "gb": 1.4},
-        "sltp130": {"dd": 3.0, "de": 3.0, "dde": 130, "eg": 1.4, "gb": 1.4},
-        "sltp150": {"dd": 3.0, "de": 3.0, "dde": 150, "eg": 1.4, "gb": 1.4},
     }
 
-    if args.run:
-        for ligname, ditopic_meas in ligand_measures.items():
-            # Currently, only testing the unreacted case.
-            stoichiometry_l_m_c = (6, 4, 4)
-            multiplier = 1
+    study_type = ((2, 1),)  # (3, 2, 2),)
 
+    multipliers = (1, 2)
+    num_components = (1,)  # 2)
+
+    if args.run:
+        for (
+            ligname,
+            ditopic_meas,
+        ), multiplier, num_component, stoichiometry_l_m_c in it.product(
+            ligand_measures.items(), multipliers, num_components, study_type
+        ):
             ditopic = cgx.molecular.SixBead(
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             )
@@ -382,7 +876,7 @@ def main() -> None:  # noqa: PLR0915
             )
 
             forcefield = precursors_to_forcefield(
-                pair="explore",
+                pair=ligname,
                 ditopic=ditopic,
                 ditopic_meas=ditopic_meas,
             )
@@ -415,17 +909,48 @@ def main() -> None:  # noqa: PLR0915
             tetra_bb.write(str(ligand_dir / f"{tetra_name}_optl.mol"))
             tetra_bb = tetra_bb.clone()
 
-            # Define a connectivity based on a multiplier.
-            iterator = cgx.scram.IHomolepticTopologyIterator(
-                building_block_counts={
-                    tetra_bb: stoichiometry_l_m_c[1] * multiplier,
-                    ditopic_bb: stoichiometry_l_m_c[0] * multiplier,
-                    capper_bb: stoichiometry_l_m_c[2] * multiplier,
-                },
-                graph_type="4-4FG_6-2FG_4-1FG",
-                graph_set="rx",
-                max_samples=int(1e5),
-            )
+            # Currently, only testing the unreacted case.
+            if stoichiometry_l_m_c == (3, 2, 2):
+                graph_type = (
+                    f"{stoichiometry_l_m_c[1]*multiplier}-4FG_"
+                    f"{stoichiometry_l_m_c[0]*multiplier}-2FG_"
+                    f"{stoichiometry_l_m_c[2]*multiplier}-1FG"
+                )
+                # Define a connectivity based on a multiplier.
+                iterator = cgx.scram.IHomolepticTopologyIterator(
+                    building_block_counts={
+                        tetra_bb: stoichiometry_l_m_c[1] * multiplier,
+                        ditopic_bb: stoichiometry_l_m_c[0] * multiplier,
+                        capper_bb: stoichiometry_l_m_c[2] * multiplier,
+                    },
+                    graph_type=graph_type,
+                    graph_set="rx",
+                    max_samples=int(1e5),
+                    allowed_num_components=num_component,
+                )
+
+                name_prefix = ""
+
+            elif stoichiometry_l_m_c == (2, 1):
+                graph_type = (
+                    f"{stoichiometry_l_m_c[1]*multiplier}P"
+                    f"{stoichiometry_l_m_c[0]*multiplier}"
+                )
+
+                # Define a connectivity based on a multiplier.
+                iterator = cgx.scram.IHomolepticTopologyIterator(
+                    building_block_counts={
+                        tetra_bb: stoichiometry_l_m_c[1] * multiplier,
+                        ditopic_bb: stoichiometry_l_m_c[0] * multiplier,
+                    },
+                    graph_type=graph_type,
+                    graph_set="rx",
+                    max_samples=None,
+                    allowed_num_components=num_component,
+                )
+
+                name_prefix = "nocap_"
+
             logging.info(
                 "graph iteration has %s graphs", iterator.count_graphs()
             )
@@ -464,12 +989,28 @@ def main() -> None:  # noqa: PLR0915
                         building_block_configuration=None,
                         vertex_positions=vertex_positions,
                     )
-                    name = f"{ligname}_{idx}_{mash_idx}"
+
+                    name = (
+                        f"{name_prefix}{ligname}_{multiplier}_{num_component}_{idx}_"
+                        f"{mash_idx}"
+                    )
+
+                    # The two components have to be the same.
+                    if num_component == 2:  # noqa: PLR2004
+                        network = stko.Network.init_from_molecule(
+                            constructed_molecule
+                        ).get_connected_components()
+                        n_nodes = [comp.number_of_nodes() for comp in network]
+                        n_edges = [comp.number_of_edges() for comp in network]
+                        if (
+                            n_nodes[0] != n_nodes[1]
+                            or n_edges[0] != n_edges[1]
+                        ):
+                            continue
 
                     constructed_molecule.write(
                         structure_dir / f"{name}_unopt.mol"
                     )
-
                     # Optimise and save.
                     logging.info("building %s", name)
 
@@ -497,7 +1038,12 @@ def main() -> None:  # noqa: PLR0915
 
                     except OpenMMException:
                         logging.info("failed optimisation of %s", name)
-
+    analyse_twist(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="exp_2.png",
+    )
+    raise SystemExit
     make_plot(
         database_path=database_path,
         figure_dir=figure_dir,
