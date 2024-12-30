@@ -38,63 +38,153 @@ def make_plot(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(16, 5))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
     systems = {
-        ("fltp130", "1", "", "1"): {"name": "f130-232-1", "data": []},
-        ("fltp130", "2", "", "1"): {"name": "f130-464-1", "data": []},
-        ("fltp130", "2", "", "2"): {"name": "f130-464-2", "data": []},
-        ("fltp130", "1", "nocap", "1"): {"name": "f130-12-1", "data": []},
-        ("fltp130", "2", "nocap", "1"): {"name": "f130-24-1", "data": []},
-        ("fltp130", "2", "nocap", "2"): {"name": "f130-24-2", "data": []},
-        ("cltp", "1", "", "1"): {"name": "c-232-1", "data": []},
-        ("cltp", "2", "", "1"): {"name": "c-464-1", "data": []},
-        ("cltp", "2", "", "2"): {"name": "c-464-2", "data": []},
-        ("cltp", "1", "nocap", "1"): {"name": "c-12-1", "data": []},
-        ("cltp", "2", "nocap", "1"): {"name": "c-24-1", "data": []},
-        ("cltp", "2", "nocap", "2"): {"name": "c-24-2", "data": []},
-        ("cltpunr", "1", "", "1"): {"name": "cu-232-1", "data": []},
-        ("cltpunr", "2", "", "1"): {"name": "cu-464-1", "data": []},
-        ("cltpunr", "2", "", "2"): {"name": "cu-464-2", "data": []},
-        ("cltpunr", "1", "nocap", "1"): {"name": "cu-12-1", "data": []},
-        ("cltpunr", "2", "nocap", "1"): {"name": "cu-24-1", "data": []},
-        ("cltpunr", "2", "nocap", "2"): {"name": "cu-24-2", "data": []},
-        ("ltp110", "1", "", "1"): {"name": "l110-232-1", "data": []},
-        ("ltp110", "2", "", "1"): {"name": "l110-464-1", "data": []},
-        ("ltp110", "2", "", "2"): {"name": "l110-464-2", "data": []},
-        ("ltp110", "1", "nocap", "1"): {"name": "l110-12-1", "data": []},
-        ("ltp110", "2", "nocap", "1"): {"name": "l110-24-1", "data": []},
-        ("ltp110", "2", "nocap", "2"): {"name": "l110-24-2", "data": []},
-        ("ltp130", "1", "", "1"): {"name": "l130-232-1", "data": []},
-        ("ltp130", "2", "", "1"): {"name": "l130-464-1", "data": []},
-        ("ltp130", "2", "", "2"): {"name": "l130-464-2", "data": []},
-        ("ltp130", "1", "nocap", "1"): {"name": "l130-12-1", "data": []},
-        ("ltp130", "2", "nocap", "1"): {"name": "l130-24-1", "data": []},
-        ("ltp130", "2", "nocap", "2"): {"name": "l130-24-2", "data": []},
-        ("ltp150", "1", "", "1"): {"name": "l150-232-1", "data": []},
-        ("ltp150", "2", "", "1"): {"name": "l150-464-1", "data": []},
-        ("ltp150", "2", "", "2"): {"name": "l150-464-2", "data": []},
-        ("ltp150", "1", "nocap", "1"): {"name": "l150-12-1", "data": []},
-        ("ltp150", "2", "nocap", "1"): {"name": "l150-24-1", "data": []},
-        ("ltp150", "2", "nocap", "2"): {"name": "l150-24-2", "data": []},
-        ("sltp110", "1", "", "1"): {"name": "s110-232-1", "data": []},
-        ("sltp110", "2", "", "1"): {"name": "s110-464-1", "data": []},
-        ("sltp110", "2", "", "2"): {"name": "s110-464-2", "data": []},
-        ("sltp110", "1", "nocap", "1"): {"name": "s110-12-1", "data": []},
-        ("sltp110", "2", "nocap", "1"): {"name": "s110-24-1", "data": []},
-        ("sltp110", "2", "nocap", "2"): {"name": "s110-24-2", "data": []},
-        ("sltp130", "1", "", "1"): {"name": "s130-232-1", "data": []},
-        ("sltp130", "2", "", "1"): {"name": "s130-464-1", "data": []},
-        ("sltp130", "2", "", "2"): {"name": "s130-464-2", "data": []},
-        ("sltp130", "1", "nocap", "1"): {"name": "s130-12-1", "data": []},
-        ("sltp130", "2", "nocap", "1"): {"name": "s130-24-1", "data": []},
-        ("sltp130", "2", "nocap", "2"): {"name": "s130-24-2", "data": []},
-        ("sltp150", "1", "", "1"): {"name": "s150-232-1", "data": []},
-        ("sltp150", "2", "", "1"): {"name": "s150-464-1", "data": []},
-        ("sltp150", "2", "", "2"): {"name": "s150-464-2", "data": []},
-        ("sltp150", "1", "nocap", "1"): {"name": "s150-12-1", "data": []},
-        ("sltp150", "2", "nocap", "1"): {"name": "s150-24-1", "data": []},
-        ("sltp150", "2", "nocap", "2"): {"name": "s150-24-2", "data": []},
+        ("cltp75", "1", "", "1"): {
+            "name": "c-232-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp75", "2", "", "1"): {
+            "name": "c-464-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp75", "2", "", "2"): {
+            "name": "c-464-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp75", "1", "nocap", "1"): {
+            "name": "c-12-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp75", "2", "nocap", "1"): {
+            "name": "c-24-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp75", "2", "nocap", "2"): {
+            "name": "c-24-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "1", "", "1"): {
+            "name": "c*2-232-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "2", "", "1"): {
+            "name": "c*2-464-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "2", "", "2"): {
+            "name": "c*2-464-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "1", "nocap", "1"): {
+            "name": "c*2-12-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "2", "nocap", "1"): {
+            "name": "c*2-24-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("cltp752", "2", "nocap", "2"): {
+            "name": "c*2-24-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "1", "", "1"): {
+            "name": "l-232-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "2", "", "1"): {
+            "name": "l-464-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "2", "", "2"): {
+            "name": "l-464-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "1", "nocap", "1"): {
+            "name": "l-12-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "2", "nocap", "1"): {
+            "name": "l-24-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp75", "2", "nocap", "2"): {
+            "name": "l-24-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "1", "", "1"): {
+            "name": "l*2-232-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "2", "", "1"): {
+            "name": "l*2-464-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "2", "", "2"): {
+            "name": "l*2-464-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "1", "nocap", "1"): {
+            "name": "l*2-12-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "2", "nocap", "1"): {
+            "name": "l*2-24-1",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
+        ("ltp752", "2", "nocap", "2"): {
+            "name": "l*2-24-2",
+            "data": [],
+            "min_key": None,
+            "min_energy": float("inf"),
+        },
     }
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
@@ -104,10 +194,21 @@ def make_plot(
             entry.properties["name_prefix"],
             entry.properties["allowed_num_components"],
         )
+        if entry.properties["ligname"] not in (
+            "ltp75",
+            "ltp752",
+            "cltp75",
+            "cltp752",
+        ):
+            continue
 
         energy = entry.properties["energy_per_bb"]
         if energy < isomer_energy():
             logging.info("low energy system: %s", entry.key)
+
+        if energy < systems[system]["min_energy"]:
+            systems[system]["min_energy"] = energy
+            systems[system]["min_key"] = entry.key
 
         systems[system]["data"].append(energy)
 
@@ -140,22 +241,18 @@ def make_plot(
             marker="o",
             zorder=2,
         )
+        logging.info("%s_optc.mol", systems[system]["min_key"])
 
     ax.axvline(x=5 + 0.5, c="gray")
     ax.axvline(x=11 + 0.5, c="gray")
     ax.axvline(x=17 + 0.5, c="gray")
-    ax.axvline(x=23 + 0.5, c="gray")
-    ax.axvline(x=29 + 0.5, c="gray")
-    ax.axvline(x=35 + 0.5, c="gray")
-    ax.axvline(x=41 + 0.5, c="gray")
-    ax.axvline(x=47 + 0.5, c="gray")
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks(list(range(len(systems))))
     ax.set_xticklabels([systems[i]["name"] for i in systems], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_xlim(-1, 55)
+
     ax.axhline(y=isomer_energy(), c="k", ls="--")
 
     fig.tight_layout()
@@ -408,6 +505,7 @@ def analyse_twist(
         bbox_inches="tight",
     )
     plt.close()
+    logging.info("------------------")
 
 
 def analyse_cage(  # noqa: C901, PLR0912
@@ -855,10 +953,10 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         },
     }
 
-    study_type = ((2, 1),)  # (3, 2, 2),)
+    study_type = ((2, 1), (3, 2, 2))
 
     multipliers = (1, 2)
-    num_components = (1,)  # 2)
+    num_components = (1, 2)
 
     if args.run:
         for (
@@ -867,6 +965,16 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         ), multiplier, num_component, stoichiometry_l_m_c in it.product(
             ligand_measures.items(), multipliers, num_components, study_type
         ):
+            if stoichiometry_l_m_c == (2, 1) and num_component == 2:  # noqa: PLR2004
+                continue
+            if stoichiometry_l_m_c == (3, 2, 2) and ligname not in (
+                "ltp75",
+                "ltp752",
+                "cltp75",
+                "cltp752",
+            ):
+                continue
+
             ditopic = cgx.molecular.SixBead(
                 bead=cbead_c, abead1=abead_c, abead2=ebead_c
             )
@@ -1043,7 +1151,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         figure_dir=figure_dir,
         filename="exp_2.png",
     )
-    raise SystemExit
+
     make_plot(
         database_path=database_path,
         figure_dir=figure_dir,
