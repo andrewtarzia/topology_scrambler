@@ -8,7 +8,7 @@ import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import stk
-from openmm import OpenMMException, openmm
+from openmm import OpenMMException
 from rdkit import RDLogger
 from utilities import (
     abead_c,
@@ -29,7 +29,7 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def analyse_cage(  # noqa: C901
+def analyse_cage(
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
@@ -69,66 +69,10 @@ def analyse_cage(  # noqa: C901
             )
             raise RuntimeError(msg)
 
-        # This is matched to the existing analysis code. I recommend
-        # generalising in the future.
-        ff_targets = forcefield.get_targets()
-        k_dict = {}
-        v_dict = {}
-
-        for bt in ff_targets["bonds"]:
-            cp = (bt.type1, bt.type2)
-            k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule
-                / openmm.unit.mole
-                / openmm.unit.nanometer**2
-            )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
-                openmm.unit.angstrom
-            )
-
-        for at in ff_targets["angles"]:
-            cp = (at.type1, at.type2, at.type3)
-            try:
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule
-                    / openmm.unit.mole
-                    / openmm.unit.radian**2
-                )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(
-                    openmm.unit.degrees
-                )
-            except TypeError:
-                # Handle different angle types.
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole
-                )
-                v_dict["_".join(cp)] = (at.n, at.b)
-
-        for at in ff_targets["torsions"]:
-            cp = at.search_string
-            k_dict["_".join(cp)] = at.torsion_k.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-            v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
-        for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(
-                openmm.unit.angstrom
-            )
-            k_dict[at.bead_class] = at.epsilon.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-
-        forcefield_dict = {
-            "ff_id": forcefield.get_identifier(),
-            "ff_prefix": forcefield.get_prefix(),
-            "k_dict": k_dict,
-            "v_dict": v_dict,
-        }
-
         database.add_properties(
             key=name,
             property_dict={
-                "forcefield_dict": forcefield_dict,
+                "forcefield_dict": forcefield.get_forcefield_dictionary(),
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy / num_building_blocks,
             },
@@ -141,9 +85,9 @@ def make_plot(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(5, 5))
     vmin = 0
-    vmax = 1.0
+    vmax = 0.6
     min_energy = float("inf")
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         x = entry.properties["forcefield_dict"]["v_dict"]["a_c"]
@@ -165,14 +109,25 @@ def make_plot(
             cmap="Blues_r",
         )
 
+    cg_scale = 2
+    ax.scatter(
+        [3.4 / (2 * cg_scale), 5.0 / (2 * cg_scale), 3.9 / (2 * cg_scale)],
+        [90, 110, 120],
+        c="tab:red",
+        alpha=1.0,
+        edgecolor="k",
+        s=100,
+        marker="X",
+    )
+
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel(r"$a$-$c$  [$\mathrm{\AA}$]", fontsize=16)
     ax.set_ylabel("$b$-$a$-$c$  [$^\\circ$]", fontsize=16)
 
     ax.axhline(y=90, c="k", ls="--", alpha=0.5)
     ax.axhline(y=120, c="k", ls="--", alpha=0.5)
-    ax.axvline(x=3.4 / 4, c="k", ls="--", alpha=0.5)
-    ax.axvline(x=5.0 / 4, c="k", ls="--", alpha=0.5)
+    ax.axvline(x=3.4 / (2 * cg_scale), c="k", ls="--", alpha=0.5)
+    ax.axvline(x=5.0 / (2 * cg_scale), c="k", ls="--", alpha=0.5)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
     cmap = mpl.cm.Blues_r
@@ -184,6 +139,108 @@ def make_plot(
     )
     cbar.ax.tick_params(labelsize=16)
     cbar.set_label(eb_str(), fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def make_ac_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(3, 5))
+    bac = 120
+    xs = []
+    energies = []
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        x = entry.properties["forcefield_dict"]["v_dict"]["a_c"]
+        y = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
+        if y != bac:
+            continue
+
+        xs.append(x)
+        energies.append(entry.properties["energy_per_bb"])
+    ax.plot(
+        xs,
+        energies,
+        c="tab:blue",
+        alpha=1.0,
+        mec="k",
+        markersize=8,
+        marker="o",
+    )
+
+    cg_scale = 2
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(r"$a$-$c$  [$\mathrm{\AA}$]", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+
+    ax.axvline(x=3.4 / (2 * cg_scale), c="k", ls="--", alpha=0.5)
+    ax.axvline(x=5.0 / (2 * cg_scale), c="k", ls="--", alpha=0.5)
+    ax.set_ylim(0, 1)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def make_bac_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(3, 5))
+    ac = 1.0
+    xs = []
+    energies = []
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        x = entry.properties["forcefield_dict"]["v_dict"]["a_c"]
+        y = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
+        if x != ac:
+            continue
+
+        xs.append(y)
+        energies.append(entry.properties["energy_per_bb"])
+    ax.plot(
+        xs,
+        energies,
+        c="tab:blue",
+        alpha=1.0,
+        mec="k",
+        markersize=8,
+        marker="o",
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("$b$-$a$-$c$  [$^\\circ$]", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+
+    ax.axvline(x=90, c="k", ls="--", alpha=0.5)
+    ax.axvline(x=120, c="k", ls="--", alpha=0.5)
+    ax.set_ylim(0, 1)
 
     fig.tight_layout()
     fig.savefig(
@@ -245,41 +302,52 @@ def main() -> None:
             dive_meas=ligand_measures[diverging_name],
         )
 
-        converging_name = (
-            f"{converging.get_name()}_f{forcefield.get_identifier()}"
-        )
         converging_bb = cgx.utilities.optimise_ligand(
             molecule=converging.get_building_block(),
-            name=converging_name,
+            name=f"{converging.get_name()}_f{forcefield.get_identifier()}",
             output_dir=calculation_dir,
             forcefield=forcefield,
             platform=None,
         )
-        converging_bb.write(str(ligand_dir / f"{converging_name}_optl.mol"))
+        converging_bb.write(
+            str(
+                ligand_dir
+                / f"{converging.get_name()}_f{forcefield.get_identifier()}"
+                "_optl.mol"
+            )
+        )
         converging_bb = converging_bb.clone()
 
-        tetra_name = f"{tetra.get_name()}_f{forcefield.get_identifier()}"
         tetra_bb = cgx.utilities.optimise_ligand(
             molecule=tetra.get_building_block(),
-            name=tetra_name,
+            name=f"{tetra.get_name()}_f{forcefield.get_identifier()}",
             output_dir=calculation_dir,
             forcefield=forcefield,
             platform=None,
         )
-        tetra_bb.write(str(ligand_dir / f"{tetra_name}_optl.mol"))
+        tetra_bb.write(
+            str(
+                ligand_dir
+                / f"{tetra.get_name()}_f{forcefield.get_identifier()}"
+                "_optl.mol"
+            )
+        )
         tetra_bb = tetra_bb.clone()
 
-        diverging_name = (
-            f"{diverging.get_name()}_f{forcefield.get_identifier()}"
-        )
         diverging_bb = cgx.utilities.optimise_ligand(
             molecule=diverging.get_building_block(),
-            name=diverging_name,
+            name=f"{diverging.get_name()}_f{forcefield.get_identifier()}",
             output_dir=calculation_dir,
             forcefield=forcefield,
             platform=None,
         )
-        diverging_bb.write(str(ligand_dir / f"{diverging_name}_optl.mol"))
+        diverging_bb.write(
+            str(
+                ligand_dir
+                / f"{diverging.get_name()}_f{forcefield.get_identifier()}"
+                "_optl.mol"
+            )
+        )
         diverging_bb = diverging_bb.clone()
 
         name = f"scan_{i}-{j}"
@@ -325,6 +393,16 @@ def main() -> None:
         database_path=database_path,
         figure_dir=figure_dir,
         filename="scan_1.png",
+    )
+    make_ac_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_2.png",
+    )
+    make_bac_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_3.png",
     )
 
 
