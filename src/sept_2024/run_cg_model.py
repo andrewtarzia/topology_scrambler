@@ -9,7 +9,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import stko
-from openmm import OpenMMException, openmm
+from openmm import OpenMMException
 from rdkit import RDLogger
 from utilities import (
     abead_c,
@@ -31,7 +31,7 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def analyse_cage(  # noqa: C901, PLR0912
+def analyse_cage(
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
@@ -72,62 +72,6 @@ def analyse_cage(  # noqa: C901, PLR0912
             )
             raise RuntimeError(msg)
 
-        # This is matched to the existing analysis code. I recommend
-        # generalising in the future.
-        ff_targets = forcefield.get_targets()
-        k_dict = {}
-        v_dict = {}
-
-        for bt in ff_targets["bonds"]:
-            cp = (bt.type1, bt.type2)
-            k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule
-                / openmm.unit.mole
-                / openmm.unit.nanometer**2
-            )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
-                openmm.unit.angstrom
-            )
-
-        for at in ff_targets["angles"]:
-            cp = (at.type1, at.type2, at.type3)
-            try:
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule
-                    / openmm.unit.mole
-                    / openmm.unit.radian**2
-                )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(
-                    openmm.unit.degrees
-                )
-            except TypeError:
-                # Handle different angle types.
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole
-                )
-                v_dict["_".join(cp)] = (at.n, at.b)
-
-        for at in ff_targets["torsions"]:
-            cp = at.search_string
-            k_dict["_".join(cp)] = at.torsion_k.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-            v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
-        for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(
-                openmm.unit.angstrom
-            )
-            k_dict[at.bead_class] = at.epsilon.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-
-        forcefield_dict = {
-            "ff_id": forcefield.get_identifier(),
-            "ff_prefix": forcefield.get_prefix(),
-            "k_dict": k_dict,
-            "v_dict": v_dict,
-        }
-
         num_components = len(
             stko.Network.init_from_molecule(
                 database.get_molecule(key=name)
@@ -151,7 +95,7 @@ def analyse_cage(  # noqa: C901, PLR0912
         database.add_properties(
             key=name,
             property_dict={
-                "forcefield_dict": forcefield_dict,
+                "forcefield_dict": forcefield.get_forcefield_dictionary(),
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy
                 / iterator.get_num_building_blocks(),
@@ -236,6 +180,7 @@ def make_plot(
         bbox_inches="tight",
     )
     plt.close()
+    raise SystemExit(filename)
 
 
 def make_summary_plot(
@@ -248,7 +193,7 @@ def make_summary_plot(
     energies = {}
 
     xs = ["1", "2", "3", "4"]
-    ys = ["la_st5", "la_st52", "la_c1", "la_c12", "la_st5_11", "la_st52_11"]
+    ys = ["la_st5", "la_st52", "la_c1"]
     ys.reverse()
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
@@ -257,7 +202,9 @@ def make_summary_plot(
 
         multi = entry.properties["multiplier"]
         pair = entry.properties["pair"]
-        if "lf_ls" in pair or "_11" in pair:
+        if "_11" in pair:
+            continue
+        if pair not in ys:
             continue
 
         vstr = entry.key.split("_")[-1]
@@ -298,7 +245,7 @@ def make_summary_plot(
             horizontalalignment="center",
             verticalalignment="center_baseline",
             color="w" if min_energy[0] < 0.5 else "k",  # noqa: PLR2004
-            fontsize=16,
+            fontsize=12,
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -348,12 +295,9 @@ def make_summary_plot2(
         ("la_st52", "1"): {"name": "st5-l-1", "data": []},
         ("la_st52", "2"): {"name": "st5-l-2", "data": []},
         ("la_st52", "4"): {"name": "st5-l-4", "data": []},
-        ("la_c1", "1"): {"name": "st1-t0-1", "data": []},
-        ("la_c1", "2"): {"name": "st1-t0-2", "data": []},
-        ("la_c1", "4"): {"name": "st1-t0-4", "data": []},
-        ("la_c12", "1"): {"name": "st1-t60-1", "data": []},
-        ("la_c12", "2"): {"name": "st1-t60-2", "data": []},
-        ("la_c12", "4"): {"name": "st1-t60-4", "data": []},
+        ("la_c1", "1"): {"name": "st1-1", "data": []},
+        ("la_c1", "2"): {"name": "st1-2", "data": []},
+        ("la_c1", "4"): {"name": "st1-4", "data": []},
         # ("la_c13", "1"): {"name": "st1-3-1", "data": []},
         # ("la_c13", "2"): {"name": "st1-3-2", "data": []},
         # ("la_c13", "4"): {"name": "st1-3-4", "data": []},
@@ -450,6 +394,7 @@ def make_summary_plot2(
         bbox_inches="tight",
     )
     plt.close()
+    raise SystemExit(filename)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -486,7 +431,6 @@ def main() -> None:  # noqa: PLR0915
         "st5": {"ba": 2.8, "aa": 3.9, "bac": 120, "bacab": 180},
         "st52": {"ba": 2.8, "aa": 5.0, "bac": 110, "bacab": 180},
         "c1": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 180},
-        "c12": {"ba": 2.8, "aa": 3.4, "bac": 90, "bacab": 120},
     }
 
     pairs = {
@@ -531,25 +475,6 @@ def main() -> None:  # noqa: PLR0915
         "la_c1": {
             "converging_name": "la",
             "diverging_name": "c1",
-            "stoichiometry_L_L_M": (4, 2, 3),
-            "converging": cgx.molecular.SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            ),
-            "diverging": cgx.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
-            ),
-            "tetra": cgx.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
-            ),
-            "multipliers": (1, 2, 4),
-        },
-        "la_c12": {
-            "converging_name": "la",
-            "diverging_name": "c12",
             "stoichiometry_L_L_M": (4, 2, 3),
             "converging": cgx.molecular.SixBead(
                 bead=cbead_c,
