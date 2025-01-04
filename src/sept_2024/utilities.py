@@ -1,12 +1,9 @@
 """Utilities module."""
 
 import logging
-import pathlib
-from collections import Counter
 from copy import deepcopy
 
 import cgexplore as cgx
-import matplotlib.pyplot as plt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +17,11 @@ def eb_str(no_unit: bool = False) -> str:
         return r"$E_{\mathrm{b}}$"
 
     return r"$E_{\mathrm{b}}$ [kJmol$^{-1}$]"
+
+
+def isomer_energy() -> float:
+    """Get constant."""
+    return 0.3
 
 
 # Diverging ligands.
@@ -166,16 +168,16 @@ def precursors_to_forcefield(  # noqa: PLR0913
         ):
             raise RuntimeError
         definer_dict["di"] = ("bond", conv_meas["dd"] / cg_scale / 2, 1e5)
-        definer_dict["is"] = ("bond", conv_meas["is"] / cg_scale, 1e5)
+        # definer_dict["is"] = ("bond", conv_meas["is"], 1e5)  # noqa: ERA001
         definer_dict["de"] = ("bond", conv_meas["de"] / cg_scale, 1e5)
         definer_dict["eg"] = ("bond", conv_meas["eg"] / cg_scale, 1e5)
         definer_dict["gb"] = ("bond", conv_meas["gb"] / cg_scale, 1e5)
         definer_dict["ide"] = ("angle", conv_meas["ide"], 1e2)
         definer_dict["did"] = ("angle", 180, 1e2)
-        definer_dict["dis"] = ("angle", 90, 1e2)
+        # definer_dict["dis"] = ("angle", 90, 1e2)  # noqa: ERA001
         definer_dict["edide"] = ("tors", "0134", 180, 50, 1)
         definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
-        definer_dict["s"] = ("nb", conv_meas["se"], conv_meas["s"])
+        definer_dict["i"] = ("nb", conv_meas["ivdw_e"], conv_meas["ivdw_s"])
 
     else:
         raise NotImplementedError
@@ -199,70 +201,3 @@ def precursors_to_forcefield(  # noqa: PLR0913
         present_beads=present_beads,
         definer_dict=definer_dict,
     )
-
-
-def plot_xy(
-    xproperty: str,
-    ensemble: dict[str:dict],
-    min_energy: float,
-    figure_dir: pathlib.Path,
-    ligand_name: str,
-) -> None:
-    """Make an xy plot of properties."""
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    if xproperty in ("binder_angles",):
-        ax.scatter(
-            [ensemble[i][xproperty][0] for i in ensemble],
-            [(ensemble[i]["energy"] - min_energy) * 2625.5 for i in ensemble],
-            edgecolor="k",
-            s=80,
-        )
-        ax.scatter(
-            [ensemble[i][xproperty][1] for i in ensemble],
-            [(ensemble[i]["energy"] - min_energy) * 2625.5 for i in ensemble],
-            edgecolor="k",
-            marker="D",
-            s=80,
-        )
-    elif xproperty in ("torsion_state",):
-        xs = [Counter(ensemble[i][xproperty]) for i in ensemble]
-
-        xs = [i.get("b", 0) for i in xs]
-
-        ax.scatter(
-            xs,
-            [(ensemble[i]["energy"] - min_energy) * 2625.5 for i in ensemble],
-            edgecolor="k",
-            marker="D",
-            s=80,
-        )
-    else:
-        ax.scatter(
-            [ensemble[i][xproperty] for i in ensemble],
-            [(ensemble[i]["energy"] - min_energy) * 2625.5 for i in ensemble],
-            edgecolor="k",
-            s=80,
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(xproperty, fontsize=16)
-    ax.set_ylabel("relative energy [kJ/mol]", fontsize=16)
-    if xproperty == "binder_adjacent_torsion":
-        ax.set_xlim(-180, 180)
-
-    if xproperty == "binder_angles":
-        ax.set_xlim(0, 180)
-
-    if xproperty == "binder_binder_angle":
-        ax.set_xlim(0, 180)
-
-    ax.set_ylim(0, 20)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / f"xy_{xproperty}_{ligand_name}.png",
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
