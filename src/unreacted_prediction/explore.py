@@ -22,7 +22,7 @@ from explore_utilities import (
     precursors_to_forcefield,
     tetra_bead,
 )
-from openmm import OpenMMException, openmm
+from openmm import OpenMMException
 from rdkit import RDLogger
 
 logging.basicConfig(
@@ -508,7 +508,7 @@ def analyse_twist(
     logging.info("------------------")
 
 
-def analyse_cage(  # noqa: C901, PLR0912
+def analyse_cage(
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
@@ -550,62 +550,6 @@ def analyse_cage(  # noqa: C901, PLR0912
             )
             raise RuntimeError(msg)
 
-        # This is matched to the existing analysis code. I recommend
-        # generalising in the future.
-        ff_targets = forcefield.get_targets()
-        k_dict = {}
-        v_dict = {}
-
-        for bt in ff_targets["bonds"]:
-            cp = (bt.type1, bt.type2)
-            k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule
-                / openmm.unit.mole
-                / openmm.unit.nanometer**2
-            )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
-                openmm.unit.angstrom
-            )
-
-        for at in ff_targets["angles"]:
-            cp = (at.type1, at.type2, at.type3)
-            try:
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule
-                    / openmm.unit.mole
-                    / openmm.unit.radian**2
-                )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(
-                    openmm.unit.degrees
-                )
-            except TypeError:
-                # Handle different angle types.
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole
-                )
-                v_dict["_".join(cp)] = (at.n, at.b)
-
-        for at in ff_targets["torsions"]:
-            cp = at.search_string
-            k_dict["_".join(cp)] = at.torsion_k.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-            v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
-        for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(
-                openmm.unit.angstrom
-            )
-            k_dict[at.bead_class] = at.epsilon.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-
-        forcefield_dict = {
-            "ff_id": forcefield.get_identifier(),
-            "ff_prefix": forcefield.get_prefix(),
-            "k_dict": k_dict,
-            "v_dict": v_dict,
-        }
-
         num_components = len(
             stko.Network.init_from_molecule(
                 database.get_molecule(key=name)
@@ -634,7 +578,7 @@ def analyse_cage(  # noqa: C901, PLR0912
         database.add_properties(
             key=name,
             property_dict={
-                "forcefield_dict": forcefield_dict,
+                "forcefield_dict": forcefield.get_forcefield_dictionary(),
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy
                 / iterator.get_num_building_blocks(),
