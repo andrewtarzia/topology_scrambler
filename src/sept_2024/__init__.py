@@ -1,1 +1,0 @@
-"""Scripts for a publication."""
