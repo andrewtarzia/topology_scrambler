@@ -3,13 +3,9 @@
 import logging
 import pathlib
 import warnings
-from collections import defaultdict
 
 import cgexplore as cgx
-import matplotlib.pyplot as plt
 import stko
-from openmm import openmm
-from utilities import eb_str, isomer_energy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,7 +43,7 @@ tetra_bead = cgx.molecular.CgBead(
 )
 
 
-def analyse_cage(  # noqa: C901
+def analyse_cage(
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
@@ -88,62 +84,6 @@ def analyse_cage(  # noqa: C901
             )
             raise RuntimeError(msg)
 
-        # This is matched to the existing analysis code. I recommend
-        # generalising in the future.
-        ff_targets = forcefield.get_targets()
-        k_dict = {}
-        v_dict = {}
-
-        for bt in ff_targets["bonds"]:
-            cp = (bt.type1, bt.type2)
-            k_dict["_".join(cp)] = bt.bond_k.value_in_unit(
-                openmm.unit.kilojoule
-                / openmm.unit.mole
-                / openmm.unit.nanometer**2
-            )
-            v_dict["_".join(cp)] = bt.bond_r.value_in_unit(
-                openmm.unit.angstrom
-            )
-
-        for at in ff_targets["angles"]:
-            cp = (at.type1, at.type2, at.type3)
-            try:
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule
-                    / openmm.unit.mole
-                    / openmm.unit.radian**2
-                )
-                v_dict["_".join(cp)] = at.angle.value_in_unit(
-                    openmm.unit.degrees
-                )
-            except TypeError:
-                # Handle different angle types.
-                k_dict["_".join(cp)] = at.angle_k.value_in_unit(
-                    openmm.unit.kilojoule / openmm.unit.mole
-                )
-                v_dict["_".join(cp)] = (at.n, at.b)
-
-        for at in ff_targets["torsions"]:
-            cp = at.search_string
-            k_dict["_".join(cp)] = at.torsion_k.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-            v_dict["_".join(cp)] = at.phi0.value_in_unit(openmm.unit.degrees)
-        for at in ff_targets["nonbondeds"]:
-            v_dict[at.bead_class] = at.sigma.value_in_unit(
-                openmm.unit.angstrom
-            )
-            k_dict[at.bead_class] = at.epsilon.value_in_unit(
-                openmm.unit.kilojoules_per_mole
-            )
-
-        forcefield_dict = {
-            "ff_id": forcefield.get_identifier(),
-            "ff_prefix": forcefield.get_prefix(),
-            "k_dict": k_dict,
-            "v_dict": v_dict,
-        }
-
         num_components = len(
             stko.Network.init_from_molecule(
                 database.get_molecule(key=name)
@@ -153,7 +93,7 @@ def analyse_cage(  # noqa: C901
         database.add_properties(
             key=name,
             property_dict={
-                "forcefield_dict": forcefield_dict,
+                "forcefield_dict": forcefield.get_forcefield_dictionary(),
                 "strain_energy": fin_energy,
                 "energy_per_bb": fin_energy
                 / iterator.get_num_building_blocks(),
@@ -204,114 +144,3 @@ def get_validation_forcefield(
         definer_dict=definer_dict,
         verbose=False,
     )
-
-
-def make_plot(
-    figure_dir: pathlib.Path,
-    database_path: pathlib.Path,
-    filename: str,
-) -> None:
-    raise SystemExit("clean up")
-    """Plot energies."""
-    energies = defaultdict(list)
-    bacs = defaultdict(list)
-    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        multi = entry.properties["multiplier"]
-        energy = entry.properties["energy_per_bb"]
-        bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
-
-        if entry.properties["num_components"] > 1:
-            continue
-
-        energies[multi].append((bac_angle, energy, entry.key))
-        bacs[bac_angle].append((multi, energy, entry.key))
-
-    fig, axs = plt.subplots(
-        nrows=len(energies),
-        sharey=True,
-        sharex=True,
-        figsize=(8, 10),
-    )
-    flat_axs = [axs] if len(energies) == 1 else axs.flatten()
-
-    for i, (ax, multi) in enumerate(
-        zip(flat_axs, sorted([int(i) for i in energies]), strict=True)
-    ):
-        axx = ax.twinx()
-
-        idx = str(multi)
-        min_energy = min(energies[idx], key=lambda p: p[1])
-
-        ax.scatter(
-            [i[0] for i in energies[idx]],
-            [i[1] for i in energies[idx]],
-            marker="o",
-            c="tab:blue",
-            s=20,
-            alpha=0.4,
-            ec="none",
-            label=(
-                f"M{idx}: {round(min_energy[1],2)} @ {min_energy[0]} "
-                f"({min_energy[2]})"
-            ),
-            zorder=2,
-        )
-
-        countsx = {}
-        bac_line = []
-        for bac_angle in sorted(bacs):
-            rel_energies = [i[1] for i in energies[idx] if i[0] == bac_angle]
-            if len(rel_energies) == 0:
-                continue
-            min_energy = min(rel_energies)
-            bac_line.append((bac_angle, min_energy))
-
-            countsx[bac_angle] = len(rel_energies)
-
-        ax.plot(
-            [i[0] for i in bac_line],
-            [i[1] for i in bac_line],
-            c="tab:blue",
-            ls="--",
-            alpha=1.0,
-            zorder=2,
-        )
-
-        ax.tick_params(axis="both", which="major", labelsize=16)
-
-        ax.set_yscale("log")
-        ax.axhline(y=isomer_energy(), c="k", ls="--")
-
-        axx.plot(
-            list(countsx),
-            [countsx[i] for i in countsx],
-            c="tab:red",
-            marker="D",
-            zorder=2,
-            markersize=3.0,
-        )
-        axx.tick_params(
-            axis="both",
-            which="major",
-            labelsize=16,
-            labelcolor="tab:red",
-        )
-        if i == 4:  # noqa: PLR2004
-            ax.set_ylabel(eb_str(), fontsize=16)
-            axx.set_ylabel("num. structures", fontsize=16, color="tab:red")
-        axx.set_yticks([max([countsx[i] for i in countsx])])
-        # axx.set_ylim(0, None)  # noqa: ERA001
-
-        leg = ax.legend(ncols=1, fontsize=12)
-        for lh in leg.legend_handles:
-            lh.set_alpha(1)
-
-    ax.set_xlabel("target $bac$ angle [deg]", fontsize=16)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
