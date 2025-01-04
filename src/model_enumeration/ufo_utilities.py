@@ -131,32 +131,6 @@ def precursors_to_forcefield(
         definer_dict["edde"] = ("tors", "0123", 180, 50, 1)
         definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
 
-    elif isinstance(converging, cgx.molecular.StericSixBead):
-        beads = converging.get_bead_set()
-
-        if (
-            "d" not in beads
-            or "e" not in beads
-            or "g" not in beads
-            or "s" not in beads
-        ):
-            raise RuntimeError
-        definer_dict["dd"] = ("bond", conv_meas["dd"] / cg_scale / 2, 1e5)
-        definer_dict["ds"] = ("bond", 1.0, 1e5)
-        definer_dict["de"] = ("bond", conv_meas["de"] / cg_scale, 1e5)
-        definer_dict["eg"] = ("bond", conv_meas["eg"] / cg_scale, 1e5)
-        definer_dict["gb"] = ("bond", conv_meas["gb"] / cg_scale, 1e5)
-        definer_dict["dde"] = ("angle", conv_meas["dde"], 1e2)
-        definer_dict["ddd"] = ("angle", 180, 1e2)
-        definer_dict["dds"] = ("angle", 90, 1e2)
-        definer_dict["eddde"] = ("tors", "0134", 180, 50, 1)
-        definer_dict["edds"] = ("tors", "0123", 180, 50, 1)
-        definer_dict["mbge"] = ("tors", "0123", 180, 50, 1)
-        definer_dict["s"] = ("nb", 10.0, conv_meas["s"])
-
-    else:
-        raise NotImplementedError
-
     if isinstance(diverging, cgx.molecular.TwoC1Arm):
         beads = diverging.get_bead_set()
         if "a" not in beads or "c" not in beads:
