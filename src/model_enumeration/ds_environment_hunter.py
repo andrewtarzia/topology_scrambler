@@ -271,39 +271,11 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
     properties = database.get_entry(key=name).properties
     if "energy_per_bb" not in properties:
-        energy_decomp = {}
-        for component in properties["energy_decomposition"]:
-            component_tup = properties["energy_decomposition"][component]
-            if component == "total energy":
-                energy_decomp[f"{component}_{component_tup[1]}"] = float(
-                    component_tup[0]
-                )
-            else:
-                just_name = component.split("'")[1]
-                key = f"{just_name}_{component_tup[1]}"
-                value = float(component_tup[0])
-                if key in energy_decomp:
-                    energy_decomp[key] += value
-                else:
-                    energy_decomp[key] = value
-        fin_energy = energy_decomp["total energy_kJ/mol"]
-        if (
-            sum(
-                energy_decomp[i]
-                for i in energy_decomp
-                if "total energy" not in i
-            )
-            != fin_energy
-        ):
-            msg = (
-                "energy decompisition does not sum to total energy for"
-                f" {name}: {energy_decomp}"
-            )
-            raise RuntimeError(msg)
-
         res_dict = {
-            "strain_energy": fin_energy,
-            "energy_per_bb": fin_energy / cgx.topologies.stoich_map(tstr),
+            "energy_per_bb": cgx.utilities.get_energy_per_bb(
+                energy_decomposition=properties["energy_decomposition"],
+                number_building_blocks=cgx.topologies.stoich_map(tstr),
+            ),
         }
         database.add_properties(key=name, property_dict=res_dict)
 
@@ -347,9 +319,9 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
     properties = database.get_entry(key=name).properties
     if "dihedral_states" not in properties:
-        # Always want to extract target torions if present.
         g_measure = cgx.analysis.GeomMeasure(
             target_torsions=(
+                # Add a custom torsion.
                 cgx.terms.TargetTorsion(
                     search_string=("b", "a", "c", "a", "b"),
                     search_estring=("Pb", "Ba", "Ag", "Ba", "Pb"),
