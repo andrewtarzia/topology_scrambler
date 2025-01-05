@@ -520,36 +520,6 @@ def analyse_cage(
     properties = database.get_entry(key=name).properties
 
     if "name_prefix" not in properties:
-        energy_decomp = {}
-        for component in properties["energy_decomposition"]:
-            component_tup = properties["energy_decomposition"][component]
-            if component == "total energy":
-                energy_decomp[f"{component}_{component_tup[1]}"] = float(
-                    component_tup[0]
-                )
-            else:
-                just_name = component.split("'")[1]
-                key = f"{just_name}_{component_tup[1]}"
-                value = float(component_tup[0])
-                if key in energy_decomp:
-                    energy_decomp[key] += value
-                else:
-                    energy_decomp[key] = value
-        fin_energy = energy_decomp["total energy_kJ/mol"]
-        if (
-            sum(
-                energy_decomp[i]
-                for i in energy_decomp
-                if "total energy" not in i
-            )
-            != fin_energy
-        ):
-            msg = (
-                "energy decompisition does not sum to total energy for"
-                f" {name}: {energy_decomp}"
-            )
-            raise RuntimeError(msg)
-
         num_components = len(
             stko.Network.init_from_molecule(
                 database.get_molecule(key=name)
@@ -579,9 +549,10 @@ def analyse_cage(
             key=name,
             property_dict={
                 "forcefield_dict": forcefield.get_forcefield_dictionary(),
-                "strain_energy": fin_energy,
-                "energy_per_bb": fin_energy
-                / iterator.get_num_building_blocks(),
+                "energy_per_bb": cgx.utilities.get_energy_per_bb(
+                    energy_decomposition=properties["energy_decomposition"],
+                    number_building_blocks=iterator.get_num_building_blocks(),
+                ),
                 "num_components": num_components,
                 "ligname": ligname,
                 "multiplier": multiplier,
