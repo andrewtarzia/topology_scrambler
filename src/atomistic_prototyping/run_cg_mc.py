@@ -266,7 +266,7 @@ def main():
             rng = np.random.default_rng(seed=seed)
 
             # Define a connectivity based on a multiplier.
-            iterator = TopologyIterator(
+            iterator = Scrambler(
                 multiplier=multiplier,
                 stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
                 tetra_bb=tetra_bb,

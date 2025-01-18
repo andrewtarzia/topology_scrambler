@@ -36,7 +36,7 @@ def analyse_cage(  # noqa: PLR0913
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
-    iterator: cgx.scram.TopologyIterator,
+    iterator: cgx.scram.Scrambler,
     topology_code: cgx.scram.TopologyCode,
     bb_config: cgx.scram.BuildingBlockConfiguration,
 ) -> None:
@@ -611,7 +611,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             for multiplier in pairs[pair]["multipliers"]:
                 logging.info("doing: pair %s, multi %s", pair, multiplier)
                 # Define a connectivity based on a multiplier.
-                iterator = cgx.scram.IHomolepticTopologyIterator(
+                iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
                         tetra_bb: pairs[pair]["stoichiometry_L_L_M"][2]
                         * multiplier,

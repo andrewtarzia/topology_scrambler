@@ -387,7 +387,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
         for multiplier in pairs[pair]["multipliers"]:
             if args.run:
                 # Define a connectivity based on a multiplier.
-                iterator = TopologyIterator(
+                iterator = Scrambler(
                     multiplier=multiplier,
                     stoichiometry=pairs[pair]["stoichiometry_L_L_M"],
                     tetra_bb=tetra_bb,

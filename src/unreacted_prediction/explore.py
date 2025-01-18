@@ -512,7 +512,7 @@ def analyse_cage(
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
-    iterator: cgx.scram.TopologyIterator,
+    iterator: cgx.scram.Scrambler,
     topology_code: cgx.scram.TopologyCode,
 ) -> None:
     """Analyse toy model cage."""
@@ -940,7 +940,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     f"{stoichiometry_l_m_c[2]*multiplier}-1FG"
                 )
                 # Define a connectivity based on a multiplier.
-                iterator = cgx.scram.IHomolepticTopologyIterator(
+                iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
                         tetra_bb: stoichiometry_l_m_c[1] * multiplier,
                         ditopic_bb: stoichiometry_l_m_c[0] * multiplier,
@@ -961,7 +961,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 )
 
                 # Define a connectivity based on a multiplier.
-                iterator = cgx.scram.IHomolepticTopologyIterator(
+                iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
                         tetra_bb: stoichiometry_l_m_c[1] * multiplier,
                         ditopic_bb: stoichiometry_l_m_c[0] * multiplier,

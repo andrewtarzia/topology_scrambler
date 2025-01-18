@@ -59,7 +59,7 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
         properties = {i: {} for i in multipliers}
         targets = []
         for multi in multipliers:
-            iterator = cgx.scram.IHomolepticTopologyIterator(
+            iterator = cgx.scram.TopologyIterator(
                 building_block_counts={
                     fake_tetra_bb: 1 * multi,
                     fake_ditopic_bb: 2 * multi,
