@@ -1,19 +1,9 @@
 """Script to generate and optimise CG models."""
 
-import logging
 import pathlib
-import warnings
 
 import cgexplore as cgx
 import stko
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
-
-warnings.filterwarnings("ignore")
-
 
 cbead_d = cgx.molecular.CgBead(
     element_string="Ag",
@@ -47,7 +37,7 @@ def analyse_cage(
     database_path: pathlib.Path,
     name: str,
     forcefield: cgx.forcefields.ForceField,
-    iterator: cgx.scram.Scrambler,
+    iterator: cgx.scram.TopologyIterator,
     topology_code: cgx.scram.TopologyCode,
 ) -> None:
     """Analyse toy model cage."""
