@@ -83,9 +83,55 @@ def plot_xy(
     plt.close()
 
 
+def plot_distance_angle(
+    ensembles: dict[str, dict[str, dict]],  # type: ignore[type-arg]
+    figure_dir: pathlib.Path,
+) -> None:
+    """Make an xy plot of properties."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for ligand, ensemble in ensembles.items():
+        min_energy = min([ensemble[i]["energy"] for i in ensemble])
+
+        is_kept = [
+            i
+            for i in ensemble
+            if (ensemble[i]["energy"] - min_energy) * 2625.5 < 20  # noqa: PLR2004
+        ]
+
+        xs = [ensemble[i]["binder_angles"][0] for i in is_kept] + [
+            ensemble[i]["binder_angles"][0] for i in is_kept
+        ]
+        ys = [ensemble[i]["binder_distance"] for i in is_kept] + [
+            ensemble[i]["binder_distance"] for i in is_kept
+        ]
+
+        ax.scatter(
+            xs,
+            ys,
+            marker="o",
+            edgecolor="k",
+            s=40,
+            label=ligand,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("binder angle [deg]", fontsize=16)
+    ax.set_ylabel("N-N distance [AA]", fontsize=16)
+
+    ax.legend(fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / "dist_vs_angles_1.png",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def main() -> None:
     """Run script."""
-    raise SystemExit("rerun")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     ligand_dir = wd / "ufo_aa_ligands"
     ligand_dir.mkdir(exist_ok=True)
@@ -94,41 +140,36 @@ def main() -> None:
     calculation_dir = wd / "ufo_aa_calculations"
     calculation_dir.mkdir(exist_ok=True)
     crest_path = pathlib.Path("/home/atarzia/software/crest_301/crest")
-    xtb_path = pathlib.Path("/home/atarzia/miniforge3/envs/tscram/bin/xtb")
+    xtb_path = pathlib.Path(
+        "/home/atarzia/miniforge3/envs/meproduction/bin/xtb"
+    )
 
     ligands = {
-        "ls1": {"smiles": "C1=CC(=CC(=C1)C2=CC=NC=C2)C3=CC=NC=C3"},
-        "ls2": {"smiles": "C1=CC(=NC(=C1)C2=CC=NC=C2)C3=CC=NC=C3"},
-        "ls3": {"smiles": "C1=CC(=C(C(=C1)C2=CC=NC=C2)N)C3=CC=NC=C3"},
-        "ls4": {"smiles": "N1=CC=C(C2=C(OC)C(C3=CC=NC=C3)=CC=C2)C=C1"},
-        "ls5": {"smiles": "C1=CC(=C(C(=C1)C2=CC=NC=C2)O)C3=CC=NC=C3"},
-        # "ls6": {# noqa: ERA001
-        # "smiles": "N(C1=C(C2=CC=NC=C2)C=CC=C1C1=CC=NC=C1)(=O)[O-]"
-        # },
-        "ls8": {
-            "smiles": "C1(C(C2C=CN=CC=2)=CC=CC=1C1C=CN=CC=1)OC(=O)C1C=CC=CC=1"
-        },
-        "ls7": {
-            "smiles": "C1(C(C2C=CN=CC=2)=CC=CC=1C1C=CN=CC=1)OC(=O)C(C)(C)C"
-        },
-        "ls10": {"smiles": "C1=CN=CC=C1C2=CC=C([Se]2)C3=CC=NC=C3"},
         "lf": {
             "smiles": (
                 "C1=C(C2=CC=C(C3C=CC4C(=O)C5C=CC(C6=CC=C(C7=CC=CN=C7)C=C6)=CC"
                 "=5C=4C=3)C=C2)C=NC=C1"
             ),
         },
+        "ls1": {"smiles": "C1=CC(=CC(=C1)C2=CC=NC=C2)C3=CC=NC=C3"},
+        "ls2": {"smiles": "C1=CC(=NC(=C1)C2=CC=NC=C2)C3=CC=NC=C3"},
+        "ls3": {"smiles": "C1=CC(=C(C(=C1)C2=CC=NC=C2)N)C3=CC=NC=C3"},
+        "ls4": {"smiles": "N1=CC=C(C2=C(OC)C(C3=CC=NC=C3)=CC=C2)C=C1"},
+        "ls5": {"smiles": "C1=CC(=C(C(=C1)C2=CC=NC=C2)O)C3=CC=NC=C3"},
+        "ls7": {
+            "smiles": "C1(C(C2C=CN=CC=2)=CC=CC=1C1C=CN=CC=1)OC(=O)C(C)(C)C"
+        },
+        "ls8": {
+            "smiles": "C1(C(C2C=CN=CC=2)=CC=CC=1C1C=CN=CC=1)OC(=O)C1C=CC=CC=1"
+        },
         "ls9": {"smiles": "C1=CN=CC=C1C2=CC=C(S2)C3=CC=NC=C3"},
+        "ls10": {"smiles": "C1=CN=CC=C1C2=CC=C([Se]2)C3=CC=NC=C3"},
     }
 
-    for ligand in ligands:
+    ensembles = {}
+    for ligand, ldict in ligands.items():
         logging.info("doing %s", ligand)
-        if "smiles" in ligands[ligand]:
-            molecule = stk.BuildingBlock(ligands[ligand]["smiles"])
-        elif "input" in ligands[ligand]:
-            molecule = stk.BuildingBlock.init_from_file(
-                ligands[ligand]["input"]
-            )
+        molecule = stk.BuildingBlock(ldict["smiles"])
 
         molecule.write(ligand_dir / f"{ligand}_unopt.mol")
 
@@ -143,7 +184,14 @@ def main() -> None:
             crest_path=crest_path,
             xtb_path=xtb_path,
         )
+        ensembles[ligand] = ensemble
 
+    plot_distance_angle(
+        ensembles=ensembles,
+        figure_dir=figure_dir,
+    )
+
+    for ligand, ensemble in ensembles.items():
         min_energy = min([ensemble[i]["energy"] for i in ensemble])
 
         # Plot.
