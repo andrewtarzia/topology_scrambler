@@ -5,7 +5,7 @@ import itertools as it
 import logging
 import pathlib
 import warnings
-from collections import defaultdict
+from collections import abc, defaultdict
 
 import cgexplore as cgx
 import matplotlib as mpl
@@ -14,22 +14,19 @@ import numpy as np
 import openmm
 import polars as pl
 import stk
-from ds_utilities import (
-    EnvVariables,
+from rdkit import RDLogger
+
+from model_enumeration.utilities import (
     arm_bead,
     binder_bead,
     core_bead,
     core_bead2,
     create_zone,
-    get_forcefield_dict,
-    tetragonal_bead,
-    trigonal_bead,
-)
-from rdkit import RDLogger
-from utilities import (
     dihedral_state_threshold,
     eb_str,
     isomer_energy,
+    tetragonal_bead,
+    trigonal_bead,
 )
 
 warnings.filterwarnings("ignore")
@@ -336,7 +333,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         f"f{chromosome.get_separated_string()}"
     )
 
-    forcefield_dict = get_forcefield_dict(forcefield)
+    forcefield_dict = forcefield.get_forcefield_dictionary()
 
     bbs = {
         bb: tuple(bb_dict[1][idx])
@@ -564,14 +561,12 @@ def low_resolution_function(  # noqa: PLR0915
     """Show low resolution data."""
     database = cgx.utilities.AtomliteDatabase(database_path)
     tstr = prefix.split("_")[1]
-    fig, (ax, ax1, ax2) = plt.subplots(ncols=3, figsize=(16, 5))
+    fig, (ax1, ax2) = plt.subplots(ncols=2, figsize=(10, 5))
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
     target_y = "$.forcefield_dict.v_dict.b_a_o"
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
-    ax2.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax2.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
+    ax2.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax2.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
 
     df_properties = [
         "$.energy_per_bb",
@@ -587,6 +582,8 @@ def low_resolution_function(  # noqa: PLR0915
         allow_missing=False,
     )
     logging.info("%s dataframe size: %s", prefix, len(dataframe))
+    if len(dataframe) == 0:
+        return
 
     vx_stables = {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
     vx_energies = {i: float("inf") for i in set(dataframe["$.bb_dict_idx"])}
@@ -597,6 +594,9 @@ def low_resolution_function(  # noqa: PLR0915
         pdata = dataframe.filter(pl.col(target_x) == xangle)
         pdata = pdata.filter(pl.col(target_y) == yangle)
 
+        if len(pdata) == 0:
+            continue
+
         for bbidx in list(pdata["$.bb_dict_idx"]):
             if xangle != yangle:
                 bdata = pdata.filter(pl.col("$.bb_dict_idx") == bbidx)
@@ -604,37 +604,19 @@ def low_resolution_function(  # noqa: PLR0915
                     (vx_energies[bbidx], bdata["$.energy_per_bb"].item(0))
                 )
 
-        if len(pdata) == 0:
-            continue
-
         min_energy = min(pdata["$.energy_per_bb"])
         # Get stable states.
         pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
 
         if len(pdata) > 1:
-            colour = "tab:orange"
             logging.info("found-ish %s", pdata["key"].item(0))
 
         elif len(pdata) == 1:
-            colour = "tab:purple"
             logging.info("found %s", pdata["key"].item(0))
-
-        else:
-            colour = "white"
 
         for bbidx in list(pdata["$.bb_dict_idx"]):
             if xangle != yangle:
                 vx_stables[bbidx] += 1
-
-        ax.scatter(
-            xangle,
-            yangle,
-            c=colour,
-            alpha=1.0,
-            edgecolor="k",
-            s=160,
-            marker="s",
-        )
 
         ax2.scatter(
             xangle,
@@ -649,10 +631,6 @@ def low_resolution_function(  # noqa: PLR0915
             cmap="Blues_r",
         )
 
-    ax.plot((90, 180), (90, 180), c="k", ls="--")
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_title(tstr, fontsize=16)
-
     ax2.plot((90, 180), (90, 180), c="k", ls="--")
     ax2.tick_params(axis="both", which="major", labelsize=16)
     ax2.set_title(tstr, fontsize=16)
@@ -666,7 +644,7 @@ def low_resolution_function(  # noqa: PLR0915
     )
     ax1.tick_params(axis="both", which="major", labelsize=16)
     ax1.set_title(tstr, fontsize=16)
-    ax1.set_xlabel("bb-state", fontsize=16)
+    ax1.set_xlabel("bb configuration", fontsize=16)
     ax1.set_ylabel("count stable", fontsize=16)
     ax1.set_ylim(0, None)
 
@@ -741,6 +719,8 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
         properties=df_properties,
         allow_missing=False,
     )
+    if len(dataframe) == 0:
+        return
     low_res_dataframe = low_res_database.get_property_df(
         properties=df_properties,
         allow_missing=False,
@@ -958,36 +938,6 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     plt.close()
 
 
-def plot_function(
-    database_path: pathlib.Path,
-    figure_output: pathlib.Path,
-    prefix: str,
-) -> None:
-    """Plot the angle map."""
-    run_resolution = 0 if "r1" not in prefix.split("_")[0] else 1
-
-    if run_resolution == 0:
-        low_resolution_function(
-            database_path=database_path,
-            figure_output=figure_output,
-            prefix=prefix,
-        )
-
-    elif run_resolution == 1:
-        database_parent = database_path.parents[0]
-        preprefix = prefix.replace("r1", "")
-        low_res_database_path = database_parent / database_path.name.replace(
-            prefix, preprefix
-        )
-
-        high_resolution_function(
-            database_path=database_path,
-            low_res_database_path=low_res_database_path,
-            figure_output=figure_output,
-            prefix=prefix,
-        )
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -999,15 +949,210 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:  # noqa: PLR0915, C901, PLR0912
+def run_workflow(  # noqa: C901, PLR0913
+    run_calcs: bool,
+    study: str,
+    study_dict: dict,
+    data_dir: pathlib.Path,
+    structure_dir: pathlib.Path,
+    calculation_dir: pathlib.Path,
+) -> None:
+    """Run the workflow."""
+    definer_dict = study_dict["definer_dict"]
+    cage_topology = study_dict["topology"]
+
+    for term in study_dict["definer_dict_updates"]:
+        definer_dict[term] = study_dict["definer_dict_updates"][term]
+
+    prefix = f"{study}"
+    database_path = data_dir / f"{prefix}.db"
+    calculations_done_file = data_dir / f"{prefix}.done"
+
+    possible_bbdicts = cgx.scram.get_potential_bb_dicts(
+        tstr=cage_topology[0],
+        ratio=study_dict["bb_ratio"],
+        study_type="ditopic",
+    )
+    logging.info(
+        "there are %s possible BB dicts for %s",
+        len(possible_bbdicts),
+        prefix,
+    )
+
+    if "8P16" in study:
+        logging.info(
+            "but for 8P16 we are only using two chosen ones with bridges!"
+        )
+        target_bbdict = (8, 9, 10, 11, 12, 13, 14, 15)
+        chosen_bbdicts = []
+        for bbdict in possible_bbdicts:
+            if tuple(sorted(bbdict[1][1])) == target_bbdict:
+                chosen_bbdicts.append(bbdict)
+            if tuple(sorted(bbdict[1][2])) == target_bbdict:
+                chosen_bbdicts.append(bbdict)
+
+        possible_bbdicts = tuple(chosen_bbdicts)
+
+    logging.info("buidling %s BB dicts for %s", len(possible_bbdicts), prefix)
+    if len(possible_bbdicts) == 0:
+        return
+
+    if run_calcs and not calculations_done_file.exists():
+        for bdict in possible_bbdicts:
+            chromosome_gen = cgx.systems_optimisation.ChromosomeGenerator(
+                prefix=prefix,
+                present_beads=study_dict["present_beads"],
+                vdw_bond_cutoff=2,
+            )
+
+            chromosome_gen.add_gene(
+                iteration=[cage_topology],
+                gene_type="topology",
+            )
+            chromosome_gen.add_gene(
+                iteration=study_dict["large_gene"],
+                gene_type="precursor",
+            )
+            chromosome_gen.add_gene(
+                iteration=study_dict["small_gene"],
+                gene_type="precursor",
+            )
+            chromosome_gen.add_gene(
+                iteration=study_dict["small_gene2"],
+                gene_type="precursor",
+            )
+            chromosome_gen.add_gene(
+                iteration=(bdict,),
+                gene_type="precursor",
+            )
+            chromosome_gen.add_forcefield_dict(definer_dict=definer_dict)
+
+            # Pick random structures from chromosome to build as
+            # template.
+            template_population = chromosome_gen.select_random_population(
+                generator=np.random.default_rng(1824),
+                size=3,
+            )
+            template_files = []
+            for chromosome in template_population:
+                (
+                    larger,
+                    smaller,
+                    smaller2,
+                    bb_dict,
+                ) = chromosome.get_precursors()
+
+                template_name = (
+                    f"temp_{chromosome.prefix}_{larger.get_name()}_"
+                    f"{smaller.get_name()}_{smaller2.get_name()}_"
+                    f"v{bb_dict[0]}_f{chromosome.get_separated_string()}"
+                )
+
+                template_structure_function(
+                    chromosome=chromosome,
+                    database_path=database_path,
+                    calculation_output=calculation_dir,
+                    structure_output=structure_dir,
+                    options={},
+                )
+
+                template_files.append(
+                    calculation_dir / f"{template_name}_final.mol"
+                )
+
+            # Go through all in chromosome, and only opt from templates.
+            for chromosome in chromosome_gen.yield_chromosomes():
+                forcefield_dict = (
+                    chromosome.get_forcefield().get_forcefield_dictionary()
+                )
+                # Skip matching bao < bac.
+                if (
+                    forcefield_dict["v_dict"]["b_a_c"]
+                    > forcefield_dict["v_dict"]["b_a_o"]
+                ):
+                    continue
+
+                # Include one case of bac == bao.
+                if (
+                    forcefield_dict["v_dict"]["b_a_c"]
+                    == forcefield_dict["v_dict"]["b_a_o"]
+                    and forcefield_dict["v_dict"]["b_a_c"] != 90  # noqa: PLR2004
+                ):
+                    continue
+
+                structure_function(
+                    chromosome=chromosome,
+                    database_path=database_path,
+                    calculation_output=calculation_dir,
+                    structure_output=structure_dir,
+                    options={"template_files": template_files},
+                )
+
+        # Create a done file.
+        calculations_done_file.open("a").close()
+
+
+def get_high_res_zones(
+    lr_data: pathlib.Path,
+) -> dict[str, abc.Sequence[float]]:
+    """Get zones near low energy low-res points."""
+    database = cgx.utilities.AtomliteDatabase(lr_data)
+
+    df_properties = [
+        "$.energy_per_bb",
+        "$.forcefield_dict.v_dict.b_a_c",
+        "$.forcefield_dict.v_dict.b_a_o",
+        "$.bb_dict_idx",
+    ]
+    dataframe = database.get_property_df(
+        properties=df_properties,
+        allow_missing=False,
+    )
+    if len(dataframe) == 0:
+        return {"bac": [], "bao": []}
+
+    pdata = dataframe.filter(pl.col("$.energy_per_bb") <= isomer_energy() * 3)
+
+    xys = {
+        (i, j)
+        for i, j in zip(
+            pdata["$.forcefield_dict.v_dict.b_a_c"],
+            pdata["$.forcefield_dict.v_dict.b_a_o"],
+            strict=False,
+        )
+    }
+
+    points = []
+    resolution = 5
+    for x, y in xys:
+        points.extend(
+            (i, j)
+            for i, j in it.product(
+                range(x - resolution * 2, x + resolution * 2 + 1, resolution),
+                range(y - resolution * 2, y + resolution * 2 + 1, resolution),
+            )
+        )
+    sets = set(points)
+    return {
+        "bac": sorted({i[0] for i in sets}),
+        "bao": sorted({i[1] for i in sets}),
+    }
+
+
+def main() -> None:
     """Run script."""
     args = _parse_args()
-    raise SystemExit("Change paths")
-
-    structure_output = EnvVariables.cg_structures
-    calculation_output = EnvVariables.cg_calculations
-    figure_output = EnvVariables.cg_figures
-    data_output = EnvVariables.cg_outputdata
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    calculation_dir = wd / "angle_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    structure_dir = wd / "angle_structures"
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / "angle_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir = wd / "angle_data"
+    data_dir.mkdir(exist_ok=True)
+    figure_dir = wd / "figures"
+    figure_dir.mkdir(exist_ok=True)
 
     present_beads_2p4 = (
         arm_bead,
@@ -1037,474 +1182,131 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         "bao": ("angle", [90, 105, 120, 135, 150, 165, 180], 1e2),
     }
 
-    at1baczones = {
+    topology_list = (
+        # Scanning ditopic + tetratopic in 1:1 ratio.
+        ("3P6", stk.cage.M3L6, (1, 1), "2+4"),
+        ("4P8", cgx.topologies.CGM4L8, (1, 1), "2+4"),
+        ("4P82", cgx.topologies.M4L82, (1, 1), "2+4"),
+        ("6P12", stk.cage.M6L12Cube, (1, 1), "2+4"),
+        ("6P122", cgx.topologies.M6L122, (1, 1), "2+4"),
+        ("8P16", stk.cage.EightPlusSixteen, (1, 1), "2+4"),
+        # Scanning ditopic + tritopic.
+        # By definition, sometimes the ratio cannot be 1:1.
+        ("4P6", stk.cage.FourPlusSix, (1, 1), "2+3"),
+        ("4P62", stk.cage.FourPlusSix2, (1, 1), "2+3"),
+    )
+
+    lr_studies = {
+        f"lr_{tstr}": {
+            "topology": (tstr, tfunc),
+            "definer_dict": definer_dict_2p4
+            if mtype == "2+4"
+            else definer_dict_2p3,
+            "present_beads": present_beads_2p4
+            if mtype == "2+4"
+            else present_beads_2p3,
+            "large_gene": large_gene_4x if mtype == "2+4" else large_gene_3x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": ratio,
+            "definer_dict_updates": low_resolution_zones,
+        }
+        for tstr, tfunc, ratio, mtype in topology_list
+    }
+
+    for study, study_dict in lr_studies.items():
+        run_workflow(
+            run_calcs=args.run_calcs,
+            study=study,
+            study_dict=study_dict,
+            data_dir=data_dir,
+            calculation_dir=calculation_dir,
+            structure_dir=structure_dir,
+        )
+
+        low_resolution_function(
+            database_path=data_dir / f"{study}.db",
+            figure_output=figure_dir,
+            prefix=study,
+        )
+
+    # Get the high-res zones.
+    hr_studies = {}
+    for tstr, tfunc, ratio, mtype in topology_list:
+        lr_data = data_dir / f"lr_{tstr}.db"
+        hr_zones = get_high_res_zones(lr_data)
+
+        if hr_zones["bac"] == []:
+            continue
+
+        hr_studies[f"hr_{tstr}"] = {
+            "topology": (tstr, tfunc),
+            "definer_dict": definer_dict_2p4
+            if mtype == "2+4"
+            else definer_dict_2p3,
+            "present_beads": present_beads_2p4
+            if mtype == "2+4"
+            else present_beads_2p3,
+            "large_gene": large_gene_4x if mtype == "2+4" else large_gene_3x,
+            "small_gene": small_gene,
+            "small_gene2": small_gene2,
+            "bb_ratio": ratio,
+            "definer_dict_updates": {
+                "bac": ("angle", hr_zones["bac"], 1e2),
+                "bao": ("angle", hr_zones["bao"], 1e2),
+            },
+        }
+
+    for study, study_dict in hr_studies.items():
+        run_workflow(
+            run_calcs=args.run_calcs,
+            study=study,
+            study_dict=study_dict,
+            data_dir=data_dir,
+            calculation_dir=calculation_dir,
+            structure_dir=structure_dir,
+        )
+
+        lr_study = study.replace("hr_", "lr_")
+
+        high_resolution_function(
+            database_path=data_dir / f"{study}.db",
+            low_res_database_path=data_dir / f"{lr_study}.db",
+            figure_output=figure_dir,
+            prefix=study,
+        )
+    raise SystemExit("change all study names below")
+    raise SystemExit("use the scam bb config method")
+    raise SystemExit(
+        "turn into a chemiscope and single plot of knietic self-sort, basically."
+    )
+    raise SystemExit("put the founds into a library somewhere")
+    high_res_baczones = {
         "3P6": create_zone(dmin=95, dmax=115, resolution=5),
         "4P8": create_zone(dmin=90, dmax=140, resolution=5),
         "4P82": create_zone(dmin=90, dmax=140, resolution=5),
         "6P12": create_zone(dmin=100, dmax=150, resolution=5),
-        "8P16": create_zone(dmin=100, dmax=150, resolution=5),
-    }
-    at1baozones = {
-        "3P6": create_zone(dmin=110, dmax=130, resolution=5),
-        "4P8": create_zone(dmin=100, dmax=150, resolution=5),
-        "4P82": create_zone(dmin=120, dmax=160, resolution=5),
-        "6P12": create_zone(dmin=120, dmax=180, resolution=5),
-        "8P16": create_zone(dmin=140, dmax=180, resolution=5),
-    }
-    at2baczones = {
-        "3P6": create_zone(dmin=95, dmax=115, resolution=5),
-        "6P12": create_zone(dmin=110, dmax=150, resolution=5),
-    }
-    at2baozones = {
-        "3P6": create_zone(dmin=110, dmax=130, resolution=5),
-        "6P12": create_zone(dmin=120, dmax=160, resolution=5),
-    }
-    at4baczones = {
         "6P122": create_zone(dmin=90, dmax=130, resolution=5),
-    }
-    at4baozones = {
-        "6P122": create_zone(dmin=120, dmax=180, resolution=5),
-    }
-    at5baczones = {
+        "8P16": create_zone(dmin=100, dmax=150, resolution=5),
         "2P3": create_zone(dmin=90, dmax=100, resolution=2),
         "4P6": create_zone(dmin=100, dmax=140, resolution=2),
         "4P62": create_zone(dmin=90, dmax=140, resolution=2),
         "6P9": create_zone(dmin=90, dmax=150, resolution=2),
         "8P12": create_zone(dmin=90, dmax=150, resolution=2),
     }
-    at5baozones = {
+    high_res_baozones = {
+        "3P6": create_zone(dmin=110, dmax=130, resolution=5),
+        "4P8": create_zone(dmin=100, dmax=150, resolution=5),
+        "4P82": create_zone(dmin=120, dmax=160, resolution=5),
+        "6P12": create_zone(dmin=120, dmax=180, resolution=5),
+        "6P122": create_zone(dmin=120, dmax=180, resolution=5),
+        "8P16": create_zone(dmin=140, dmax=180, resolution=5),
         "2P3": create_zone(dmin=90, dmax=120, resolution=5),
         "4P6": create_zone(dmin=110, dmax=160, resolution=5),
         "4P62": create_zone(dmin=100, dmax=140, resolution=5),
         "6P9": create_zone(dmin=90, dmax=180, resolution=5),
         "8P12": create_zone(dmin=90, dmax=180, resolution=5),
     }
-    at6baczones = {"4P6": create_zone(dmin=90, dmax=140, resolution=5)}
-    at6baozones = {"4P6": create_zone(dmin=110, dmax=160, resolution=5)}
-    at7baczones = {"4P6": create_zone(dmin=90, dmax=140, resolution=5)}
-    at7baozones = {"4P6": create_zone(dmin=110, dmax=160, resolution=5)}
-    at8baczones = {"4P62": create_zone(dmin=90, dmax=130, resolution=5)}
-    at8baozones = {"4P62": create_zone(dmin=90, dmax=180, resolution=5)}
-
-    raise SystemExit("change all study names below")
-    raise SystemExit("use the scam bb config method")
-    studies = {
-        # Scanning ditopic + tetratopic in 1:1 ratio.
-        "at1_8P16": {
-            "topology": ("8P16", stk.cage.EightPlusSixteen),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at1r1_8P16": {
-            "topology": ("8P16", stk.cage.EightPlusSixteen),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["8P16"], 1e2),
-                "bao": ("angle", at1baozones["8P16"], 1e2),
-            },
-        },
-        "at1_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at1r1_4P8": {
-            "topology": ("4P8", cgx.topologies.CGM4L8),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["4P8"], 1e2),
-                "bao": ("angle", at1baozones["4P8"], 1e2),
-            },
-        },
-        "at1r1_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["6P12"], 1e2),
-                "bao": ("angle", at1baozones["6P12"], 1e2),
-            },
-        },
-        "at1_2P4": {
-            "topology": ("2P4", stk.cage.M2L4Lantern),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at1r1_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["3P6"], 1e2),
-                "bao": ("angle", at1baozones["3P6"], 1e2),
-            },
-        },
-        "at1_4P8": {
-            "topology": ("4P8", cgx.topologies.CGM4L8),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["4P8"], 1e2),
-                "bao": ("angle", at1baozones["4P8"], 1e2),
-            },
-        },
-        "at1_4P82": {
-            "topology": ("4P82", cgx.topologies.M4L82),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at1r1_4P82": {
-            "topology": ("4P82", cgx.topologies.M4L82),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at1baczones["4P82"], 1e2),
-                "bao": ("angle", at1baozones["4P82"], 1e2),
-            },
-        },
-        "at1_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at4_6P122": {
-            "topology": ("6P122", cgx.topologies.M6L122),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at4r1_6P122": {
-            "topology": ("6P122", cgx.topologies.M6L122),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at4baczones["6P122"], 1e2),
-                "bao": ("angle", at4baozones["6P122"], 1e2),
-            },
-        },
-        # Scanning ditopic + tritopic.
-        # By definition, sometimes the ratio cannot be 1:1.
-        "at5_2P3": {
-            "topology": ("2P3", stk.cage.TwoPlusThree),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at5_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at5_4P62": {
-            "topology": ("4P62", stk.cage.FourPlusSix2),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at5_6P9": {
-            "topology": ("6P9", stk.cage.SixPlusNine),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at5_8P12": {
-            "topology": ("8P12", stk.cage.EightPlusTwelve),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at5r1_2P3": {
-            "topology": ("2P3", stk.cage.TwoPlusThree),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at5baczones["2P3"], 1e2),
-                "bao": ("angle", at5baozones["2P3"], 1e2),
-            },
-        },
-        "at5r1_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at5baczones["4P6"], 1e2),
-                "bao": ("angle", at5baozones["4P6"], 1e2),
-            },
-        },
-        "at5r1_4P62": {
-            "topology": ("4P62", stk.cage.FourPlusSix2),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at5baczones["4P62"], 1e2),
-                "bao": ("angle", at5baozones["4P62"], 1e2),
-            },
-        },
-        "at5r1_6P9": {
-            "topology": ("6P9", stk.cage.SixPlusNine),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at5baczones["6P9"], 1e2),
-                "bao": ("angle", at5baozones["6P9"], 1e2),
-            },
-        },
-        "at5r1_8P12": {
-            "topology": ("8P12", stk.cage.EightPlusTwelve),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at5baczones["8P12"], 1e2),
-                "bao": ("angle", at5baozones["8P12"], 1e2),
-            },
-        },
-    }
-    raise SystemExit("rerun")
-
-    for study in studies:
-        definer_dict = studies[study]["definer_dict"]
-        cage_topology = studies[study]["topology"]
-
-        for term in studies[study]["definer_dict_updates"]:
-            definer_dict[term] = studies[study]["definer_dict_updates"][term]
-
-        prefix = f"{study}"
-        database_path = data_output / f"{prefix}.db"
-        calculations_done_file = data_output / f"{prefix}.done"
-
-        possible_bbdicts = cgx.scram.get_potential_bb_dicts(
-            tstr=cage_topology[0],
-            ratio=studies[study]["bb_ratio"],
-            study_type="ditopic",
-        )
-        logging.info(
-            "there are %s possible BB dicts for %s",
-            len(possible_bbdicts),
-            prefix,
-        )
-
-        logging.info(
-            "but for 8P16 we are only using two chosen ones with bridges!"
-        )
-        if "8P16" in study:
-            target_bbdict = (8, 9, 10, 11, 12, 13, 14, 15)
-        chosen_bbdicts = []
-        for bbdict in possible_bbdicts:
-            if tuple(sorted(bbdict[1][1])) == target_bbdict:
-                chosen_bbdicts.append(bbdict)
-            if tuple(sorted(bbdict[1][2])) == target_bbdict:
-                chosen_bbdicts.append(bbdict)
-
-        possible_bbdicts = tuple(chosen_bbdicts)
-
-        if len(possible_bbdicts) == 0:
-            continue
-
-        if args.run_calcs and not calculations_done_file.exists():
-            for bdict in possible_bbdicts:
-                chromosome_gen = cgx.systems_optimisation.ChromosomeGenerator(
-                    prefix=prefix,
-                    present_beads=studies[study]["present_beads"],
-                    vdw_bond_cutoff=2,
-                )
-
-                chromosome_gen.add_gene(
-                    iteration=[cage_topology],
-                    gene_type="topology",
-                )
-                chromosome_gen.add_gene(
-                    iteration=studies[study]["large_gene"],
-                    gene_type="precursor",
-                )
-                chromosome_gen.add_gene(
-                    iteration=studies[study]["small_gene"],
-                    gene_type="precursor",
-                )
-                chromosome_gen.add_gene(
-                    iteration=studies[study]["small_gene2"],
-                    gene_type="precursor",
-                )
-                chromosome_gen.add_gene(
-                    iteration=(bdict,),
-                    gene_type="precursor",
-                )
-                chromosome_gen.add_forcefield_dict(definer_dict=definer_dict)
-
-                template_population = chromosome_gen.select_random_population(
-                    generator=np.random.default_rng(1824),
-                    size=3,
-                )
-
-                # Pick random structures from chromosome to build as
-                # template.
-                template_files = []
-                for chromosome in template_population:
-                    (
-                        larger,
-                        smaller,
-                        smaller2,
-                        bb_dict,
-                    ) = chromosome.get_precursors()
-
-                    template_name = (
-                        f"temp_{chromosome.prefix}_{larger.get_name()}_"
-                        f"{smaller.get_name()}_{smaller2.get_name()}_"
-                        f"v{bb_dict[0]}_f{chromosome.get_separated_string()}"
-                    )
-
-                    template_structure_function(
-                        chromosome=chromosome,
-                        database_path=database_path,
-                        calculation_output=calculation_output,
-                        structure_output=structure_output,
-                        options={},
-                    )
-
-                    template_files.append(
-                        calculation_output / f"{template_name}_final.mol"
-                    )
-
-                # Go through all in chromosome, and only opt from templates.
-                for chromosome in chromosome_gen.yield_chromosomes():
-                    forcefield_dict = get_forcefield_dict(
-                        chromosome.get_forcefield()
-                    )
-                    # Skip matching bao < bac.
-                    if (
-                        forcefield_dict["v_dict"]["b_a_c"]
-                        > forcefield_dict["v_dict"]["b_a_o"]
-                    ):
-                        continue
-
-                    # Include one case of bac == bao.
-                    if (
-                        forcefield_dict["v_dict"]["b_a_c"]
-                        == forcefield_dict["v_dict"]["b_a_o"]
-                        and forcefield_dict["v_dict"]["b_a_c"] != 90  # noqa: PLR2004
-                    ):
-                        continue
-
-                    structure_function(
-                        chromosome=chromosome,
-                        database_path=database_path,
-                        calculation_output=calculation_output,
-                        structure_output=structure_output,
-                        options={"template_files": template_files},
-                    )
-
-            # Create a done file.
-            calculations_done_file.open("a").close()
-
-        plot_function(
-            database_path=database_path,
-            figure_output=figure_output,
-            prefix=prefix,
-        )
-
-    raise SystemExit(
-        "turn into a chemiscope and single plot of knietic self-sort, basically."
-    )
-    raise SystemExit("put the founds into a library somewhere")
 
 
 if __name__ == "__main__":
