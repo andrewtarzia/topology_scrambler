@@ -161,3 +161,4 @@ cython_debug/
 
 src/_version.py
 .ruff_cache/
+.benchmarks
