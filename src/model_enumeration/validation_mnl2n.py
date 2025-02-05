@@ -130,7 +130,7 @@ def make_opt_plot(
     plt.close()
 
 
-def make_plot(
+def make_plot(  # noqa: C901
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
     filename: str,
@@ -656,6 +656,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                                     database_path=database_path,
                                     potential_names=potential_names,
                                 )
+
                             et1 = time.time()
                             if conformer is not None:
                                 conformer.molecule.with_centroid(
