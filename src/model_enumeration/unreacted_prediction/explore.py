@@ -612,6 +612,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
+    raise SystemExit("Change paths")
 
     wd = pathlib.Path("/home/atarzia/workingspace/unreacted/")
     figure_dir = wd / "figures"
@@ -935,9 +936,9 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             # Currently, only testing the unreacted case.
             if stoichiometry_l_m_c == (3, 2, 2):
                 graph_type = (
-                    f"{stoichiometry_l_m_c[1]*multiplier}-4FG_"
-                    f"{stoichiometry_l_m_c[0]*multiplier}-2FG_"
-                    f"{stoichiometry_l_m_c[2]*multiplier}-1FG"
+                    f"{stoichiometry_l_m_c[1] * multiplier}-4FG_"
+                    f"{stoichiometry_l_m_c[0] * multiplier}-2FG_"
+                    f"{stoichiometry_l_m_c[2] * multiplier}-1FG"
                 )
                 # Define a connectivity based on a multiplier.
                 iterator = cgx.scram.TopologyIterator(
@@ -956,8 +957,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
 
             elif stoichiometry_l_m_c == (2, 1):
                 graph_type = (
-                    f"{stoichiometry_l_m_c[1]*multiplier}P"
-                    f"{stoichiometry_l_m_c[0]*multiplier}"
+                    f"{stoichiometry_l_m_c[1] * multiplier}P"
+                    f"{stoichiometry_l_m_c[0] * multiplier}"
                 )
 
                 # Define a connectivity based on a multiplier.
