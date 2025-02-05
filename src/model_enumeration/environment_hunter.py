@@ -1,5 +1,6 @@
 """Script to generate and optimise CG models."""
 
+import argparse
 import itertools as it
 import logging
 import pathlib
@@ -12,20 +13,19 @@ import numpy as np
 import openmm
 import polars as pl
 import stk
-from ds_topologies import cage_topology_options
-from ds_utilities import (
-    EnvVariables,
+from rdkit import RDLogger
+
+from model_enumeration.utilities import (
     arm_bead,
     binder_bead,
+    cage_topology_options,
+    convert_topo,
     core_bead,
-    get_forcefield_dict,
+    dihedral_state_threshold,
+    eb_str,
+    isomer_energy,
     tetragonal_bead,
     trigonal_bead,
-)
-from rdkit import RDLogger
-from utilities import (
-    dihedral_state_threshold,
-    isomer_energy,
 )
 
 warnings.filterwarnings("ignore")
@@ -70,6 +70,17 @@ definer_dict_2p3 = {
     "b": ("nb", 10.0, 1.0),
     "c": ("nb", 10.0, 1.0),
 }
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run_calcs",
+        help="whether to run construction or not",
+        action="store_true",
+    )
+
+    return parser.parse_args()
 
 
 def structure_function(  # noqa: PLR0912, PLR0915, C901
@@ -398,7 +409,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
 
     properties = database.get_entry(key=name).properties
     if "forcefield_dict" not in properties:
-        forcefield_dict = get_forcefield_dict(forcefield)
+        forcefield_dict = forcefield.get_forcefield_dictionary()
         database.add_properties(
             key=name,
             property_dict={
@@ -410,7 +421,7 @@ def structure_function(  # noqa: PLR0912, PLR0915, C901
         )
 
 
-def bar_function(
+def bar_function(  # noqa: C901
     data_output: pathlib.Path,
     figure_output: pathlib.Path,
     study: str,
@@ -441,6 +452,7 @@ def bar_function(
                 "$.forcefield_dict.v_dict.b_m_b",
                 "$.max_uniformity",
                 "$.dihedral_num_states",
+                "$.dihedral_states",
             ]
         elif tstr in ("2P3", "4P6", "4P62", "6P9", "8P12"):
             target_y = "$.forcefield_dict.v_dict.b_n_b"
@@ -450,14 +462,25 @@ def bar_function(
                 "$.forcefield_dict.v_dict.b_n_b",
                 "$.max_uniformity",
                 "$.dihedral_num_states",
+                "$.dihedral_states",
             ]
 
         dataframe = database.get_property_df(
             properties=df_properties,
             allow_missing=False,
         )
+        if len(dataframe) == 0:
+            continue
 
-        counts = {"tab:blue": 0, "tab:orange": 0, "white": 0}
+        target_props = {
+            (0.25, 0.25, 0.5): "tab:orange",
+            (0.25, 0.25, 0.25, 0.25): "tab:green",
+            (0.5, 0.5): "tab:purple",
+            (1.0,): "tab:cyan",
+        }
+        counts = {"white": 0, "tab:blue": 0}
+        for i in target_props.values():
+            counts[i] = 0
 
         for xangle, yangle in it.product(
             set(dataframe[target_x]),
@@ -469,11 +492,14 @@ def bar_function(
             if len(pdata) != 1:
                 continue
 
-            if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
-                if pdata["$.dihedral_num_states"].item(0) == 2:  # noqa: PLR2004
-                    colour = "tab:orange"
+            states = pdata["$.dihedral_states"].item(0).to_list()
 
-                else:
+            if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
+                count = sum([i[1] for i in states])
+                curren_prop = tuple(sorted([i[1] / count for i in states]))
+                try:
+                    colour = target_props[curren_prop]
+                except KeyError:
                     colour = "tab:blue"
 
             else:
@@ -510,16 +536,20 @@ def bar_function(
     ax.set_ylabel("proportion", fontsize=16)
     ax.set_ylim(0, 1.0)
     ax.set_xticks(range(len(topology_options)))
-    ax.set_xticklabels([i[0] for i in topology_options], fontsize=16)
+    ax.set_xticklabels(
+        [convert_topo(i[0]) for i in topology_options],
+        fontsize=16,
+        rotation=90,
+    )
 
     fig.tight_layout()
     fig.savefig(
-        figure_output / f"{study}_bar.png",
+        figure_output / f"envi_{study}_bar.png",
         dpi=360,
         bbox_inches="tight",
     )
     fig.savefig(
-        figure_output / f"{study}_bar.pdf",
+        figure_output / f"envi_{study}_bar.pdf",
         dpi=360,
         bbox_inches="tight",
     )
@@ -532,7 +562,7 @@ def plot_torsion_data(
     study: str,
     topology_options: abc.Sequence[tuple[str, abc.Callable]],
 ) -> None:
-    """Plot the bar chart."""
+    """Plot the torsions."""
     fig, axs = plt.subplots(
         nrows=len(topology_options),
         sharex=True,
@@ -543,6 +573,9 @@ def plot_torsion_data(
         prefix = f"{study}_{tstr}"
         database_path = data_output / f"{prefix}.db"
         database = cgx.utilities.AtomliteDatabase(database_path)
+
+        ax2 = ax.twinx()
+        ax2_color = "tab:red"
 
         target_x = "$.forcefield_dict.v_dict.b_a_c"
         if tstr in (
@@ -579,7 +612,10 @@ def plot_torsion_data(
             properties=df_properties,
             allow_missing=False,
         )
+        if len(dataframe) == 0:
+            continue
 
+        xys = []
         for xangle, yangle in it.product(
             set(dataframe[target_x]),
             set(dataframe[target_y]),
@@ -592,52 +628,62 @@ def plot_torsion_data(
 
             states = pdata["$.dihedral_states"].item(0).to_list()
 
+            target_props = {
+                (0.25, 0.25, 0.5): "tab:orange",
+                (0.25, 0.25, 0.25, 0.25): "tab:green",
+                (0.5, 0.5): "tab:purple",
+                (1.0,): "tab:cyan",
+            }
+
             if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
-                c = "tab:orange" if len(states) == 3 else "tab:blue"  # noqa: PLR2004
-                c2 = "tab:red"
+                count = sum([i[1] for i in states])
+                curren_prop = tuple(sorted([i[1] / count for i in states]))
+                try:
+                    c = target_props[curren_prop]
+                except KeyError:
+                    c = "tab:blue"
+
             else:
                 c = "white"
-                c2 = "none"
-
+            xys.append((xangle, pdata["$.energy_per_bb"].item(0)))
             ax.scatter(
                 [xangle for i in states],
                 [i[0] for i in states],
                 c=c,
                 alpha=1.0,
                 edgecolor="k",
-                s=60,
+                s=40,
+                zorder=2,
             )
 
-            count = sum([i[1] for i in states])
-            target_prop = (0.25, 0.25, 0.5)
-            curren_prop = tuple(sorted([i[1] / count for i in states]))
-            if curren_prop == target_prop:
-                ax.scatter(
-                    xangle,
-                    175,
-                    c=c2,
-                    alpha=1.0,
-                    edgecolor="none",
-                    s=30,
-                    marker="D",
-                    zorder=-1,
-                )
+        xys = sorted(xys, key=lambda x: x[0])
+        ax2.plot(
+            [i[0] for i in xys],
+            [i[1] for i in xys],
+            c=ax2_color,
+            zorder=0,
+        )
 
         ax.tick_params(axis="both", which="major", labelsize=16)
         ax.text(x=160, y=100, s=tstr, fontsize=16)
         ax.set_ylim(-180, 182)
         ax.set_yticks([-180, 0, 180])
+        ax.axhline(y=0, c="k", zorder=-2)
+
+        ax2.set_ylabel(eb_str(), color=ax2_color, fontsize=16)
+        ax2.tick_params(axis="y", labelcolor=ax2_color, labelsize=16)
+        ax2.set_ylim(0, 1)
 
     ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
-        figure_output / f"{study}_tm.png",
+        figure_output / f"envi_{study}_tm.png",
         dpi=360,
         bbox_inches="tight",
     )
     fig.savefig(
-        figure_output / f"{study}_tm.pdf",
+        figure_output / f"envi_{study}_tm.pdf",
         dpi=360,
         bbox_inches="tight",
     )
@@ -650,7 +696,7 @@ def plot_specific_torsion_data(
     study: str,
     topology_options: abc.Sequence[tuple[str, abc.Callable]],
 ) -> None:
-    """Plot the bar chart."""
+    """Plot the torsions."""
     for tstr, _ in topology_options:
         if tstr not in ("4P82", "4P6", "8P12", "8P16"):
             continue
@@ -685,6 +731,8 @@ def plot_specific_torsion_data(
             properties=df_properties,
             allow_missing=False,
         )
+        if len(dataframe) == 0:
+            continue
 
         for xangle, yangle in it.product(
             set(dataframe[target_x]),
@@ -698,12 +746,22 @@ def plot_specific_torsion_data(
 
             states = pdata["$.dihedral_states"].item(0).to_list()
 
+            target_props = {
+                (0.25, 0.25, 0.5): "tab:orange",
+                (0.25, 0.25, 0.25, 0.25): "tab:green",
+                (0.5, 0.5): "tab:purple",
+                (1.0,): "tab:cyan",
+            }
+
             if pdata["$.energy_per_bb"].item(0) <= isomer_energy():
-                c = "tab:orange" if len(states) == 3 else "tab:blue"  # noqa: PLR2004
-                c2 = "tab:red"
+                count = sum([i[1] for i in states])
+                curren_prop = tuple(sorted([i[1] / count for i in states]))
+                try:
+                    c = target_props[curren_prop]
+                except KeyError:
+                    c = "tab:blue"
             else:
                 c = "white"
-                c2 = "none"
 
             ax.scatter(
                 [xangle for i in states],
@@ -713,21 +771,6 @@ def plot_specific_torsion_data(
                 edgecolor="k",
                 s=60,
             )
-
-            count = sum([i[1] for i in states])
-            target_prop = (0.25, 0.25, 0.5)
-            curren_prop = tuple(sorted([i[1] / count for i in states]))
-            if curren_prop == target_prop:
-                ax.scatter(
-                    xangle,
-                    175,
-                    c=c2,
-                    alpha=1.0,
-                    edgecolor="none",
-                    s=30,
-                    marker="D",
-                    zorder=-1,
-                )
 
         ax.tick_params(axis="both", which="major", labelsize=16)
         ax.set_title(tstr, fontsize=16)
@@ -740,12 +783,12 @@ def plot_specific_torsion_data(
 
         fig.tight_layout()
         fig.savefig(
-            figure_output / f"{study}_{tstr}_tm.png",
+            figure_output / f"envi_{study}_{tstr}_tm.png",
             dpi=360,
             bbox_inches="tight",
         )
         fig.savefig(
-            figure_output / f"{study}_{tstr}_tm.pdf",
+            figure_output / f"envi_{study}_{tstr}_tm.pdf",
             dpi=360,
             bbox_inches="tight",
         )
@@ -754,11 +797,19 @@ def plot_specific_torsion_data(
 
 def main() -> None:
     """Run script."""
-    structure_output = EnvVariables.cg_structures
-    calculation_output = EnvVariables.cg_calculations
-    figure_output = EnvVariables.cg_figures
-    data_output = EnvVariables.cg_outputdata
-    raise SystemExit("rerun")
+    args = _parse_args()
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    calculation_dir = wd / "envi_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    structure_dir = wd / "envi_structures"
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / "envi_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir = wd / "envi_data"
+    data_dir.mkdir(exist_ok=True)
+    figure_dir = wd / "figures"
+    figure_dir.mkdir(exist_ok=True)
+
     studies = {
         "st1": {
             "topology": "homoleptic_2p4",
@@ -794,69 +845,70 @@ def main() -> None:
     }
 
     for study in studies:
-        for cage_topology in cage_topology_options(
-            study=studies[study]["topology"]
-        ):
-            prefix = f"{study}_{cage_topology[0]}"
-            database_path = data_output / f"{prefix}.db"
-            cgx.utilities.AtomliteDatabase(db_file=database_path)
-
-            chromosome_gen = cgx.systems_optimisation.ChromosomeGenerator(
-                prefix=prefix,
-                present_beads=studies[study]["present_beads"],
-                vdw_bond_cutoff=2,
-            )
-            chromosome_gen.add_gene(
-                iteration=[cage_topology], gene_type="topology"
-            )
-
-            chromosome_gen.add_gene(
-                iteration=studies[study]["large_gene"],
-                gene_type="precursor",
-            )
-            chromosome_gen.add_gene(
-                iteration=studies[study]["small_gene"],
-                gene_type="precursor",
-            )
-
-            chromosome_gen.add_forcefield_dict(
-                definer_dict=studies[study]["definer_dict"]
-            )
-
-            count = 0
-            for chromosome in chromosome_gen.yield_chromosomes():
-                structure_function(
-                    chromosome=chromosome,
-                    database_path=database_path,
-                    calculation_output=calculation_output,
-                    structure_output=structure_output,
-                    options={},
-                )
-                count += 1
-
-            logging.info(
-                "(%s) built %s for %s", study, count, cage_topology[0]
-            )
-
-        plot_specific_torsion_data(
-            data_output=data_output,
-            figure_output=figure_output,
-            study=study,
-            topology_options=cage_topology_options(
+        if args.run_calcs:
+            for cage_topology in cage_topology_options(
                 study=studies[study]["topology"]
-            ),
-        )
+            ):
+                prefix = f"{study}_{cage_topology[0]}"
+                database_path = data_dir / f"{prefix}.db"
+                cgx.utilities.AtomliteDatabase(db_file=database_path)
+
+                chromosome_gen = cgx.systems_optimisation.ChromosomeGenerator(
+                    prefix=prefix,
+                    present_beads=studies[study]["present_beads"],
+                    vdw_bond_cutoff=2,
+                )
+                chromosome_gen.add_gene(
+                    iteration=[cage_topology], gene_type="topology"
+                )
+
+                chromosome_gen.add_gene(
+                    iteration=studies[study]["large_gene"],
+                    gene_type="precursor",
+                )
+                chromosome_gen.add_gene(
+                    iteration=studies[study]["small_gene"],
+                    gene_type="precursor",
+                )
+
+                chromosome_gen.add_forcefield_dict(
+                    definer_dict=studies[study]["definer_dict"]
+                )
+
+                count = 0
+                for chromosome in chromosome_gen.yield_chromosomes():
+                    structure_function(
+                        chromosome=chromosome,
+                        database_path=database_path,
+                        calculation_output=calculation_dir,
+                        structure_output=structure_dir,
+                        options={},
+                    )
+                    count += 1
+
+                logging.info(
+                    "(%s) built %s for %s", study, count, cage_topology[0]
+                )
+
         plot_torsion_data(
-            data_output=data_output,
-            figure_output=figure_output,
+            data_output=data_dir,
+            figure_output=figure_dir,
             study=study,
             topology_options=cage_topology_options(
                 study=studies[study]["topology"]
             ),
         )
         bar_function(
-            data_output=data_output,
-            figure_output=figure_output,
+            data_output=data_dir,
+            figure_output=figure_dir,
+            study=study,
+            topology_options=cage_topology_options(
+                study=studies[study]["topology"]
+            ),
+        )
+        plot_specific_torsion_data(
+            data_output=data_dir,
+            figure_output=figure_dir,
             study=study,
             topology_options=cage_topology_options(
                 study=studies[study]["topology"]
