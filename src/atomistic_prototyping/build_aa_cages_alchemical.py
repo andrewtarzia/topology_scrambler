@@ -7,8 +7,9 @@ import cgexplore as cgx
 import numpy as np
 import stk
 import stko
-from build_aa_cages import desymm_optimisation_sequence
 from rdkit import RDLogger
+
+from atomistic_prototyping.build_aa_cages import desymm_optimisation_sequence
 
 logging.basicConfig(
     level=logging.INFO,

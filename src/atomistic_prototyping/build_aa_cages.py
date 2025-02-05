@@ -491,7 +491,7 @@ def main() -> None:
         "4P6C4_3": M4L6C4_3,
         "4P6C4_4": M4L6C4_4,
     }
-    for tstr in topology_graphs:
+    for tstr, tfun in topology_graphs.items():
         match tstr:
             case "2P4":
                 charge = 2 * 2
@@ -518,7 +518,7 @@ def main() -> None:
             continue
 
         cage_molecule = stk.ConstructedMolecule(
-            topology_graph=topology_graphs[tstr](
+            topology_graph=tfun(
                 building_blocks=building_blocks,
                 optimizer=stk.MCHammer(),
                 reaction_factory=react_factory,
