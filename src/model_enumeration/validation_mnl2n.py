@@ -1,6 +1,7 @@
 """Script to generate and optimise CG models."""
 
 import argparse
+import itertools as it
 import logging
 import pathlib
 import time
@@ -15,8 +16,9 @@ import numpy as np
 import polars as pl
 from openmm import OpenMMException
 from rdkit import RDLogger
-from utilities import eb_str, isomer_energy, multi_cmap
-from validation_utilities import (
+
+from model_enumeration.utilities import eb_str, isomer_energy, multi_cmap
+from model_enumeration.validation_utilities import (
     abead_d,
     analyse_cage,
     binder_bead,
@@ -77,6 +79,7 @@ def make_opt_plot(
         "nx12",
         "nx22",
         "nx32",
+        "ns",
     )
     sources = {i: 0 for i in stages}
     # Produces low energy structures.
@@ -167,11 +170,20 @@ def make_plot(
             min_energy = min(rel_energies)
             bac_line.append((bac_angle, min_energy))
 
-            stable = [
-                i
-                for i in energies[idx]
-                if i[0] == bac_angle and i[1] < isomer_energy()
-            ]
+            found_names_minus_mash = set()
+            stable = []
+            for entry_data in energies[idx]:
+                if (
+                    entry_data[0] == bac_angle
+                    and entry_data[1] < isomer_energy()
+                ):
+                    names_minus_mash = "_".join(entry_data[-1].split("_")[:-1])
+
+                    if names_minus_mash in found_names_minus_mash:
+                        continue
+                    found_names_minus_mash.add(names_minus_mash)
+                    stable.append(entry_data)
+
             if len(stable) > 0:
                 logging.info("stable cages: %s", stable)
                 instable = True
@@ -185,7 +197,8 @@ def make_plot(
             c=multi_cmap[str(multi)],
             ls="-",
             marker="o",
-            markersize=4,
+            markersize=10,
+            markeredgecolor="k",
             alpha=1.0,
             zorder=2,
             label=(
@@ -383,8 +396,7 @@ def make_summary_plot(
 def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
-    raise SystemExit("Change paths")
-    raise SystemExit("rerun")
+
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     figure_dir = wd / "figures"
     if not args.nodoubles:
@@ -394,7 +406,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         data_dir = wd / "ivalidation_data"
         database_path = data_dir / "ivalidation_run.db"
         timing_file = data_dir / "ivalidation_times.csv"
-        max_num = 1000
+        max_num = 10000
 
     else:
         calculation_dir = wd / "dvalidation_calculations"
@@ -403,7 +415,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         data_dir = wd / "dvalidation_data"
         database_path = data_dir / "dvalidation_run.db"
         timing_file = data_dir / "dvalidation_times.csv"
-        max_num = 1000
+        max_num = 10000
 
     calculation_dir.mkdir(exist_ok=True)
     structure_dir.mkdir(exist_ok=True)
@@ -411,24 +423,118 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     data_dir.mkdir(exist_ok=True)
     figure_dir.mkdir(exist_ok=True)
 
+    ditopic_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
+    tetrato_prec = cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead)
+    stoichimetry_l_m = (2, 1)
     ligands = {
-        str(bac_angle): {
+        "90": {
             "forcefield": get_validation_forcefield(
-                bac_angle=bac_angle,
-                identifier=str(i),
+                bac_angle=90,
+                identifier=str(90),
             ),
-            "stoichiometry_L_M": (2, 1),
-            "ditopic": cgx.molecular.TwoC1Arm(
-                bead=cbead_d,
-                abead1=abead_d,
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2),
+        },
+        "95": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=95,
+                identifier=str(95),
             ),
-            "tetra": cgx.molecular.FourC1Arm(
-                bead=tetra_bead,
-                abead1=binder_bead,
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2),
+        },
+        "105": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=105,
+                identifier=str(105),
             ),
-            "multipliers": (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
-        }
-        for i, bac_angle in enumerate(range(90, 181, 5))
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 3),
+        },
+        "110": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=110,
+                identifier=str(110),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 3),
+        },
+        "115": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=115,
+                identifier=str(115),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 3, 4),
+        },
+        "120": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=120,
+                identifier=str(120),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 3, 4),
+        },
+        "125": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=125,
+                identifier=str(125),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 4),
+        },
+        "130": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=115,
+                identifier=str(115),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 6),
+        },
+        "135": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=120,
+                identifier=str(120),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 6, 8),
+        },
+        "140": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=125,
+                identifier=str(125),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 6, 8),
+        },
+        "145": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=125,
+                identifier=str(125),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 8, 12),
+        },
+        "150": {
+            "forcefield": get_validation_forcefield(
+                bac_angle=125,
+                identifier=str(125),
+            ),
+            "ditopic": ditopic_prec,
+            "tetra": tetrato_prec,
+            "multipliers": (1, 2, 12),
+        },
     }
 
     if args.run:
@@ -466,10 +572,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     continue
                 iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
-                        tetra_bb: ligands[lig]["stoichiometry_L_M"][1]
-                        * multiplier,
-                        ditopic_bb: ligands[lig]["stoichiometry_L_M"][0]
-                        * multiplier,
+                        tetra_bb: stoichimetry_l_m[1] * multiplier,
+                        ditopic_bb: stoichimetry_l_m[0] * multiplier,
                     },
                     graph_type=f"{1 * multiplier}P{2 * multiplier}",
                     graph_set="rx_nodoubles" if args.nodoubles else "rx",
@@ -526,14 +630,32 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
 
                         try:
                             st1 = time.time()
-                            conformer = opt_function(
-                                molecule=constructed_molecule,
-                                name=name,
-                                output_dir=calculation_dir,
-                                forcefield=forcefield,
-                                platform=None,
-                                database_path=database_path,
-                            )
+                            if vertex_positions is None:
+                                conformer = opt_function(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                )
+                            else:
+                                potential_names = [
+                                    f"{lig}_{multiplier}_{idx}_{mash_idx}"
+                                    for idx, mash_idx in it.product(
+                                        [idx - 1, idx - 2, idx - 3],
+                                        [0, 1, 2, 3],
+                                    )
+                                ]
+                                conformer = opt_function(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                    potential_names=potential_names,
+                                )
                             et1 = time.time()
                             if conformer is not None:
                                 conformer.molecule.with_centroid(
