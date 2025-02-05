@@ -64,7 +64,7 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
                     fake_tetra_bb: 1 * multi,
                     fake_ditopic_bb: 2 * multi,
                 },
-                graph_type=f"{1*multi}P{2*multi}",
+                graph_type=f"{1 * multi}P{2 * multi}",
                 graph_set=gset,
             )
 
@@ -193,6 +193,7 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: PLR0915, C901
 
 def main() -> None:
     """Run script."""
+    raise SystemExit("rerun")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)

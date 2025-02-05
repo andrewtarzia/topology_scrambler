@@ -386,6 +386,7 @@ def sudan2021_ss(
 
 def main() -> None:
     """Run script."""
+    raise SystemExit("rerun")
     figure_output = EnvVariables.cg_figures
     data_output = EnvVariables.cg_outputdata
     database_path = data_output / "at1r1_6P12.db"

@@ -1002,6 +1002,8 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
+    raise SystemExit("Change paths")
+
     structure_output = EnvVariables.cg_structures
     calculation_output = EnvVariables.cg_calculations
     figure_output = EnvVariables.cg_figures
@@ -1084,7 +1086,10 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     at8baczones = {"4P62": create_zone(dmin=90, dmax=130, resolution=5)}
     at8baozones = {"4P62": create_zone(dmin=90, dmax=180, resolution=5)}
 
+    raise SystemExit("change all study names below")
+    raise SystemExit("use the scam bb config method")
     studies = {
+        # Scanning ditopic + tetratopic in 1:1 ratio.
         "at1_8P16": {
             "topology": ("8P16", stk.cage.EightPlusSixteen),
             "definer_dict": definer_dict_2p4,
@@ -1213,98 +1218,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             "bb_ratio": (1, 1),
             "definer_dict_updates": low_resolution_zones,
         },
-        "at2_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 2),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at2_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 2),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at2r1_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 2),
-            "definer_dict_updates": {
-                "bac": ("angle", at2baczones["3P6"], 1e2),
-                "bao": ("angle", at2baozones["3P6"], 1e2),
-            },
-        },
-        "at2r1_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 2),
-            "definer_dict_updates": {
-                "bac": ("angle", at2baczones["6P12"], 1e2),
-                "bao": ("angle", at2baozones["6P12"], 1e2),
-            },
-        },
-        "at3_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at3_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at3r1_3P6": {
-            "topology": ("3P6", stk.cage.M3L6),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at2baczones["3P6"], 1e2),
-                "bao": ("angle", at2baozones["3P6"], 1e2),
-            },
-        },
-        "at3r1_6P12": {
-            "topology": ("6P12", stk.cage.M6L12Cube),
-            "definer_dict": definer_dict_2p4,
-            "present_beads": present_beads_2p4,
-            "large_gene": large_gene_4x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at2baczones["6P12"], 1e2),
-                "bao": ("angle", at2baozones["6P12"], 1e2),
-            },
-        },
         "at4_6P122": {
             "topology": ("6P122", cgx.topologies.M6L122),
             "definer_dict": definer_dict_2p4,
@@ -1328,6 +1241,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 "bao": ("angle", at4baozones["6P122"], 1e2),
             },
         },
+        # Scanning ditopic + tritopic.
+        # By definition, sometimes the ratio cannot be 1:1.
         "at5_2P3": {
             "topology": ("2P3", stk.cage.TwoPlusThree),
             "definer_dict": definer_dict_2p3,
@@ -1376,36 +1291,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             "small_gene": small_gene,
             "small_gene2": small_gene2,
             "bb_ratio": (1, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at6_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at7_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 2),
-            "definer_dict_updates": low_resolution_zones,
-        },
-        "at8_4P62": {
-            "topology": ("4P62", stk.cage.FourPlusSix2),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
             "definer_dict_updates": low_resolution_zones,
         },
         "at5r1_2P3": {
@@ -1473,46 +1358,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 "bao": ("angle", at5baozones["8P12"], 1e2),
             },
         },
-        "at6r1_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at6baczones["4P6"], 1e2),
-                "bao": ("angle", at6baozones["4P6"], 1e2),
-            },
-        },
-        "at7r1_4P6": {
-            "topology": ("4P6", stk.cage.FourPlusSix),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (1, 2),
-            "definer_dict_updates": {
-                "bac": ("angle", at7baczones["4P6"], 1e2),
-                "bao": ("angle", at7baozones["4P6"], 1e2),
-            },
-        },
-        "at8r1_4P62": {
-            "topology": ("4P62", stk.cage.FourPlusSix2),
-            "definer_dict": definer_dict_2p3,
-            "present_beads": present_beads_2p3,
-            "large_gene": large_gene_3x,
-            "small_gene": small_gene,
-            "small_gene2": small_gene2,
-            "bb_ratio": (2, 1),
-            "definer_dict_updates": {
-                "bac": ("angle", at8baczones["4P62"], 1e2),
-                "bao": ("angle", at8baozones["4P62"], 1e2),
-            },
-        },
     }
+    raise SystemExit("rerun")
 
     for study in studies:
         definer_dict = studies[study]["definer_dict"]
@@ -1654,6 +1501,9 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             prefix=prefix,
         )
 
+    raise SystemExit(
+        "turn into a chemiscope and single plot of knietic self-sort, basically."
+    )
     raise SystemExit("put the founds into a library somewhere")
 
 

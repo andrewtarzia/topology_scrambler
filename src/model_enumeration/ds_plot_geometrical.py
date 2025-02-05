@@ -137,7 +137,9 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Run script."""
+    raise SystemExit("rerun")
     args = _parse_args()
+    raise SystemExit("Change paths")
     database = cgx.utilities.AtomliteDatabase(db_file=args.database_path)
     logging.info("there are %s collected data", database.get_num_entries())
     prefix = (

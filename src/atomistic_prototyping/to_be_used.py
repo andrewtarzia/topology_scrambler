@@ -1,16 +1,5 @@
 """Home for prototyping code to be used."""
 
-import argparse
-import logging
-import pathlib
-
-import cgexplore as cgx
-import matplotlib.pyplot as plt
-import stk
-import stko
-from cgexplore._internal.topologies.graphs import CGM12L24, UnalignedM1L2
-from openmm import OpenMMException
-
 
 def get_underyling_vertices(
     pair: str,
@@ -126,7 +115,7 @@ def make_aa_plot(pair, atomistic_dir, atomistic_calculation_dir, filename):
             # s=40,
             # alpha=0.3,
             # ec="none",
-            label=f"{multi}: {round(min_energy[1],3)} @ {min_energy[0]}",
+            label=f"{multi}: {round(min_energy[1], 3)} @ {min_energy[0]}",
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -141,57 +130,6 @@ def make_aa_plot(pair, atomistic_dir, atomistic_calculation_dir, filename):
         bbox_inches="tight",
     )
     plt.close()
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--run",
-        action="store_true",
-        help="set to iterate through structure functions",
-    )
-    parser.add_argument(
-        "--atomise",
-        action="store_true",
-        help="set to build atomistic structures",
-    )
-
-    return parser.parse_args()
-
-
-def main() -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run script."""
-    raise SystemExit("figure this all out")
-    args = _parse_args()
-
-    wd = pathlib.Path("/home/atarzia/workingspace/clever_challenge/")
-    calculation_dir = wd / "min_calculations"
-    calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "min_structures"
-    structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "min_ligands"
-    ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "min_data"
-    data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures"
-    figure_dir.mkdir(exist_ok=True)
-    atomistic_dir = wd / "atomistic"
-    atomistic_dir.mkdir(exist_ok=True)
-    atomistic_calculation_dir = wd / "atomistic_calculations"
-    atomistic_calculation_dir.mkdir(exist_ok=True)
-
-    database_path = data_dir / "min_run.db"
-
-    # Define bead libraries.
-    present_beads = (
-        cbead_d,
-        abead_d,
-        cbead_c,
-        abead_c,
-        binder_bead,
-        tetra_bead,
-    )
-    cgx.molecular.BeadLibrary(beads=present_beads)
 
     pairs = {
         "la_c1": {
@@ -496,10 +434,6 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 atomistic_calculation_dir=atomistic_calculation_dir,
                 filename=figure_dir / f"min_3_{pair}.png",
             )
-
-
-if __name__ == "__main__":
-    main()
 
 
 def save_vertex_positions(

@@ -61,6 +61,10 @@ def make_opt_plot(
         "opt1",
         "smd",
         "shifted",
+        "nx0",
+        "nx1",
+        "nx2",
+        "nx3",
         "nx00",
         "nx10",
         "nx20",
@@ -142,8 +146,13 @@ def make_plot(
         energies[multi].append((bac_angle, energy, entry.key))
         bacs[bac_angle].append((multi, energy, entry.key))
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    axx = ax.twinx()
+    fig, (axx, ax) = plt.subplots(
+        nrows=2,
+        figsize=(8, 6),
+        height_ratios=[1, 4],
+        sharex=True,
+    )
+
     countsx = {}
     for i, multi in enumerate(sorted([int(i) for i in energies])):
         instable = False
@@ -186,100 +195,29 @@ def make_plot(
             ),
         )
 
-        ax.tick_params(axis="both", which="major", labelsize=16)
-
-        ax.set_yscale("log")
-        ax.axhline(y=isomer_energy(), c="k", ls="--")
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_yscale("log")
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+    ax.set_ylabel(eb_str(), fontsize=16)
 
     axx.plot(
         list(countsx),
         [countsx[i] for i in countsx],
-        c="gray",
-        marker="D",
+        c="k",
+        marker="o",
         mec="k",
         zorder=2,
-        markersize=3.0,
+        markersize=6.0,
     )
-    axx.tick_params(
-        axis="both",
-        which="major",
-        labelsize=16,
-        labelcolor="gray",
-    )
-    ax.set_ylabel(eb_str(), fontsize=16)
-    axx.set_ylabel("num. stable structures", fontsize=16, color="gray")
+    axx.tick_params(axis="both", which="major", labelsize=16)
+    axx.set_ylabel("stable", fontsize=16)
     axx.set_ylim(0, None)
 
     leg = ax.legend(ncols=1, fontsize=12)
     for lh in leg.legend_handles:
         lh.set_alpha(1)
 
-    ax.set_xlabel("target $bac$ angle [deg]", fontsize=16)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
-def make_parity_plot(
-    figure_dir: pathlib.Path,
-    database_path: pathlib.Path,
-    full_database_path: pathlib.Path,
-    filename: str,
-) -> None:
-    """Plot energies."""
-    db = cgx.utilities.AtomliteDatabase(database_path)
-    full_db = cgx.utilities.AtomliteDatabase(full_database_path)
-
-    energies = defaultdict(list)
-    for entry in db.get_entries():
-        if not full_db.has_molecule(entry.key):
-            continue
-
-        multi = entry.properties["multiplier"]
-        energy1 = entry.properties["energy_per_bb"]
-        energy2 = full_db.get_entry(entry.key).properties["energy_per_bb"]
-
-        if entry.properties["num_components"] > 1:
-            continue
-
-        energies[multi].append((energy1, energy2))
-
-    fig, ax = plt.subplots(figsize=(5, 5))
-
-    for multi in energies:
-        ax.scatter(
-            [i[0] for i in energies[multi]],
-            [i[1] for i in energies[multi]],
-            c=multi_cmap[str(multi)],
-            ec="k",
-            alpha=1.0,
-            zorder=2,
-            s=20,
-            label=f"M{multi}",
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.axhline(y=isomer_energy(), c="k", ls="--")
-    ax.axvline(x=isomer_energy(), c="k", ls="--")
-    ax.plot((0.001, 100), (0.001, 100), c="gray", ls="-", zorder=-1)
-
-    ax.set_xlabel(f"1st {eb_str()}", fontsize=16)
-    ax.set_ylabel(f"2nd {eb_str()}", fontsize=16)
-    ax.set_title(
-        'this no longer makes sense because the "id" changes between rx '
-        "algorithms"
-    )
-
-    leg = ax.legend(ncols=1, fontsize=12)
-    for lh in leg.legend_handles:
-        lh.set_alpha(1)
+    ax.set_xlabel("target $bac$ angle [$^\\circ$]", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -445,7 +383,8 @@ def make_summary_plot(
 def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
-
+    raise SystemExit("Change paths")
+    raise SystemExit("rerun")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     figure_dir = wd / "figures"
     if not args.nodoubles:
@@ -525,14 +464,14 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             for multiplier in ligands[lig]["multipliers"]:
                 if int(lig) < 90 and multiplier > 8:  # noqa: PLR2004
                     continue
-                iterator = cgx.scram.IHomolepticTopologyIterator(
+                iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
                         tetra_bb: ligands[lig]["stoichiometry_L_M"][1]
                         * multiplier,
                         ditopic_bb: ligands[lig]["stoichiometry_L_M"][0]
                         * multiplier,
                     },
-                    graph_type=f"{1*multiplier}P{2*multiplier}",
+                    graph_type=f"{1 * multiplier}P{2 * multiplier}",
                     graph_set="rx_nodoubles" if args.nodoubles else "rx",
                 )
 
@@ -616,7 +555,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                             with timing_file.open("a") as f:
                                 f.write(
                                     f"{lig},{multiplier},{num_vertices},{idx},"
-                                    f"{mash_idx},{et1-st1},{et2-st2}\n"
+                                    f"{mash_idx},{et1 - st1},{et2 - st2}\n"
                                 )
 
                         except OpenMMException:
@@ -630,6 +569,14 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     else "validationi_1.png",
                 )
 
+    make_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationd_1.png"
+        if args.nodoubles
+        else "validationi_1.png",
+    )
+
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -637,6 +584,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validationi_5.png",
     )
+
     make_summary_plot(
         database_path=database_path,
         structure_dir=structure_dir,
@@ -645,13 +593,7 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validationi_2.png",
     )
-    make_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="validationd_1.png"
-        if args.nodoubles
-        else "validationi_1.png",
-    )
+
     make_timings_plot(
         timing_file=timing_file,
         figure_dir=figure_dir,
@@ -659,13 +601,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validation_times.png",
     )
-    if args.nodoubles:
-        make_parity_plot(
-            database_path=database_path,
-            full_database_path=wd / "ivalidation_data" / "ivalidation_run.db",
-            figure_dir=figure_dir,
-            filename="validationd_3.png",
-        )
 
 
 if __name__ == "__main__":

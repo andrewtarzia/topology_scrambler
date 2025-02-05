@@ -135,7 +135,7 @@ def make_plot(
                 "connectionstyle": "angle,angleA=0,angleB=90,rad=10",
             }
             ax.annotate(
-                text=f"E: {round(min_energy[0],3)} @ {min_energy[1]}",
+                text=f"E: {round(min_energy[0], 3)} @ {min_energy[1]}",
                 xy=(min_energy[2], min_energy[0]),
                 xycoords="data",
                 xytext=(-0.5 * offset, -offset),
@@ -147,7 +147,7 @@ def make_plot(
             )
             offset = -20 * int(multi)
             ax.annotate(
-                text=f"P: {round(max_pore[2],3)} @ {max_pore[1]}",
+                text=f"P: {round(max_pore[2], 3)} @ {max_pore[1]}",
                 xy=(max_pore[2], max_pore[0]),
                 xycoords="data",
                 xytext=(0.5 * offset, -offset),
@@ -497,7 +497,8 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: C901, PLR0915, PLR0912
     """Run script."""
     args = _parse_args()
-
+    raise SystemExit("Change paths")
+    raise SystemExit("rerun")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "ufo_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -620,7 +621,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                         converging_bb: pairs[pair]["stoichiometry_L_L_M"][1]
                         * multiplier,
                     },
-                    graph_type=f"{1*multiplier}P{2*multiplier}",
+                    graph_type=f"{1 * multiplier}P{2 * multiplier}",
                     graph_set="rx",
                 )
                 logging.info(

@@ -214,7 +214,8 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: C901, PLR0915, PLR0912
     """Run script."""
     args = _parse_args()
-
+    raise SystemExit('Change paths')
+    raise SystemExit("rerun")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "ufo_scan_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -519,6 +520,16 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
                     # Optimise and save.
                     logging.info("building %s", name)
+                    if "ufo" in name:
+                    _, multiplier, sisj = name.split("_")
+                    si, sj = sisj.split("-")
+
+                    potential_names = [
+                    f"ufoscan_{multiplier}_{int(si) - 1}-{int(sj) - 1}",
+                    f"ufoscan_{multiplier}_{int(si) - 1}-{int(sj)}",
+                    f"ufoscan_{multiplier}_{int(si)}-{int(sj) - 1}",
+                    ]
+                    raise NotImplementedError("fix this")
 
                     try:
                         conformer = cgx.scram.optimise_cage(

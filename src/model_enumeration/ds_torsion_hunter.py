@@ -808,6 +808,8 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: C901
     """Run script."""
     args = _parse_args()
+    raise SystemExit("Change paths")
+    raise SystemExit("rerun")
     structure_output = EnvVariables.cg_structures
     calculation_output = EnvVariables.cg_calculations
     figure_output = EnvVariables.cg_figures

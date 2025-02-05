@@ -226,8 +226,9 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: C901, PLR0912
     """Run script."""
     args = _parse_args()
+    raise SystemExit("Change paths")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
-
+    raise SystemExit("rerun")
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
     fit_db_path = figure_dir / "fit_structures.db"

@@ -758,7 +758,7 @@ def main() -> None:
     calculation_output = EnvVariables.cg_calculations
     figure_output = EnvVariables.cg_figures
     data_output = EnvVariables.cg_outputdata
-
+    raise SystemExit("rerun")
     studies = {
         "st1": {
             "topology": "homoleptic_2p4",

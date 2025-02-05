@@ -4,18 +4,18 @@ import matplotlib as mpl
 
 tstr_cmap = mpl.colormaps["tab20"].resampled(20)
 multi_cmap = {
-    "1": tstr_cmap(0.0),
-    "2": tstr_cmap(0.05),
+    "1": tstr_cmap(0.05),
+    "2": tstr_cmap(0.0),
     "3": tstr_cmap(0.1),
-    "4": tstr_cmap(0.15),
-    "5": tstr_cmap(0.2),
-    "6": tstr_cmap(0.25),
-    "7": tstr_cmap(0.30),
-    "8": tstr_cmap(0.35),
-    "9": tstr_cmap(0.40),
-    "10": tstr_cmap(0.45),
-    "11": tstr_cmap(0.5),
-    "12": tstr_cmap(0.55),
+    "4": tstr_cmap(0.2),
+    "5": tstr_cmap(0.3),
+    "6": tstr_cmap(0.4),
+    "7": tstr_cmap(0.5),
+    "8": tstr_cmap(0.6),
+    "9": tstr_cmap(0.7),
+    "10": tstr_cmap(0.8),
+    "11": tstr_cmap(0.15),
+    "12": tstr_cmap(0.9),
 }
 
 
