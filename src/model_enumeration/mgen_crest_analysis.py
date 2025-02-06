@@ -119,7 +119,7 @@ def plot_distance_angle(
     ax.set_xlabel("binder angle [deg]", fontsize=16)
     ax.set_ylabel("N-N distance [AA]", fontsize=16)
 
-    ax.legend(fontsize=16)
+    ax.legend(ncols=4, fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -222,11 +222,8 @@ def main() -> None:
             xtb_path=xtb_path,
         )
         ensembles[ligand] = ensemble
-    raise SystemExit
-    plot_distance_angle(
-        ensembles=ensembles,
-        figure_dir=figure_dir,
-    )
+
+    plot_distance_angle(ensembles=ensembles, figure_dir=figure_dir)
 
     for ligand, ensemble in ensembles.items():
         min_energy = min([ensemble[i]["energy"] for i in ensemble])
