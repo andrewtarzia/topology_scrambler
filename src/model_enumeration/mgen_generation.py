@@ -4,12 +4,14 @@ import argparse
 import itertools as it
 import logging
 import pathlib
+from collections import defaultdict
 
 import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import stk
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
@@ -54,7 +56,9 @@ def analyse_cage(  # noqa: PLR0913
     """Analyse toy model cage."""
     database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
-    if "opt_pore_data" not in properties:
+    final_molecule = database.get_molecule(name)
+
+    if "large_binder_binder_angles" not in properties:
         num_components = len(
             stko.Network.init_from_molecule(
                 database.get_molecule(key=name)
@@ -90,6 +94,76 @@ def analyse_cage(  # noqa: PLR0913
             },
         )
 
+        ss_dists = (
+            stko.molecule_analysis.GeometryAnalyser().get_metal_distances(
+                molecule=final_molecule,
+                metal_atom_nos=(16,),
+            )
+        )
+        if len(ss_dists) != 0:
+            min_ss_value = min(ss_dists.values())
+            max_ss_value = max(ss_dists.values())
+
+            database.add_properties(
+                key=name,
+                property_dict={
+                    "min_ss_dist": min_ss_value,
+                    "max_ss_dist": max_ss_value,
+                },
+            )
+
+        # Get the bg angles.
+        ligands = stko.molecule_analysis.DecomposeMOC().decompose(
+            molecule=final_molecule,
+            metal_atom_nos=(46,),
+        )
+
+        small_binder_binder_angles = []
+        large_binder_binder_angles = []
+        potential_smiles = [
+            "[Pb]~[Ga]",  # Large.
+            "[Pb]~[Ba]",  # Small.
+            "[Pb]~[Mn]",  # Small.
+        ]
+        for lig in ligands:
+            passed = False
+            for smiles in potential_smiles:
+                as_building_block = stk.BuildingBlock.init_from_molecule(
+                    lig,
+                    stk.SmartsFunctionalGroupFactory(
+                        smarts=smiles, bonders=(0,), deleters=(1,)
+                    ),
+                )
+                if as_building_block.get_num_functional_groups() == 2:  # noqa: PLR2004
+                    passed = True
+                    large = smiles in ("[Pb]~[Ga]",)
+                    break
+
+            if not passed:
+                print(lig)
+                raise SystemExit
+            vectors = [
+                as_building_block.get_centroid(atom_ids=fg.get_bonder_ids())
+                - as_building_block.get_centroid(atom_ids=fg.get_deleter_ids())
+                for fg in as_building_block.get_functional_groups()
+            ]
+            normed = [i / np.linalg.norm(i) for i in vectors]
+            angle = np.degrees(
+                stko.vector_angle(vector1=normed[0], vector2=normed[1])
+            )
+            if large:
+                large_binder_binder_angles.append(angle)
+            else:
+                small_binder_binder_angles.append(angle)
+
+        database.add_properties(
+            key=name,
+            property_dict={
+                "large_binder_binder_angles": large_binder_binder_angles,
+                "small_binder_binder_angles": small_binder_binder_angles,
+            },
+        )
+
 
 def make_plot(
     target_pair: str,
@@ -101,12 +175,6 @@ def make_plot(
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(5, 5))
     energies = {}
-    cmap = {
-        "1": "tab:blue",
-        "2": "tab:orange",
-        "3": "tab:green",
-        "4": "tab:red",
-    }
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = entry.properties["multiplier"]
@@ -151,7 +219,7 @@ def make_plot(
                 textcoords="offset points",
                 bbox=bbox,
                 arrowprops=arrowprops,
-                color=cmap[multi],
+                color=multi_cmap[multi],
                 fontsize=8,
             )
             offset = -20 * int(multi)
@@ -163,7 +231,7 @@ def make_plot(
                 textcoords="offset points",
                 bbox=bbox,
                 arrowprops=arrowprops,
-                color=cmap[multi],
+                color=multi_cmap[multi],
                 fontsize=8,
             )
 
@@ -171,7 +239,7 @@ def make_plot(
                 [i[2] for i in evalues],
                 [i[0] for i in evalues],
                 marker="o",
-                c=cmap[multi],
+                c=multi_cmap[multi],
                 s=20,
                 ec="none",
                 alpha=0.3,
@@ -181,7 +249,7 @@ def make_plot(
                 min_energy[2],
                 min_energy[0],
                 marker="o",
-                c=cmap[multi],
+                c=multi_cmap[multi],
                 s=20,
                 ec="k",
             )
@@ -193,8 +261,9 @@ def make_plot(
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_xlim(0, 10)
-    ax.axhline(y=isomer_energy(), c="k", ls="--")
-    ax.set_ylim(None, 1000)
+
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+
     ax.legend(ncols=1, fontsize=16)
     fig.tight_layout()
     fig.savefig(
@@ -260,11 +329,11 @@ def make_summary_plot(
         ax.text(
             x=x,
             y=y,
-            s=min_energy[1],
+            s=f"{min_energy[1]},{min_energy[2]}",
             horizontalalignment="center",
             verticalalignment="center_baseline",
             color="w" if min_energy[0] < 0.5 else "k",  # noqa: PLR2004
-            fontsize=16,
+            fontsize=8,
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -283,7 +352,7 @@ def make_summary_plot(
         orientation="vertical",
     )
     cbar.ax.tick_params(labelsize=16)
-    cbar.set_label(f"4:2:3 {eb_str()}", fontsize=16)
+    cbar.set_label(f"1:1:1 {eb_str()}", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -309,35 +378,55 @@ def make_summary_plot2(
     fig, ax = plt.subplots(figsize=(16, 5))
 
     rng = np.random.default_rng(seed=2)
+    x_multi_mins = {i: defaultdict(float) for i in multi_cmap}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = entry.properties["multiplier"]
         l1 = entry.properties["l1"]
         l2 = entry.properties["l2"]
-
+        x = pairs.index((l1, l2))
         energy = entry.properties["energy_per_bb"]
 
         if entry.properties["num_components"] > 1:
             continue
 
+        if x not in x_multi_mins[multi]:
+            x_multi_mins[multi][x] = energy
+        else:
+            x_multi_mins[multi][x] = min((x_multi_mins[multi][x], energy))
+
         ax.scatter(
-            pairs.index((l1, l2)) + (2 * rng.random() - 1) * 0.3,
+            x + (2 * rng.random() - 1) * 0.3,
             energy,
             c=multi_cmap[multi],
-            alpha=0.1,
+            alpha=0.4,
             edgecolor="none",
             s=30,
             marker="o",
-            zorder=1,
         )
         ax.axvline(x=pairs.index((l1, l2)) + 0.5, c="gray", alpha=0.2)
 
+    for multi in multi_cmap:
+        if len(x_multi_mins[multi]) == 0:
+            continue
+        edict = x_multi_mins[multi]
+
+        ax.plot(
+            list(edict),
+            list(edict.values()),
+            c="k",
+            markerfacecolor=multi_cmap[multi],
+            mec="k",
+            marker="o",
+            alpha=1,
+            markersize=6,
+        )
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks(list(range(len(pairs))))
     ax.set_xticklabels(["_".join(i) for i in pairs], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
-    ax.set_ylim(0.1, None)
-    ax.axhline(y=isomer_energy(), c="k", ls="--")
+
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
 
     fig.tight_layout()
     fig.savefig(
@@ -377,6 +466,7 @@ def make_opt_plot(
         "nx12",
         "nx22",
         "nx32",
+        "ns",
     )
     mash_ids = ("0", "1", "2", "3")
     sources = {i: 0 for i in stages}
@@ -464,6 +554,180 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def sterics_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> None:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    datas: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(tuple)
+    )
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        multi = entry.properties["multiplier"]
+        l1 = entry.properties["l1"]
+        l2 = entry.properties["l2"]
+
+        x = entry.properties["forcefield_dict"]["v_dict"]["s"]
+
+        if "min_ss_dist" not in entry.properties:
+            continue
+        y = entry.properties["min_ss_dist"]
+
+        try:
+            if (
+                entry.properties["energy_per_bb"]
+                < datas[(multi, l1, l2)][x][1]
+            ):
+                datas[(multi, l1, l2)][x] = (
+                    y,
+                    entry.properties["energy_per_bb"],
+                )
+        except IndexError:
+            datas[(multi, l1, l2)][x] = (y, entry.properties["energy_per_bb"])
+
+    xlbl = r"min. $r_{s-s}$ [$\AA$]"
+
+    for (multi, l1, l2), xdict in datas.items():
+        ax.plot(
+            list(xdict),
+            [xdict[i][0] for i in xdict],
+            alpha=1.0,
+            marker="o",
+            markerfacecolor=multi_cmap[multi],
+            mec="k",
+            markersize=10,
+            ls="-",
+            label=f"M{multi}" if (l1, l2) == ("lf", "ls3") else None,
+            c="k",
+        )
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(r"$\sigma_{s}$  [$\AA$]", fontsize=16)
+    ax.set_ylabel(xlbl, fontsize=16)
+    ax.legend(ncol=1, fontsize=16)
+    ax.set_ylim(0, None)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def binder_vector_angles_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> None:
+    """Visualise energies."""
+    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(10, 5))
+
+    datas_lge: dict[str, dict[str, list[float]]] = defaultdict(tuple)
+    datas_sma: dict[str, dict[str, list[float]]] = defaultdict(tuple)
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        multi = entry.properties["multiplier"]
+        l1 = entry.properties["l1"]
+        l2 = entry.properties["l2"]
+
+        if "large_binder_binder_angles" not in entry.properties:
+            continue
+        ylge = entry.properties["large_binder_binder_angles"]
+        ysma = entry.properties["small_binder_binder_angles"]
+
+        try:
+            if (
+                entry.properties["energy_per_bb"]
+                < datas_lge[(multi, l1, l2)][1]
+            ):
+                datas_lge[(multi, l1, l2)] = (
+                    ylge,
+                    entry.properties["energy_per_bb"],
+                )
+        except IndexError:
+            datas_lge[(multi, l1, l2)] = (
+                ylge,
+                entry.properties["energy_per_bb"],
+            )
+
+        try:
+            if (
+                entry.properties["energy_per_bb"]
+                < datas_sma[(multi, l1, l2)][1]
+            ):
+                datas_sma[(multi, l1, l2)] = (
+                    ysma,
+                    entry.properties["energy_per_bb"],
+                )
+        except IndexError:
+            datas_sma[(multi, l1, l2)] = (
+                ysma,
+                entry.properties["energy_per_bb"],
+            )
+
+    for (multi, l1, l2), xdict in datas_sma.items():
+        ydict = datas_lge[(multi, l1, l2)]
+
+        ax.plot(
+            np.mean(xdict[0]),
+            xdict[1],
+            alpha=1.0,
+            marker="o",
+            markerfacecolor=multi_cmap[multi],
+            mec="k",
+            markersize=10,
+            ls="-",
+            label=f"M{multi}" if (l1, l2) == ("lf", "ls3") else None,
+            c="k",
+        )
+        ax1.plot(
+            np.mean(ydict[0]),
+            ydict[1],
+            alpha=1.0,
+            marker="o",
+            markerfacecolor=multi_cmap[multi],
+            mec="k",
+            markersize=10,
+            ls="-",
+            label=f"M{multi}" if (l1, l2) == ("lf", "ls3") else None,
+            c="k",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("mean small binder angle [$^\\circ$]", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.legend(ncol=1, fontsize=16)
+    ax.set_xlim(40, 120)
+
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel("mean large binder angle [$^\\circ$]", fontsize=16)
+    ax1.set_ylabel(eb_str(), fontsize=16)
+    ax1.set_yscale("log")
+    ax1.set_xlim(40, 120)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def main() -> None:  # noqa: C901, PLR0915, PLR0912
     """Run script."""
     args = _parse_args()
@@ -484,18 +748,60 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
     stoichiometry_l_l_m = (1, 1, 1)
     ligand_measures = {
         # From prep.
-        "lf": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        ###
-        "e10": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "e11": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "e12": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "e13": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "e14": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "e17": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "la": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "lb": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "lc": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
-        "ld": {"dd": 8.0, "de": 4.3, "dde": 133, "eg": 1.4, "gb": 1.4},
+        "lf": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 8.0,
+            "de": 4.3,
+            "dde": 133,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "e10": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 5.9,
+            "de": 4.1,
+            "dde": 139,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "e11": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 6.9,
+            "de": 1.4,
+            "dde": 170,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "e12": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 7.0,
+            "de": 1.5,
+            "dde": 167,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "e13": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 10.5,
+            "de": 1.4,
+            "dde": 151,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "e14": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 5.9,
+            "de": 4.1,
+            "dde": 143,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
         # From optl.
         "l2": {"ba": 2.8, "aa": 4.9, "bac": 150, "s": 0.0},
         "ls2": {"ba": 2.8, "aa": 4.7, "bac": 155, "s": 0.0},
@@ -507,10 +813,53 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "l3": {"ba": 2.8, "aa": 5.3, "bac": 165, "s": 0.0},
         "ls10": {"ba": 2.8, "aa": 5.4, "bac": 167, "s": 0.0},
         "l1": {"ba": 2.8, "aa": 8.2, "bac": 136, "s": 0.0},
-        ###
-        "e16": {"ba": 2.8, "aa": 5.4, "bac": 167, "s": 0.0},
-        "e18": {"ba": 2.8, "aa": 5.4, "bac": 167, "s": 0.0},
-        "ls9": {"ba": 2.8, "aa": 5.4, "bac": 167, "s": 0.0},
+        "e16": {"ba": 2.8, "aa": 7.3, "bac": 121, "s": 0.0},
+        "e18": {"ba": 2.8, "aa": 10.0, "bac": 121, "s": 0.0},
+        "e17": {
+            "egb": 90,
+            "deg": 150,
+            "dd": 7.3,
+            "de": 4.0,
+            "dde": 151,
+            "eg": 2.4,
+            "gb": 2.8,
+        },
+        "la": {
+            "egb": 90,
+            "deg": 150,
+            "dd": 6.1,
+            "de": 8.3,
+            "dde": 136,
+            "eg": 2.4,
+            "gb": 2.8,
+        },
+        "lb": {
+            "egb": 90,
+            "deg": 150,
+            "dd": 6.7,
+            "de": 5.7,
+            "dde": 148,
+            "eg": 2.4,
+            "gb": 2.8,
+        },
+        "lc": {
+            "egb": 90,
+            "deg": 150,
+            "dd": 7.0,
+            "de": 5.7,
+            "dde": 150,
+            "eg": 2.4,
+            "gb": 2.8,
+        },
+        "ld": {
+            "egb": 90,
+            "deg": 150,
+            "dd": 7.5,
+            "de": 5.7,
+            "dde": 165,
+            "eg": 2.4,
+            "gb": 2.8,
+        },
     }
 
     ligand_types = {
@@ -619,7 +968,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
-            "multipliers": (1, 2, 3, 4),
+            "multipliers": (1, 2),  # ,, 3, 4),
             "vdw_cutoff": 2,
         }
 
@@ -709,6 +1058,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                 for bb_config, (idx, topology_code) in it.product(
                     possible_bbdicts, enumerate(iterator.yield_graphs())
                 ):
+                    if pair_lowest_energy < isomer_energy():
+                        continue
                     # Do the construction.
                     nx_graph = topology_code.get_nx_graph()
                     # Handle problems with small topologies.
@@ -807,7 +1158,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                             pair_lowest_energy = min(
                                 (pair_lowest_energy, current_energy)
                             )
-                            if pair_lowest_energy < 0.1:  # noqa: PLR2004
+                            if pair_lowest_energy < isomer_energy():
                                 logging.info(
                                     "energy_b < 0.1 for %s, stopping", name
                                 )
@@ -816,24 +1167,21 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                         except OpenMMException:
                             logging.info("failed optimisation of %s", name)
 
-            make_plot(
-                database_path=database_path,
-                target_pair=pair,
-                structure_dir=structure_dir,
-                figure_dir=figure_dir,
-                filename=f"mgen_1_{pair}.png",
-            )
-
-    make_summary_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_3.png",
-        pairs=pairs_to_predict,
-    )
     make_summary_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_4.png",
+        pairs=pairs_to_predict,
+    )
+    binder_vector_angles_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_7.png",
+    )
+    make_summary_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_3.png",
         pairs=pairs_to_predict,
     )
     make_opt_plot(
@@ -842,6 +1190,12 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         filename="mgen_5.png",
     )
 
+    sterics_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_6.png",
+    )
+    raise SystemExit
     for pair in pairs:
         make_plot(
             database_path=database_path,

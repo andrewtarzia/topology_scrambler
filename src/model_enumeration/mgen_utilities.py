@@ -128,10 +128,6 @@ constant_definer_dict = {
     "mbg": ("angle", 180, 1e2),
     "mbf": ("angle", 180, 1e2),
     "aca": ("angle", 180, 1e2),
-    "egb": ("angle", 120, 1e2),
-    "deg": ("angle", 180, 1e2),
-    "rfz": ("angle", 120, 1e2),
-    "zrf": ("angle", 180, 1e2),
     "acs": ("angle", 90, 1e2),
     # Torsions.
     "bacs": ("tors", "0123", 180, 50, 1),
@@ -193,6 +189,8 @@ def precursors_to_forcefield(  # noqa: PLR0913
         definer_dict["eg"] = ("bond", large_meas["eg"] / cg_scale, 1e5)
         definer_dict["gb"] = ("bond", large_meas["gb"] / cg_scale, 1e5)
         definer_dict["dde"] = ("angle", large_meas["dde"], 1e2)
+        definer_dict["egb"] = ("angle", large_meas["egb"], 1e2)
+        definer_dict["deg"] = ("angle", large_meas["deg"], 1e2)
 
     if isinstance(small, cgx.molecular.TwoC1Arm):
         beads = small.get_bead_set()
@@ -220,9 +218,12 @@ def precursors_to_forcefield(  # noqa: PLR0913
             raise RuntimeError
         definer_dict["zz"] = ("bond", small_meas["dd"] / cg_scale, 1e5)
         definer_dict["zr"] = ("bond", small_meas["de"] / cg_scale, 1e5)
-        definer_dict["rg"] = ("bond", small_meas["eg"] / cg_scale, 1e5)
-        definer_dict["gb"] = ("bond", small_meas["gb"] / cg_scale, 1e5)
+        definer_dict["rf"] = ("bond", small_meas["eg"] / cg_scale, 1e5)
+        definer_dict["fb"] = ("bond", small_meas["gb"] / cg_scale, 1e5)
         definer_dict["zzr"] = ("angle", small_meas["dde"], 1e2)
+        definer_dict["rfb"] = ("angle", small_meas["egb"], 1e2)
+        definer_dict["zrf"] = ("angle", small_meas["deg"], 1e2)
+
     else:
         raise NotImplementedError
 
