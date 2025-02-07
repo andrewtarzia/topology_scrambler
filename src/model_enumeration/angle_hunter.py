@@ -689,6 +689,7 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
     database_path: pathlib.Path,
     low_res_database_path: pathlib.Path,
     figure_output: pathlib.Path,
+    structure_output: pathlib.Path,
     prefix: str,
 ) -> None:
     """Show low resolution data."""
@@ -815,9 +816,10 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             if stable_count < 20:  # noqa: PLR2004
                 for i in pdata["key"]:
                     filename = f"{i}_optc.mol"
-                    stru = EnvVariables.cg_structures
-                    if not (stru / filename).exists():
-                        database.get_molecule(i).write(stru / filename)
+                    if not (structure_output / filename).exists():
+                        database.get_molecule(i).write(
+                            structure_output / filename
+                        )
                     candidates.append(filename)
 
         ax2.scatter(
@@ -844,11 +846,11 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
             s=60,
         )
 
-    for stable_string in region_types:
+    for stable_string, rtypes in region_types.items():
         stable_count = len(stable_string.split("|"))
         ax.scatter(
-            [i[0] for i in region_types[stable_string]],
-            [i[1] for i in region_types[stable_string]],
+            [i[0] for i in rtypes],
+            [i[1] for i in rtypes],
             s=60,
             alpha=1.0,
             label=stable_string if stable_count < 5 else f"m({stable_count})",  # noqa: PLR2004
@@ -1273,6 +1275,7 @@ def main() -> None:
             database_path=data_dir / f"{study}.db",
             low_res_database_path=data_dir / f"{lr_study}.db",
             figure_output=figure_dir,
+            structure_output=structure_dir,
             prefix=study,
         )
     raise SystemExit("change all study names below")
