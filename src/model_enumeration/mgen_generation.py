@@ -11,10 +11,12 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import rustworkx as rx
 import stk
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
+from scipy.spatial import ConvexHull
 
 from model_enumeration.mgen_utilities import (
     StericTwoC1Arm,
@@ -45,6 +47,100 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
+def get_possible_pairs(
+    pair: str,
+    ligand_types: dict[str, str],
+    pairs_to_predict: list[tuple[str, str]],
+) -> list[str]:
+    """Get pairs with the same model form."""
+    ll, ls = pair.split("_")
+
+    lltype = ligand_types[ll]
+    lstype = ligand_types[ls]
+
+    new_pairs = []
+    for poss_pair in pairs_to_predict:
+        nlltype = ligand_types[poss_pair[0]]
+        nlstype = ligand_types[poss_pair[1]]
+
+        pair_name = "_".join(poss_pair)
+        if pair_name == pair:
+            continue
+        if lltype == nlltype and lstype == nlstype:
+            new_pairs.append(pair_name)
+
+    return new_pairs
+
+
+def get_bb_topology_code_graph(
+    topology_code: cgx.scram.TopologyCode,
+    bb_config: cgx.scram.BuildingBlockConfiguration,
+) -> rx.PyGraph:
+    """Convert TopologyCode and BBConfig to rx graph."""
+    graph: rx.PyGraph = rx.PyGraph(multigraph=True)
+
+    vertices = {}
+    for vi in sorted({i for j in topology_code.vertex_map for i in j}):
+        bb_id = next(
+            i
+            for i, vert_ids in bb_config.building_block_idx_dict.items()
+            if vi in vert_ids
+        )
+
+        vertices[f"{vi}-{bb_id}"] = graph.add_node(f"{vi}-{bb_id}")
+
+    for vert in topology_code.vertex_map:
+        v1 = vert[0]
+        bb_id = next(
+            i
+            for i, vert_ids in bb_config.building_block_idx_dict.items()
+            if v1 in vert_ids
+        )
+        v1str = f"{v1}-{bb_id}"
+        v2 = vert[1]
+        bb_id = next(
+            i
+            for i, vert_ids in bb_config.building_block_idx_dict.items()
+            if v2 in vert_ids
+        )
+        v2str = f"{v2}-{bb_id}"
+        nodeaidx = vertices[v1str]
+        nodebidx = vertices[v2str]
+        graph.add_edge(nodeaidx, nodebidx, None)
+
+    return graph
+
+
+def get_stk_topology_code(
+    graph_type: str,
+) -> tuple[cgx.scram.TopologyCode, np.ndarray]:
+    """Get the default stk graph."""
+    knowns = {
+        "1P2": cgx.topologies.UnalignedM1L2,
+        "2P4": stk.cage.M2L4Lantern,
+        "3P6": stk.cage.M3L6,
+        "4P8": cgx.topologies.CGM4L8,
+    }
+
+    if graph_type not in knowns:
+        msg = f"{graph_type} not known"
+        raise RuntimeError(msg)
+
+    target = knowns[graph_type]
+    vps = target._vertex_prototypes  # noqa: SLF001
+    eps = target._edge_prototypes  # noqa: SLF001
+
+    combination = [(i.get_vertex1_id(), i.get_vertex2_id()) for i in eps]
+    tc = cgx.scram.TopologyCode(
+        vertex_map=combination,
+        as_string=cgx.scram.vmap_to_str(combination),
+    )
+
+    positions = [i.get_position() for i in vps]
+
+    return tc, positions
+
+
 def analyse_cage(  # noqa: PLR0913
     database_path: pathlib.Path,
     name: str,
@@ -52,13 +148,14 @@ def analyse_cage(  # noqa: PLR0913
     iterator: cgx.scram.TopologyIterator,
     topology_code: cgx.scram.TopologyCode,
     bb_config: cgx.scram.BuildingBlockConfiguration,
+    rescan: bool,
 ) -> None:
     """Analyse toy model cage."""
     database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
     final_molecule = database.get_molecule(name)
 
-    if "large_binder_binder_angles" not in properties:
+    if "large_binder_binder_angles" not in properties or rescan:
         num_components = len(
             stko.Network.init_from_molecule(
                 database.get_molecule(key=name)
@@ -296,6 +393,7 @@ def make_summary_plot(
         pair = tuple(entry.key.split("_")[:2])
         tidx = entry.properties["topology_idx"]
         bidx = entry.properties["bb_config_idx"]
+        midx = entry.properties["mash_idx"]
         energy = entry.properties["energy_per_bb"]
 
         if (pair, multi) not in energies:
@@ -303,7 +401,7 @@ def make_summary_plot(
 
         if entry.properties["num_components"] > 1:
             continue
-        energies[(pair, multi)].append((round(energy, 4), tidx, bidx))
+        energies[(pair, multi)].append((round(energy, 4), tidx, bidx, midx))
 
     vmin = 0
     vmax = 1
@@ -329,7 +427,7 @@ def make_summary_plot(
         ax.text(
             x=x,
             y=y,
-            s=f"{min_energy[1]},{min_energy[2]}",
+            s=f"{min_energy[1]},{min_energy[3]},{min_energy[2]}",
             horizontalalignment="center",
             verticalalignment="center_baseline",
             color="w" if min_energy[0] < 0.5 else "k",  # noqa: PLR2004
@@ -375,10 +473,16 @@ def make_summary_plot2(
     pairs: list[tuple[str, str]],
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(16, 5))
+    fig, (axx, ax) = plt.subplots(
+        nrows=2,
+        figsize=(16, 6),
+        height_ratios=[1, 4],
+        sharex=True,
+    )
 
     rng = np.random.default_rng(seed=2)
     x_multi_mins = {i: defaultdict(float) for i in multi_cmap}
+    x_count = defaultdict(int)
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = entry.properties["multiplier"]
         l1 = entry.properties["l1"]
@@ -403,7 +507,10 @@ def make_summary_plot2(
             s=30,
             marker="o",
         )
-        ax.axvline(x=pairs.index((l1, l2)) + 0.5, c="gray", alpha=0.2)
+        x_count[x] += 1
+
+    for i in range(len(pairs) - 1):
+        ax.axvline(x=i + 0.5, c="k", alpha=0.2)
 
     for multi in multi_cmap:
         if len(x_multi_mins[multi]) == 0:
@@ -411,14 +518,14 @@ def make_summary_plot2(
         edict = x_multi_mins[multi]
 
         ax.plot(
-            list(edict),
-            list(edict.values()),
+            sorted(edict),
+            [edict[i] for i in sorted(edict)],
             c="k",
             markerfacecolor=multi_cmap[multi],
             mec="k",
             marker="o",
             alpha=1,
-            markersize=6,
+            markersize=8,
         )
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks(list(range(len(pairs))))
@@ -427,6 +534,18 @@ def make_summary_plot2(
     ax.set_yscale("log")
 
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+
+    axx.plot(
+        list(x_count),
+        [x_count[i] for i in x_count],
+        c="k",
+        marker="o",
+        mec="k",
+        zorder=2,
+        markersize=6.0,
+    )
+    axx.tick_params(axis="both", which="major", labelsize=16)
+    axx.set_ylabel("calcs", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -448,7 +567,11 @@ def make_opt_plot(
     filename: str,
 ) -> dict:
     """Visualise stage of the optimisation produces the low-E conformer."""
-    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(10, 5))
+    fig, (ax, ax1) = plt.subplots(
+        ncols=2,
+        figsize=(10, 5),
+        width_ratios=[3, 1],
+    )
 
     stages = (
         "opt1",
@@ -467,6 +590,8 @@ def make_opt_plot(
         "nx22",
         "nx32",
         "ns",
+        "ns-final",
+        "ns-rescan",
     )
     mash_ids = ("0", "1", "2", "3")
     sources = {i: 0 for i in stages}
@@ -550,6 +675,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="set to iterate through structure functions",
     )
+    parser.add_argument(
+        "--rescan",
+        action="store_true",
+        help="set to rescan all structures",
+    )
 
     return parser.parse_args()
 
@@ -629,7 +759,9 @@ def binder_vector_angles_plot(
     filename: str,
 ) -> None:
     """Visualise energies."""
-    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(10, 5))
+    fig, (ax, ax1) = plt.subplots(
+        ncols=2, sharex=True, sharey=True, figsize=(10, 5)
+    )
 
     datas_lge: dict[str, dict[str, list[float]]] = defaultdict(tuple)
     datas_sma: dict[str, dict[str, list[float]]] = defaultdict(tuple)
@@ -673,46 +805,74 @@ def binder_vector_angles_plot(
                 entry.properties["energy_per_bb"],
             )
 
+    mx_points = {}
+    my_points = {}
     for (multi, l1, l2), xdict in datas_sma.items():
         ydict = datas_lge[(multi, l1, l2)]
 
-        ax.plot(
+        ax.scatter(
             np.mean(xdict[0]),
             xdict[1],
             alpha=1.0,
             marker="o",
-            markerfacecolor=multi_cmap[multi],
-            mec="k",
-            markersize=10,
-            ls="-",
-            label=f"M{multi}" if (l1, l2) == ("lf", "ls3") else None,
-            c="k",
+            c=multi_cmap[multi],
+            ec="k",
+            s=60,
+            label=f"M{multi}" if (l1, l2) == ("lf", "l2") else None,
         )
-        ax1.plot(
+        ax1.scatter(
             np.mean(ydict[0]),
             ydict[1],
             alpha=1.0,
             marker="o",
-            markerfacecolor=multi_cmap[multi],
-            mec="k",
-            markersize=10,
-            ls="-",
+            c=multi_cmap[multi],
+            ec="k",
+            s=60,
             label=f"M{multi}" if (l1, l2) == ("lf", "ls3") else None,
-            c="k",
         )
+
+        if multi not in mx_points:
+            mx_points[multi] = []
+        mx_points[multi].append(np.array((np.mean(xdict[0]), xdict[1])))
+
+        if multi not in my_points:
+            my_points[multi] = []
+        my_points[multi].append(np.array((np.mean(ydict[0]), ydict[1])))
+
+    for multi in sorted(mx_points):
+        nxpoints = np.asarray(mx_points[multi])
+        hull = ConvexHull(nxpoints)
+        for simplex in hull.simplices:
+            ax.plot(
+                nxpoints[simplex, 0],
+                nxpoints[simplex, 1],
+                c=multi_cmap[multi],
+                lw=2,
+                alpha=0.5,
+            )
+
+        nypoints = np.asarray(my_points[multi])
+        hull = ConvexHull(nypoints)
+        for simplex in hull.simplices:
+            ax1.plot(
+                nypoints[simplex, 0],
+                nypoints[simplex, 1],
+                c=multi_cmap[multi],
+                lw=2,
+                alpha=0.5,
+            )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("mean small binder angle [$^\\circ$]", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.legend(ncol=1, fontsize=16)
-    ax.set_xlim(40, 120)
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
 
     ax1.tick_params(axis="both", which="major", labelsize=16)
     ax1.set_xlabel("mean large binder angle [$^\\circ$]", fontsize=16)
-    ax1.set_ylabel(eb_str(), fontsize=16)
     ax1.set_yscale("log")
-    ax1.set_xlim(40, 120)
+    ax1.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
 
     fig.tight_layout()
     fig.savefig(
@@ -726,6 +886,87 @@ def binder_vector_angles_plot(
         bbox_inches="tight",
     )
     plt.close()
+
+
+def build_a_model(  # noqa: PLR0913
+    pair: str,
+    multiplier: str,
+    name: str,
+    idx: str,
+    forcefield: cgx.forcefields.ForceField,
+    nx_positions: list[np.ndarray] | None,
+    topology_code: cgx.scram.TopologyCode,
+    iterator: cgx.scram.TopologyIterator,
+    bb_config: cgx.scram.BuildingBlockConfiguration,
+    structure_dir: pathlib.Path,
+    calculation_dir: pathlib.Path,
+    database_path: pathlib.Path,
+) -> None:
+    """Handles the construction and optimisation of a model."""
+    if nx_positions is not None:
+        vertex_positions = {
+            nidx: np.array(nx_positions[nidx]) * 10
+            for nidx in topology_code.get_nx_graph().nodes
+        }
+        opt_function = cgx.scram.optimise_cage
+    else:
+        vertex_positions = None
+        opt_function = cgx.scram.graph_optimise_cage
+
+    # Do the construction.
+    constructed_molecule = cgx.scram.try_except_construction(
+        iterator=iterator,
+        topology_code=topology_code,
+        building_block_configuration=bb_config,
+        vertex_positions=vertex_positions,
+    )
+
+    constructed_molecule.write(structure_dir / f"{name}_unopt.mol")
+
+    # Optimise and save.
+    logging.info("building %s", name)
+    try:
+        if vertex_positions is None:
+            conformer = opt_function(
+                molecule=constructed_molecule,
+                name=name,
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+                database_path=database_path,
+            )
+        else:
+            potential_names = [
+                f"{pair}_{multiplier}_{idx}_{nmash_idx}_b{bb_config.idx}"
+                for nmash_idx in [0, 1, 2, 3]
+            ]
+            conformer = opt_function(
+                molecule=constructed_molecule,
+                name=name,
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+                database_path=database_path,
+                potential_names=potential_names,
+            )
+
+        if conformer is not None:
+            conformer.molecule.with_centroid((0, 0, 0)).write(
+                str(structure_dir / f"{name}_optc.mol")
+            )
+
+        analyse_cage(
+            database_path=database_path,
+            name=name,
+            forcefield=forcefield,
+            iterator=iterator,
+            topology_code=topology_code,
+            bb_config=bb_config,
+            rescan=False,
+        )
+
+    except OpenMMException:
+        logging.info("failed optimisation of %s", name)
 
 
 def main() -> None:  # noqa: C901, PLR0915, PLR0912
@@ -968,7 +1209,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
-            "multipliers": (1, 2),  # ,, 3, 4),
+            "multipliers": (1, 2, 3),  # , 4),
             "vdw_cutoff": 2,
         }
 
@@ -1055,6 +1296,50 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                     len(possible_bbdicts) * iterator.count_graphs() * 4,
                 )
 
+                # Use known topology codes.
+                stk_topology_code, stk_positions = get_stk_topology_code(
+                    graph_type=f"{1 * multiplier}P{2 * multiplier}",
+                )
+                sidx = -1
+                midx = 0
+                for bb_config in possible_bbdicts:
+                    name = (
+                        f"{pair}_{multiplier}_{sidx}_{midx}_b{bb_config.idx}"
+                    )
+
+                    build_a_model(
+                        pair=pair,
+                        multiplier=multiplier,
+                        name=name,
+                        idx=sidx,
+                        forcefield=forcefield,
+                        nx_positions=stk_positions,
+                        topology_code=stk_topology_code,
+                        iterator=iterator,
+                        bb_config=bb_config,
+                        structure_dir=structure_dir,
+                        calculation_dir=calculation_dir,
+                        database_path=database_path,
+                    )
+                    try:
+                        current_energy = (
+                            cgx.utilities.AtomliteDatabase(database_path)
+                            .get_entry(name)
+                            .properties["energy_per_bb"]
+                        )
+                        pair_lowest_energy = min(
+                            (pair_lowest_energy, current_energy)
+                        )
+                        if pair_lowest_energy < isomer_energy():
+                            logging.info(
+                                "energy_b < 0.1 for %s, stopping", name
+                            )
+                            break
+                    except RuntimeError:
+                        pass
+
+                # Then iterate over all.
+                run_topology_codes = []
                 for bb_config, (idx, topology_code) in it.product(
                     possible_bbdicts, enumerate(iterator.yield_graphs())
                 ):
@@ -1073,83 +1358,55 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                     except ValueError:
                         vertex_position_setters = (None,)
 
+                    # Testing bb-config aware graph check.
+                    # Convert TopologyCode to a graph.
+                    current_graph = get_bb_topology_code_graph(
+                        topology_code=topology_code,
+                        bb_config=bb_config,
+                    )
+
+                    # Check that graph for isomorphism with others graphs.
+                    passed_iso = True
+                    for tc, bc in run_topology_codes:
+                        test_graph = get_bb_topology_code_graph(
+                            topology_code=tc, bb_config=bc
+                        )
+
+                        if rx.is_isomorphic(
+                            current_graph,
+                            test_graph,
+                            node_matcher=lambda x, y: x.split("-")[1]
+                            == y.split("-")[1],
+                        ):
+                            passed_iso = False
+                            break
+
+                    if not passed_iso:
+                        continue
+                    run_topology_codes.append((topology_code, bb_config))
+
                     for mash_idx, nx_positions in enumerate(
                         vertex_position_setters
                     ):
-                        if nx_positions is not None:
-                            vertex_positions = {
-                                idx: np.array(nx_positions[idx]) * 10
-                                for idx in topology_code.get_nx_graph().nodes
-                            }
-                            opt_function = cgx.scram.optimise_cage
-                        else:
-                            vertex_positions = None
-                            opt_function = cgx.scram.graph_optimise_cage
-
-                        # Do the construction.
-                        constructed_molecule = (
-                            cgx.scram.try_except_construction(
-                                iterator=iterator,
-                                topology_code=topology_code,
-                                building_block_configuration=bb_config,
-                                vertex_positions=vertex_positions,
-                            )
-                        )
                         name = (
                             f"{pair}_{multiplier}_{idx}_{mash_idx}"
                             f"_b{bb_config.idx}"
                         )
-
-                        constructed_molecule.write(
-                            structure_dir / f"{name}_unopt.mol"
+                        build_a_model(
+                            pair=pair,
+                            multiplier=multiplier,
+                            name=name,
+                            idx=idx,
+                            forcefield=forcefield,
+                            nx_positions=nx_positions,
+                            topology_code=topology_code,
+                            iterator=iterator,
+                            bb_config=bb_config,
+                            structure_dir=structure_dir,
+                            calculation_dir=calculation_dir,
+                            database_path=database_path,
                         )
-
-                        # Optimise and save.
-                        logging.info("building %s", name)
                         try:
-                            if vertex_positions is None:
-                                conformer = opt_function(
-                                    molecule=constructed_molecule,
-                                    name=name,
-                                    output_dir=calculation_dir,
-                                    forcefield=forcefield,
-                                    platform=None,
-                                    database_path=database_path,
-                                )
-                            else:
-                                potential_names = [
-                                    f"{pair}_{multiplier}_{idx}_{mash_idx}"
-                                    f"_b{bb_config.idx}"
-                                    for idx, mash_idx in it.product(
-                                        [idx - 1, idx - 2, idx - 3],
-                                        [0, 1, 2, 3],
-                                    )
-                                ]
-                                conformer = opt_function(
-                                    molecule=constructed_molecule,
-                                    name=name,
-                                    output_dir=calculation_dir,
-                                    forcefield=forcefield,
-                                    platform=None,
-                                    database_path=database_path,
-                                    potential_names=potential_names,
-                                )
-
-                            if conformer is not None:
-                                conformer.molecule.with_centroid(
-                                    (0, 0, 0)
-                                ).write(
-                                    str(structure_dir / f"{name}_optc.mol")
-                                )
-
-                            analyse_cage(
-                                database_path=database_path,
-                                name=name,
-                                forcefield=forcefield,
-                                iterator=iterator,
-                                topology_code=topology_code,
-                                bb_config=bb_config,
-                            )
                             current_energy = (
                                 cgx.utilities.AtomliteDatabase(database_path)
                                 .get_entry(name)
@@ -1163,9 +1420,101 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                                     "energy_b < 0.1 for %s, stopping", name
                                 )
                                 break
+                        except RuntimeError:
+                            pass
 
-                        except OpenMMException:
-                            logging.info("failed optimisation of %s", name)
+    if args.rescan:
+        for pair in pairs:
+            large_name = pairs[pair]["large_name"]
+            small_name = pairs[pair]["small_name"]
+
+            large = pairs[pair]["large"]
+            small = pairs[pair]["small"]
+            tetra = pairs[pair]["tetra"]
+
+            small_bb = small.get_building_block()
+            tetra_bb = tetra.get_building_block()
+            large_bb = large.get_building_block()
+
+            forcefield = precursors_to_forcefield(
+                pair=pair,
+                large=large,
+                small=small,
+                large_meas=ligand_measures[large_name],
+                small_meas=ligand_measures[small_name],
+                vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
+            )
+
+            for multiplier in pairs[pair]["multipliers"]:
+                iterator = cgx.scram.TopologyIterator(
+                    building_block_counts={
+                        tetra_bb: stoichiometry_l_l_m[2] * multiplier,
+                        large_bb: stoichiometry_l_l_m[0] * multiplier,
+                        small_bb: stoichiometry_l_l_m[1] * multiplier,
+                    },
+                    graph_type=f"{1 * multiplier}P{2 * multiplier}",
+                    graph_set="rx",
+                )
+                possible_bbdicts = cgx.scram.get_custom_bb_configurations(
+                    iterator=iterator
+                )
+                run_topology_codes = []
+                for bb_config, (idx, topology_code), mash_idx in it.product(
+                    possible_bbdicts,
+                    enumerate(iterator.yield_graphs()),
+                    (0, 1, 2, 3),
+                ):
+                    name = (
+                        f"{pair}_{multiplier}_{idx}_{mash_idx}"
+                        f"_b{bb_config.idx}"
+                    )
+                    if not (structure_dir / f"{name}_optc.mol").exists():
+                        continue
+
+                    current_cage = stk.BuildingBlock.init_from_file(
+                        structure_dir / f"{name}_optc.mol"
+                    )
+
+                    potential_names = []
+                    for npair, midx in it.product(
+                        get_possible_pairs(
+                            pair, ligand_types, pairs_to_predict
+                        ),
+                        (0, 1, 2, 3),
+                    ):
+                        potential_names.append(
+                            f"{npair}_{multiplier}_{idx}_{midx}"
+                            f"_b{bb_config.idx}"
+                        )
+                    logging.info(
+                        "rescanning: %s from %s files",
+                        name,
+                        len(potential_names),
+                    )
+
+                    conformer = cgx.scram.optimise_from_files(
+                        molecule=current_cage,
+                        name=name,
+                        output_dir=calculation_dir,
+                        forcefield=forcefield,
+                        platform=None,
+                        database_path=database_path,
+                        potential_names=potential_names,
+                    )
+
+                    conformer.molecule.with_centroid((0, 0, 0)).write(
+                        str(structure_dir / f"{name}_optc.mol")
+                    )
+
+                    analyse_cage(
+                        database_path=database_path,
+                        name=name,
+                        forcefield=forcefield,
+                        iterator=iterator,
+                        topology_code=topology_code,
+                        bb_config=bb_config,
+                        rescan=True,
+                    )
 
     make_summary_plot2(
         database_path=database_path,
@@ -1173,17 +1522,20 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         filename="mgen_4.png",
         pairs=pairs_to_predict,
     )
+
     binder_vector_angles_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_7.png",
     )
+    raise SystemExit("rethink binders, because it is not handling minus")
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_3.png",
         pairs=pairs_to_predict,
     )
+
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -1195,7 +1547,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         figure_dir=figure_dir,
         filename="mgen_6.png",
     )
-    raise SystemExit
+
     for pair in pairs:
         make_plot(
             database_path=database_path,
@@ -1204,7 +1556,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             figure_dir=figure_dir,
             filename=f"mgen_1_{pair}.png",
         )
-    raise SystemExit("Add everything from simple hey to the UFO?")
 
 
 if __name__ == "__main__":
