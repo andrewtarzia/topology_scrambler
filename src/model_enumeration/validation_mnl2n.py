@@ -142,14 +142,13 @@ def make_plot(  # noqa: C901
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
-        print(entry.key, bac_angle)
+
         if entry.properties["num_components"] > 1:
             continue
 
         energies[multi].append((bac_angle, energy, entry.key))
         bacs[bac_angle].append((multi, energy, entry.key))
 
-    raise SystemExit
     fig, (axx, ax) = plt.subplots(
         nrows=2,
         figsize=(8, 6),
