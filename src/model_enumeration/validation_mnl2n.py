@@ -142,13 +142,14 @@ def make_plot(  # noqa: C901
         multi = entry.properties["multiplier"]
         energy = entry.properties["energy_per_bb"]
         bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
-
+        print(entry.key, bac_angle)
         if entry.properties["num_components"] > 1:
             continue
 
         energies[multi].append((bac_angle, energy, entry.key))
         bacs[bac_angle].append((multi, energy, entry.key))
 
+    raise SystemExit
     fig, (axx, ax) = plt.subplots(
         nrows=2,
         figsize=(8, 6),
@@ -426,115 +427,31 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     ditopic_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
     tetrato_prec = cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead)
     stoichimetry_l_m = (2, 1)
+    studies = (
+        {"bac": 90, "multi": (1, 2)},
+        {"bac": 95, "multi": (1, 2)},
+        {"bac": 105, "multi": (1, 2, 3)},
+        {"bac": 110, "multi": (1, 2, 3)},
+        {"bac": 115, "multi": (1, 2, 3, 4)},
+        {"bac": 120, "multi": (1, 2, 3, 4)},
+        {"bac": 125, "multi": (1, 2, 4)},
+        {"bac": 130, "multi": (1, 2, 6)},
+        {"bac": 135, "multi": (1, 2, 6, 8)},
+        {"bac": 140, "multi": (1, 2, 6, 8)},
+        {"bac": 145, "multi": (1, 2, 8, 12)},
+        {"bac": 150, "multi": (1, 2, 12)},
+    )
     ligands = {
-        "90": {
+        str(i["bac"]): {
             "forcefield": get_validation_forcefield(
-                bac_angle=90,
-                identifier=str(90),
+                bac_angle=i["bac"],
+                identifier=str(i["bac"]),
             ),
             "ditopic": ditopic_prec,
             "tetra": tetrato_prec,
-            "multipliers": (1, 2),
-        },
-        "95": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=95,
-                identifier=str(95),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2),
-        },
-        "105": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=105,
-                identifier=str(105),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 3),
-        },
-        "110": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=110,
-                identifier=str(110),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 3),
-        },
-        "115": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=115,
-                identifier=str(115),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 3, 4),
-        },
-        "120": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=120,
-                identifier=str(120),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 3, 4),
-        },
-        "125": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=125,
-                identifier=str(125),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 4),
-        },
-        "130": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=115,
-                identifier=str(115),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 6),
-        },
-        "135": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=120,
-                identifier=str(120),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 6, 8),
-        },
-        "140": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=125,
-                identifier=str(125),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 6, 8),
-        },
-        "145": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=125,
-                identifier=str(125),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 8, 12),
-        },
-        "150": {
-            "forcefield": get_validation_forcefield(
-                bac_angle=125,
-                identifier=str(125),
-            ),
-            "ditopic": ditopic_prec,
-            "tetra": tetrato_prec,
-            "multipliers": (1, 2, 12),
-        },
+            "multipliers": i["multi"],
+        }
+        for i in studies
     }
 
     if args.run:
@@ -641,9 +558,8 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                                 )
                             else:
                                 potential_names = [
-                                    f"{lig}_{multiplier}_{idx}_{mash_idx}"
-                                    for idx, mash_idx in it.product(
-                                        [idx - 1, idx - 2, idx - 3],
+                                    f"{lig}_{multiplier}_{idx}_{nmash_idx}"
+                                    for nmash_idx in it.product(
                                         [0, 1, 2, 3],
                                     )
                                 ]
