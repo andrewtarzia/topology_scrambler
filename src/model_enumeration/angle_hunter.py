@@ -1136,8 +1136,8 @@ def get_high_res_zones(
         )
     sets = set(points)
     return {
-        "bac": sorted({i[0] for i in sets}),
-        "bao": sorted({i[1] for i in sets}),
+        "bac": sorted({i[0] for i in sets if i[0] <= 180 and i[0] >= 0}),  # noqa: PLR2004
+        "bao": sorted({i[1] for i in sets if i[1] <= 180 and i[1] >= 0}),  # noqa: PLR2004
     }
 
 
