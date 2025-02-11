@@ -21,7 +21,6 @@ from model_enumeration.utilities import (
     binder_bead,
     core_bead,
     core_bead2,
-    create_zone,
     dihedral_state_threshold,
     eb_str,
     isomer_energy,
@@ -1153,7 +1152,7 @@ def main() -> None:
     ligand_dir.mkdir(exist_ok=True)
     data_dir = wd / "angle_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures"
+    figure_dir = wd / "figures" / "angle_scan"
     figure_dir.mkdir(exist_ok=True)
 
     present_beads_2p4 = (
@@ -1278,38 +1277,10 @@ def main() -> None:
             structure_output=structure_dir,
             prefix=study,
         )
-    raise SystemExit("change all study names below")
-    raise SystemExit("use the scam bb config method")
     raise SystemExit(
         "turn into a chemiscope and single plot of knietic self-sort, basically."
     )
     raise SystemExit("put the founds into a library somewhere")
-    high_res_baczones = {
-        "3P6": create_zone(dmin=95, dmax=115, resolution=5),
-        "4P8": create_zone(dmin=90, dmax=140, resolution=5),
-        "4P82": create_zone(dmin=90, dmax=140, resolution=5),
-        "6P12": create_zone(dmin=100, dmax=150, resolution=5),
-        "6P122": create_zone(dmin=90, dmax=130, resolution=5),
-        "8P16": create_zone(dmin=100, dmax=150, resolution=5),
-        "2P3": create_zone(dmin=90, dmax=100, resolution=2),
-        "4P6": create_zone(dmin=100, dmax=140, resolution=2),
-        "4P62": create_zone(dmin=90, dmax=140, resolution=2),
-        "6P9": create_zone(dmin=90, dmax=150, resolution=2),
-        "8P12": create_zone(dmin=90, dmax=150, resolution=2),
-    }
-    high_res_baozones = {
-        "3P6": create_zone(dmin=110, dmax=130, resolution=5),
-        "4P8": create_zone(dmin=100, dmax=150, resolution=5),
-        "4P82": create_zone(dmin=120, dmax=160, resolution=5),
-        "6P12": create_zone(dmin=120, dmax=180, resolution=5),
-        "6P122": create_zone(dmin=120, dmax=180, resolution=5),
-        "8P16": create_zone(dmin=140, dmax=180, resolution=5),
-        "2P3": create_zone(dmin=90, dmax=120, resolution=5),
-        "4P6": create_zone(dmin=110, dmax=160, resolution=5),
-        "4P62": create_zone(dmin=100, dmax=140, resolution=5),
-        "6P9": create_zone(dmin=90, dmax=180, resolution=5),
-        "8P12": create_zone(dmin=90, dmax=180, resolution=5),
-    }
 
 
 if __name__ == "__main__":
