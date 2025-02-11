@@ -8,22 +8,23 @@ import matplotlib as mpl
 import numpy as np
 import stk
 import stko
+from matplotlib.colors import to_hex
 from rmsd import check_reflections, int_atom, kabsch_rmsd, reorder_hungarian
 
 tstr_cmap = mpl.colormaps["tab20"].resampled(20)
 multi_cmap = {
-    "1": tstr_cmap(0.05),
-    "2": tstr_cmap(0.0),
-    "3": tstr_cmap(0.1),
-    "4": tstr_cmap(0.2),
-    "5": tstr_cmap(0.3),
-    "6": tstr_cmap(0.4),
-    "7": tstr_cmap(0.5),
-    "8": tstr_cmap(0.6),
-    "9": tstr_cmap(0.7),
-    "10": tstr_cmap(0.8),
-    "11": tstr_cmap(0.15),
-    "12": tstr_cmap(0.9),
+    "1": to_hex(tstr_cmap(0.05)),
+    "2": to_hex(tstr_cmap(0.0)),
+    "3": to_hex(tstr_cmap(0.1)),
+    "4": to_hex(tstr_cmap(0.2)),
+    "5": to_hex(tstr_cmap(0.3)),
+    "6": to_hex(tstr_cmap(0.4)),
+    "7": to_hex(tstr_cmap(0.5)),
+    "8": to_hex(tstr_cmap(0.6)),
+    "9": to_hex(tstr_cmap(0.7)),
+    "10": to_hex(tstr_cmap(0.8)),
+    "11": to_hex(tstr_cmap(0.15)),
+    "12": to_hex(tstr_cmap(0.9)),
 }
 
 
