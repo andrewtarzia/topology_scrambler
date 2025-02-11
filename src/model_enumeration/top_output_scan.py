@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 import stk
 from openmm import OpenMMException
 from rdkit import RDLogger
-from ufo_utilities import (
+
+from model_enumeration.ufo_utilities import (
     abead_c,
     abead_d,
     binder_bead,
@@ -21,7 +22,7 @@ from ufo_utilities import (
     precursors_to_forcefield,
     tetra_bead,
 )
-from utilities import eb_str
+from model_enumeration.utilities import eb_str
 
 logging.basicConfig(
     level=logging.INFO,
@@ -214,7 +215,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # noqa: C901, PLR0915, PLR0912
     """Run script."""
     args = _parse_args()
-    raise SystemExit('Change paths')
+    raise SystemExit("Change paths")
     raise SystemExit("rerun")
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "ufo_scan_calculations"
@@ -520,16 +521,16 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
                     # Optimise and save.
                     logging.info("building %s", name)
-                    if "ufo" in name:
-                    _, multiplier, sisj = name.split("_")
-                    si, sj = sisj.split("-")
-
-                    potential_names = [
-                    f"ufoscan_{multiplier}_{int(si) - 1}-{int(sj) - 1}",
-                    f"ufoscan_{multiplier}_{int(si) - 1}-{int(sj)}",
-                    f"ufoscan_{multiplier}_{int(si)}-{int(sj) - 1}",
-                    ]
                     raise NotImplementedError("fix this")
+                    if "ufo" in name:
+                        _, multiplier, sisj = name.split("_")
+                        si, sj = sisj.split("-")
+
+                        potential_names = [
+                        f"ufoscan_{multiplier}_{int(si) - 1}-{int(sj) - 1}",
+                        f"ufoscan_{multiplier}_{int(si) - 1}-{int(sj)}",
+                        f"ufoscan_{multiplier}_{int(si)}-{int(sj) - 1}",
+                        ]
 
                     try:
                         conformer = cgx.scram.optimise_cage(
