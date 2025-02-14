@@ -12,8 +12,13 @@ import matplotlib.pyplot as plt
 import polars as pl
 import stk
 import stko
-from ds_utilities import EnvVariables
-from utilities import eb_str, isomer_energy
+
+from model_enumeration.utilities import (
+    convert_topo,
+    eb_str,
+    isomer_energy,
+    multi_cmap,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,34 +26,36 @@ logging.basicConfig(
 )
 
 
-def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR0912, C901
+def load_xtal_data(  # noqa: C901, PLR0912, PLR0915
+    figure_output: pathlib.Path,
+    xtal_dir: pathlib.Path,
+) -> dict:
     """Load and plot xtal data."""
-    xtal_dir = EnvVariables.project_dir / "xtals"
     xtal_data_output = xtal_dir / "xtal_analysis.json"
 
     expected_structures = {
         "EVUXUR": {
             "topology": "4P82",
             "num_bcn": 16,
-            "colour": "#92DCE5",
+            "colour": "tab:red",
             "marker": "o",
         },
         "EVUYAY": {
             "topology": "6P122",
             "num_bcn": 24,
-            "colour": "#1f77b4",
+            "colour": "tab:red",
             "marker": "D",
         },
         "EVUYEC": {
             "topology": "4P82",
             "num_bcn": 16,
-            "colour": "#2ca02c",
+            "colour": "tab:red",
             "marker": "X",
         },
         "EVUYIG": {
             "topology": "4P82",
             "num_bcn": 16,
-            "colour": "#ff7f0e",
+            "colour": "tab:red",
             "marker": "P",
         },
     }
@@ -140,7 +147,7 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
         axs[0].scatter(
             [i + 1 for j in range(len(xtal_data[xtal]["crosser_internal"]))],
             xtal_data[xtal]["crosser_internal"],
-            c="r",
+            c="tab:blue",
             s=160,
             edgecolor="k",
             label="across",
@@ -148,7 +155,7 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
         axs[0].scatter(
             [i + 1 for j in range(len(xtal_data[xtal]["outer_internal"]))],
             xtal_data[xtal]["outer_internal"],
-            c="g",
+            c="tab:orange",
             s=160,
             edgecolor="k",
             label="outer",
@@ -157,20 +164,20 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
         axs[1].scatter(
             [i + 1 for j in range(len(xtal_data[xtal]["torsion"]))],
             xtal_data[xtal]["torsion"],
-            c="gold",
+            c="tab:green",
             s=160,
             edgecolor="k",
         )
 
     axs[0].tick_params(axis="both", which="major", labelsize=16)
-    axs[0].set_ylabel("internal angles", fontsize=16)
+    axs[0].set_ylabel("binder angles [$^\\circ$]", fontsize=16)
     axs[0].set_ylim(None, 180)
     axs[0].set_xticks([i + 1 for i, _ in enumerate(xtal_data)])
     axs[0].set_xticklabels(list(xtal_data), rotation=45)
     axs[0].legend(fontsize=16)
 
     axs[1].tick_params(axis="both", which="major", labelsize=16)
-    axs[1].set_ylabel("torsions", fontsize=16)
+    axs[1].set_ylabel("|binder torsion| [$^\\circ$]", fontsize=16)
     axs[1].set_ylim(0, None)
     axs[1].set_xticks([i + 1 for i, _ in enumerate(xtal_data)])
     axs[1].set_xticklabels(list(xtal_data), rotation=45)
@@ -194,23 +201,29 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
 def li2023_bite_angle(
     databases: tuple[pathlib.Path, ...],
     figure_output: pathlib.Path,
+    xtal_dir: pathlib.Path,
 ) -> None:
     """Make a plot."""
     logging.info("running li2023_bite_angle")
 
     vmax = 1
 
-    xtal_data = load_xtal_data(figure_output)
+    xtal_data = load_xtal_data(figure_output, xtal_dir)
 
-    fig, axs = plt.subplots(ncols=len(databases), figsize=(16, 5))
+    fig, axs = plt.subplots(
+        ncols=len(databases),
+        figsize=(10, 5),
+        sharex=True,
+        sharey=True,
+    )
     for ax, database_path in zip(axs, databases, strict=True):
         database = cgx.utilities.AtomliteDatabase(database_path)
         tstr = database_path.name.strip(".db").split("_")[1]
 
         target_x = "$.forcefield_dict.v_dict.b_a_c"
         target_y = "$.forcefield_dict.v_dict.b_a_o"
-        ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-        ax.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
+        ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+        ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
 
         df_properties = [
             "$.energy_per_bb",
@@ -253,9 +266,8 @@ def li2023_bite_angle(
                 cmap="Blues_r",
             )
 
-        ax.plot((90, 180), (90, 180), c="k", ls="--")
         ax.tick_params(axis="both", which="major", labelsize=16)
-        ax.set_title(tstr, fontsize=16)
+        ax.set_title(convert_topo(tstr), fontsize=16)
 
         # Add xtal data, always assuming smaller internal angles are
         # the outer ligands.
@@ -273,8 +285,8 @@ def li2023_bite_angle(
                 alpha=1.0,
                 marker=m,
                 edgecolor="k",
-                s=100,
-                label=f"{xtal}:{xtstr}",
+                s=60,
+                label=f"{xtal}:{convert_topo(xtstr)}",
                 zorder=2,
             )
         ax.legend(fontsize=16)
@@ -296,96 +308,149 @@ def li2023_bite_angle(
     plt.close()
 
 
-def li2023_ss(
+def li2023_ss(  # noqa: C901, PLR0912, PLR0915
     databases: tuple[pathlib.Path, ...],
     figure_output: pathlib.Path,
+    xtal_dir: pathlib.Path,
 ) -> None:
     """Make a plot."""
     logging.info("running li2023_ss")
 
-    xtal_data = load_xtal_data(figure_output)
+    xtal_data = load_xtal_data(figure_output, xtal_dir)
+    df_properties = [
+        "$.energy_per_bb",
+        "$.forcefield_dict.v_dict.b_a_c",
+        "$.forcefield_dict.v_dict.b_a_o",
+        "$.bb_dict_idx",
+    ]
 
-    fig, axs = plt.subplots(ncols=len(databases), figsize=(16, 5))
-    for ax, database_path in zip(axs, databases, strict=True):
-        database = cgx.utilities.AtomliteDatabase(database_path)
-        tstr = database_path.name.strip(".db").split("_")[1]
+    dataframe1 = cgx.utilities.AtomliteDatabase(databases[0]).get_property_df(
+        properties=df_properties,
+        allow_missing=False,
+    )
+    tstr1 = databases[0].name.strip(".db").split("_")[1]
+    dataframe2 = cgx.utilities.AtomliteDatabase(databases[1]).get_property_df(
+        properties=df_properties,
+        allow_missing=False,
+    )
+    tstr2 = databases[1].name.strip(".db").split("_")[1]
 
-        target_x = "$.forcefield_dict.v_dict.b_a_c"
-        target_y = "$.forcefield_dict.v_dict.b_a_o"
-        ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-        ax.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
+    target_x = "$.forcefield_dict.v_dict.b_a_c"
+    target_y = "$.forcefield_dict.v_dict.b_a_o"
 
-        df_properties = [
-            "$.energy_per_bb",
-            "$.forcefield_dict.v_dict.b_a_c",
-            "$.forcefield_dict.v_dict.b_a_o",
-            "$.bb_dict_idx",
-        ]
+    logging.info("%s dataframe size: %s", tstr1, len(dataframe1))
+    logging.info("%s dataframe size: %s", tstr2, len(dataframe2))
 
-        dataframe = database.get_property_df(
-            properties=df_properties,
-            allow_missing=False,
+    xs = set(list(dataframe1[target_x]) + list(dataframe2[target_x]))
+    ys = set(list(dataframe1[target_y]) + list(dataframe2[target_y]))
+
+    fig, ax = plt.subplots(ncols=1, figsize=(5, 5))
+
+    labels = set()
+    for xangle, yangle in it.product(xs, ys):
+        pdata1 = dataframe1.filter(pl.col(target_x) == xangle)
+        pdata1 = pdata1.filter(pl.col(target_y) == yangle)
+
+        pdata2 = dataframe2.filter(pl.col(target_x) == xangle)
+        pdata2 = pdata2.filter(pl.col(target_y) == yangle)
+
+        if len(pdata1) != 0:
+            pdata1 = pdata1.filter(
+                pl.col("$.energy_per_bb") <= isomer_energy()
+            )
+
+        if len(pdata2) != 0:
+            pdata2 = pdata2.filter(
+                pl.col("$.energy_per_bb") <= isomer_energy()
+            )
+
+        if len(pdata1) == 0 and len(pdata2) == 0:
+            colour = "white"
+            alpha = 0.2
+            string = None
+
+        elif len(pdata1) > 1 and len(pdata2) > 1:
+            colour = "tab:blue"
+            alpha = 0.2
+            string = "both > 1"
+
+        elif len(pdata1) == 1 and len(pdata2) == 1:
+            colour = "tab:orange"
+            alpha = 1
+            string = "both = 1"
+
+        elif len(pdata1) == 1:
+            colour = multi_cmap["4"]
+            alpha = 1
+            string = f"{convert_topo('4P82')} = 1"
+
+        elif len(pdata2) == 1:
+            colour = multi_cmap["6"]
+            alpha = 1
+            string = f"{convert_topo('6P122')} = 1"
+
+        elif len(pdata1) > 1:
+            colour = multi_cmap["4"]
+            alpha = 0.2
+            string = f"{convert_topo('4P82')} > 1"
+
+        elif len(pdata2) > 1:
+            colour = multi_cmap["6"]
+            alpha = 0.2
+            string = f"{convert_topo('6P122')} > 1"
+
+        label = string if string not in labels and string is not None else None
+        labels.add(label)
+        ax.scatter(
+            xangle,
+            yangle,
+            c=colour,
+            alpha=alpha,
+            edgecolor="none",
+            s=200,
+            marker="s",
+            label=label,
         )
-        logging.info("%s dataframe size: %s", tstr, len(dataframe))
 
-        {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
-        for xangle, yangle in it.product(
-            set(dataframe[target_x]),
-            set(dataframe[target_y]),
-        ):
-            pdata = dataframe.filter(pl.col(target_x) == xangle)
-            pdata = pdata.filter(pl.col(target_y) == yangle)
-
-            if len(pdata) == 0:
-                continue
-
-            # Get stable states.
-            pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
-
-            if len(pdata) > 1:
-                colour = "tab:orange"
-
-            elif len(pdata) == 1:
-                colour = "tab:purple"
-
-            else:
-                colour = "white"
-
-            ax.scatter(
-                xangle,
-                yangle,
-                c=colour,
-                alpha=1.0,
-                edgecolor="k",
-                s=160,
-                marker="s",
+        # Print file name to visualise.
+        if xangle == 95 and yangle == 165:  # noqa: PLR2004
+            logging.info(
+                "x:%s, y:%s, key: %s", xangle, yangle, pdata2["key"].item()
+            )
+        elif xangle == 100 and yangle == 145:  # noqa: PLR2004
+            logging.info(
+                "x:%s, y:%s, key: %s", xangle, yangle, pdata1["key"].item()
+            )
+        elif xangle == 100 and yangle == 140:  # noqa: PLR2004
+            logging.info(
+                "x:%s, y:%s, key: %s", xangle, yangle, pdata2["key"].item()
             )
 
-        ax.plot((90, 180), (90, 180), c="k", ls="--")
-        ax.tick_params(axis="both", which="major", labelsize=16)
-        ax.set_title(tstr, fontsize=16)
+    # Add xtal data, always assuming smaller internal angles are
+    # the outer ligands.
+    for xtal in xtal_data:
+        xd = xtal_data[xtal]
+        ys = xd["crosser_internal"]
+        xs = xd["outer_internal"]
+        col = xd["colour"]
+        m = xd["marker"]
+        xtstr = xd["topology"]
+        ax.scatter(
+            xs,
+            ys,
+            c=col,
+            alpha=1.0,
+            marker=m,
+            edgecolor="k",
+            s=60,
+            label=f"{xtal}: {convert_topo(xtstr)}",
+            zorder=2,
+        )
 
-        # Add xtal data, always assuming smaller internal angles are
-        # the outer ligands.
-        for xtal in xtal_data:
-            xd = xtal_data[xtal]
-            ys = xd["crosser_internal"]
-            xs = xd["outer_internal"]
-            col = xd["colour"]
-            m = xd["marker"]
-            xtstr = xd["topology"]
-            ax.scatter(
-                xs,
-                ys,
-                c=col,
-                alpha=1.0,
-                marker=m,
-                edgecolor="k",
-                s=100,
-                label=f"{xtal}:{xtstr}",
-                zorder=2,
-            )
-        ax.legend(fontsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
+    ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(figure_output / "li2023_ss.png", dpi=720, bbox_inches="tight")
@@ -395,14 +460,16 @@ def li2023_ss(
 
 def main() -> None:
     """Run script."""
-    figure_output = EnvVariables.cg_figures
-    data_output = EnvVariables.cg_outputdata
-    databases = (data_output / "at1r1_4P82.db", data_output / "at4r1_6P122.db")
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    figure_dir = wd / "figures" / "li2023"
+    figure_dir.mkdir(exist_ok=True)
+    data_dir = wd / "angle_data"
+    xtal_dir = wd / "xtals"
+    databases = (data_dir / "hr_4P82.db", data_dir / "hr_6P122.db")
 
-    li2023_bite_angle(databases, figure_output)
-    li2023_ss(databases, figure_output)
+    li2023_ss(databases, figure_dir, xtal_dir)
+    li2023_bite_angle(databases, figure_dir, xtal_dir)
 
 
 if __name__ == "__main__":
-    raise SystemExit("rerun")
     main()
