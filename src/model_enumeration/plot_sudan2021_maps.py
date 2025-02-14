@@ -12,8 +12,13 @@ import matplotlib.pyplot as plt
 import polars as pl
 import stk
 import stko
-from ds_utilities import EnvVariables
-from utilities import eb_str, isomer_energy
+
+from model_enumeration.utilities import (
+    convert_topo,
+    eb_str,
+    isomer_energy,
+    multi_cmap,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,16 +26,18 @@ logging.basicConfig(
 )
 
 
-def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR0912, C901
+def load_xtal_data(  # noqa: C901, PLR0912, PLR0915
+    figure_output: pathlib.Path,
+    xtal_dir: pathlib.Path,
+) -> dict:
     """Load and plot xtal data."""
-    xtal_dir = EnvVariables.project_dir / "xtals"
     xtal_data_output = xtal_dir / "sudan2021_xtal_analysis.json"
 
     expected_structures = {
         "EKOYIP": {
             "topology": "6P12",
             "num_bcn": 24,
-            "colour": "#92DCE5",
+            "colour": "tab:red",
             "marker": "o",
         },
     }
@@ -123,7 +130,7 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
         axs[0].scatter(
             [i + 1 for j in range(len(xtal_data[xtal]["crosser_internal"]))],
             xtal_data[xtal]["crosser_internal"],
-            c="r",
+            c="tab:blue",
             s=160,
             edgecolor="k",
             label="across",
@@ -131,7 +138,7 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
         axs[0].scatter(
             [i + 1 for j in range(len(xtal_data[xtal]["outer_internal"]))],
             xtal_data[xtal]["outer_internal"],
-            c="g",
+            c="tab:orange",
             s=160,
             edgecolor="k",
             label="outer",
@@ -140,20 +147,20 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
         axs[1].scatter(
             [i + 1 for j in range(len(xtal_data[xtal]["torsion"]))],
             xtal_data[xtal]["torsion"],
-            c="gold",
+            c="tab:green",
             s=160,
             edgecolor="k",
         )
 
     axs[0].tick_params(axis="both", which="major", labelsize=16)
-    axs[0].set_ylabel("internal angles", fontsize=16)
+    axs[0].set_ylabel("binder angles [$^\\circ$]", fontsize=16)
     axs[0].set_ylim(None, 180)
     axs[0].set_xticks([i + 1 for i, _ in enumerate(xtal_data)])
     axs[0].set_xticklabels(list(xtal_data), rotation=45)
     axs[0].legend(fontsize=16)
 
     axs[1].tick_params(axis="both", which="major", labelsize=16)
-    axs[1].set_ylabel("torsions", fontsize=16)
+    axs[1].set_ylabel("|binder torsion| [$^\\circ$]", fontsize=16)
     axs[1].set_ylim(0, None)
     axs[1].set_xticks([i + 1 for i, _ in enumerate(xtal_data)])
     axs[1].set_xticklabels(list(xtal_data), rotation=45)
@@ -177,13 +184,14 @@ def load_xtal_data(figure_output: pathlib.Path) -> dict:  # noqa: PLR0915, PLR09
 def sudan2021_bite_angle(
     database_path: pathlib.Path,
     figure_output: pathlib.Path,
+    xtal_dir: pathlib.Path,
 ) -> None:
     """Make a plot."""
     logging.info("running sudan2021_bite_angle")
 
     vmax = 1
 
-    xtal_data = load_xtal_data(figure_output)
+    xtal_data = load_xtal_data(figure_output, xtal_dir)
 
     fig, ax = plt.subplots(ncols=1, figsize=(5, 5))
 
@@ -192,8 +200,8 @@ def sudan2021_bite_angle(
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
     target_y = "$.forcefield_dict.v_dict.b_a_o"
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
 
     df_properties = [
         "$.energy_per_bb",
@@ -210,7 +218,6 @@ def sudan2021_bite_angle(
     )
     logging.info("%s dataframe size: %s", tstr, len(dataframe))
 
-    {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
     for xangle, yangle in it.product(
         set(dataframe[target_x]),
         set(dataframe[target_y]),
@@ -236,9 +243,8 @@ def sudan2021_bite_angle(
             cmap="Blues_r",
         )
 
-    ax.plot((90, 180), (90, 180), c="k", ls="--")
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_title(tstr, fontsize=16)
+    ax.set_title(convert_topo(tstr), fontsize=16)
 
     # Add xtal data, always assuming smaller internal angles are
     # the outer ligands.
@@ -256,8 +262,8 @@ def sudan2021_bite_angle(
             alpha=1.0,
             marker=m,
             edgecolor="k",
-            s=100,
-            label=f"{xtal}:{xtstr}",
+            s=60,
+            label=f"{xtal}:{convert_topo(xtstr)}",
             zorder=2,
         )
     ax.legend(fontsize=16)
@@ -286,11 +292,12 @@ def sudan2021_bite_angle(
 def sudan2021_ss(
     database_path: pathlib.Path,
     figure_output: pathlib.Path,
+    xtal_dir: pathlib.Path,
 ) -> None:
     """Make a plot."""
     logging.info("running sudan2021_ss")
 
-    xtal_data = load_xtal_data(figure_output)
+    xtal_data = load_xtal_data(figure_output, xtal_dir)
 
     fig, ax = plt.subplots(ncols=1, figsize=(5, 5))
 
@@ -299,8 +306,8 @@ def sudan2021_ss(
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
     target_y = "$.forcefield_dict.v_dict.b_a_o"
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
 
     df_properties = [
         "$.energy_per_bb",
@@ -315,7 +322,7 @@ def sudan2021_ss(
     )
     logging.info("%s dataframe size: %s", tstr, len(dataframe))
 
-    {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
+    labels = set()
     for xangle, yangle in it.product(
         set(dataframe[target_x]),
         set(dataframe[target_y]),
@@ -329,28 +336,42 @@ def sudan2021_ss(
         # Get stable states.
         pdata = pdata.filter(pl.col("$.energy_per_bb") <= isomer_energy())
 
-        if len(pdata) > 1:
-            colour = "tab:orange"
+        if len(pdata) == 0:
+            colour = "white"
+            alpha = 0.2
+            string = None
 
         elif len(pdata) == 1:
-            colour = "tab:purple"
+            colour = multi_cmap["6"]
+            alpha = 1
+            string = f"{convert_topo('6P122')} = 1"
 
-        else:
-            colour = "white"
+        elif len(pdata) > 1:
+            colour = multi_cmap["6"]
+            alpha = 1.0
+            string = f"{convert_topo('6P122')} > 1"
 
+        label = string if string not in labels and string is not None else None
+        labels.add(label)
         ax.scatter(
             xangle,
             yangle,
             c=colour,
-            alpha=1.0,
-            edgecolor="k",
-            s=160,
+            alpha=alpha,
+            edgecolor="none",
+            s=200,
             marker="s",
+            label=label,
         )
 
-    ax.plot((90, 180), (90, 180), c="k", ls="--")
+        # Print file name to visualise.
+        if xangle == 120 and yangle == 145:  # noqa: PLR2004
+            logging.info(
+                "x:%s, y:%s, key: %s", xangle, yangle, pdata["key"].item(0)
+            )
+
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_title(tstr, fontsize=16)
+    ax.set_title(convert_topo(tstr), fontsize=16)
 
     # Add xtal data, always assuming smaller internal angles are
     # the outer ligands.
@@ -368,8 +389,8 @@ def sudan2021_ss(
             alpha=1.0,
             marker=m,
             edgecolor="k",
-            s=100,
-            label=f"{xtal}:{xtstr}",
+            s=60,
+            label=f"{xtal}:{convert_topo(xtstr)}",
             zorder=2,
         )
     ax.legend(fontsize=16)
@@ -386,13 +407,15 @@ def sudan2021_ss(
 
 def main() -> None:
     """Run script."""
-    raise SystemExit("rerun")
-    figure_output = EnvVariables.cg_figures
-    data_output = EnvVariables.cg_outputdata
-    database_path = data_output / "at1r1_6P12.db"
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    figure_dir = wd / "figures" / "sudan2021"
+    figure_dir.mkdir(exist_ok=True)
+    data_dir = wd / "angle_data"
+    xtal_dir = wd / "xtals"
+    database_path = data_dir / "hr_6P12.db"
 
-    sudan2021_bite_angle(database_path, figure_output)
-    sudan2021_ss(database_path, figure_output)
+    sudan2021_bite_angle(database_path, figure_dir, xtal_dir)
+    sudan2021_ss(database_path, figure_dir, xtal_dir)
 
 
 if __name__ == "__main__":
