@@ -702,10 +702,10 @@ def high_resolution_function(  # noqa: PLR0915, C901, PLR0912
 
     target_x = "$.forcefield_dict.v_dict.b_a_c"
     target_y = "$.forcefield_dict.v_dict.b_a_o"
-    ax.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
-    ax2.set_xlabel("$b-a-c$ [$^\\circ$]", fontsize=16)
-    ax2.set_ylabel("$b-a-o$ [$^\\circ$]", fontsize=16)
+    ax.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
+    ax2.set_xlabel("$bac$ [$^\\circ$]", fontsize=16)
+    ax2.set_ylabel("$bao$ [$^\\circ$]", fontsize=16)
     df_properties = [
         "$.energy_per_bb",
         "$.forcefield_dict.v_dict.b_a_c",
@@ -1278,6 +1278,7 @@ def main() -> None:
             prefix=study,
         )
     raise SystemExit(
+        "in alldb analysis:"
         "turn into a chemiscope and single plot of knietic self-sort, basically."
     )
     raise SystemExit("put the founds into a library somewhere")
