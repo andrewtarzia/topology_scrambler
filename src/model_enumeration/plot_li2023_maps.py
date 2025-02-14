@@ -240,7 +240,6 @@ def li2023_bite_angle(
         )
         logging.info("%s dataframe size: %s", tstr, len(dataframe))
 
-        {i: 0 for i in set(dataframe["$.bb_dict_idx"])}
         for xangle, yangle in it.product(
             set(dataframe[target_x]),
             set(dataframe[target_y]),
