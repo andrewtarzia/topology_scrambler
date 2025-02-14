@@ -47,6 +47,20 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
+def contains_parallels(topology_code: cgx.scram.TopologyCode) -> bool:
+    """True if the graph contains "1-loops"."""
+    weighted_graph = topology_code.get_weighted_graph()
+    num_parallel_edges = len(
+        [
+            i
+            for i in weighted_graph.edges()
+            if i == 2  # noqa: PLR2004
+        ]
+    )
+
+    return num_parallel_edges != 0
+
+
 def get_possible_pairs(
     pair: str,
     ligand_types: dict[str, str],
@@ -457,8 +471,17 @@ def make_summary_plot(
             continue
         energies[(pair, multi)].append((round(energy, 4), tidx, bidx, midx))
 
-    vmin = 0
-    vmax = 1
+    # create the new map
+    cmap = plt.cm.Blues_r  # define the colormap
+    # extract all colors from the .jet map
+    cmaplist = [cmap(i) for i in range(cmap.N)]
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        "Custom cmap", cmaplist, cmap.N
+    )
+
+    # define the bins and normalize
+    bounds = [0, 0.3, 1.0, 5.0, 10.0]
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
     for (pair, multi), evalues in energies.items():
         sorted_energies = sorted(evalues, key=lambda p: p[0])
         min_energy = sorted_energies[0]
@@ -470,13 +493,12 @@ def make_summary_plot(
             x,
             y,
             c=min_energy[0],
-            vmin=vmin,
-            vmax=vmax,
             alpha=1.0,
             edgecolor="k",
             s=200,
             marker="s",
-            cmap="Blues_r",
+            cmap=cmap,
+            norm=norm,
         )
         ax.text(
             x=x + 0.5,
@@ -496,9 +518,12 @@ def make_summary_plot(
     ax.set_yticklabels(["_".join(i) for i in pairs])
     ax.set_xlim(None, 4)
 
+    ax.axvline(0.8, c="k", alpha=0.5)
+    ax.axvline(1.8, c="k", alpha=0.5)
+    ax.axvline(2.8, c="k", alpha=0.5)
+
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
-    cmap = mpl.cm.Blues_r
-    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+
     cbar = fig.colorbar(
         mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
         cax=cbar_ax,
@@ -537,6 +562,7 @@ def make_summary_plot2(
 
     x_multi_mins = {i: defaultdict(float) for i in multi_cmap}
     x_count = {i: defaultdict(int) for i in multi_cmap}
+    min_at_all_xs = defaultdict(int)
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         multi = str(entry.properties["multiplier"])
         l1 = entry.properties["l1"]
@@ -556,8 +582,14 @@ def make_summary_plot2(
         else:
             x_multi_mins[multi][x] = min((x_multi_mins[multi][x], energy))
 
+        if x not in min_at_all_xs:
+            min_at_all_xs[x] = energy
+        else:
+            min_at_all_xs[x] = min((min_at_all_xs[x], energy))
+
     for i in range(len(pairs) - 1):
         ax.axvline(x=i + 0.5, c="k", alpha=0.2)
+        axx.axvline(x=i + 0.5, c="k", alpha=0.2)
 
     for multi in multi_cmap:
         if len(x_multi_mins[multi]) == 0:
@@ -567,35 +599,42 @@ def make_summary_plot2(
         ax.plot(
             sorted(edict),
             [edict[i] for i in sorted(edict)],
-            c="k",
+            c="none",
             markerfacecolor=multi_cmap[multi],
             mec="k",
             marker="o",
             alpha=1,
-            markersize=10,
+            markersize=12,
         )
         axx.plot(
             list(x_count[multi]),
             [x_count[multi][i] for i in x_count[multi]],
-            c="k",
+            c="none",
             markerfacecolor=multi_cmap[multi],
             mec="k",
             marker="o",
             zorder=2,
-            markersize=10,
+            markersize=12,
         )
+
+    ax.plot(
+        sorted(min_at_all_xs),
+        [min_at_all_xs[i] for i in sorted(min_at_all_xs)],
+        c="k",
+        alpha=1,
+        zorder=-1,
+    )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks(list(range(len(pairs))))
     ax.set_xticklabels(["_".join(i) for i in pairs], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_yscale("log")
+    ax.set_ylim(0, 10)
     ax.set_xlim(-0.5, len(pairs) - 0.5)
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
 
     axx.tick_params(axis="both", which="major", labelsize=16)
     axx.set_ylabel("calcs", fontsize=16)
-    axx.set_yticks([100, 500, 1000])
 
     fig.tight_layout()
     fig.savefig(
@@ -618,9 +657,7 @@ def make_opt_plot(
 ) -> dict:
     """Visualise stage of the optimisation produces the low-E conformer."""
     fig, (ax, ax1) = plt.subplots(
-        ncols=2,
-        figsize=(10, 5),
-        width_ratios=[3, 1],
+        ncols=2, figsize=(10, 5), width_ratios=[3, 1], sharey=True
     )
 
     stages = (
@@ -698,14 +735,9 @@ def make_opt_plot(
     ax.set_xticks(range(len(stages)))
     ax.set_xticklabels(stages, rotation=45)
     ax.set_xlabel("stage", fontsize=16)
-    ax.set_yscale("log")
 
     ax1.tick_params(axis="both", which="major", labelsize=16)
-    ax1.set_ylabel("count", fontsize=16)  # , color=color)
-    ax1.set_xticks(range(len(mash_ids)))
-    ax1.set_xticklabels(mash_ids)
     ax1.set_xlabel("mash idx", fontsize=16)
-    ax1.set_yscale("log")
 
     fig.tight_layout()
     fig.savefig(
@@ -977,7 +1009,7 @@ def get_vertexset_molecule(
         raise NotImplementedError
 
     vertex_positions = {
-        nidx: np.array(nxpos[nidx]) * 10
+        nidx: np.array(nxpos[nidx]) * float(scale_value)
         for nidx in topology_code.get_nx_graph().nodes
     }
     return cgx.scram.try_except_construction(
@@ -1220,6 +1252,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             msg = small
             raise NotImplementedError(msg)
 
+        multi = (1, 2, 3, 4) if large == "lf" else (1, 2, 3)
         pairs[name] = {
             "large_name": large,
             "small_name": small,
@@ -1228,7 +1261,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             "tetra": cgx.molecular.FourC1Arm(
                 bead=tetra_bead, abead1=binder_bead
             ),
-            "multipliers": (4,),  # 2, 3, 4),
+            "multipliers": multi,
             "vdw_cutoff": 2,
         }
 
@@ -1327,6 +1360,10 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                     possible_bbdicts,
                     enumerate(iterator.yield_graphs()),
                 ):
+                    # Filter graphs for 1-loops.
+                    if contains_parallels(topology_code):
+                        continue
+
                     if pair_lowest_energy < isomer_energy():
                         logging.info(
                             "energy < 0.1 for tidx: %s and bidx: %s, stopping",
@@ -1369,20 +1406,23 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                             f"_b{bb_config.idx}"
                         )
 
-                        if isinstance(scale, str) and "regraphed" in scale:
-                            constructed_molecule = get_regraphed_molecule(
-                                scale=scale,
-                                topology_code=topology_code,
-                                iterator=iterator,
-                                bb_config=bb_config,
-                            )
-                        else:
-                            constructed_molecule = get_vertexset_molecule(
-                                scale=scale,
-                                topology_code=topology_code,
-                                iterator=iterator,
-                                bb_config=bb_config,
-                            )
+                        try:
+                            if isinstance(scale, str) and "regraphed" in scale:
+                                constructed_molecule = get_regraphed_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+                            else:
+                                constructed_molecule = get_vertexset_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+                        except ValueError:
+                            continue
 
                         constructed_molecule.write(
                             structure_dir / f"{name}_unopt.mol"
@@ -1626,7 +1666,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             figure_dir=figure_dir,
             filename=f"mgen_1_{pair}.png",
         )
-    raise SystemExit("check the bb-tc isomorphism over the known stk vertices")
     raise SystemExit("rethink binders, because it is not handling minus")
 
 
