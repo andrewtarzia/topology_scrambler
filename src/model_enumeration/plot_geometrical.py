@@ -6,7 +6,6 @@ import pathlib
 
 import cgexplore as cgx
 import matplotlib.pyplot as plt
-from ds_utilities import EnvVariables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -137,9 +136,11 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Run script."""
-    raise SystemExit("rerun")
     args = _parse_args()
-    raise SystemExit("Change paths")
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    figure_dir = wd / "figures" / "angle_geoms"
+    figure_dir.mkdir(exist_ok=True)
+
     database = cgx.utilities.AtomliteDatabase(db_file=args.database_path)
     logging.info("there are %s collected data", database.get_num_entries())
     prefix = (
@@ -149,7 +150,7 @@ def main() -> None:
     geom_distributions(
         prefix=prefix,
         database=database,
-        figure_output=EnvVariables.cg_figures,
+        figure_output=figure_dir,
     )
 
 
