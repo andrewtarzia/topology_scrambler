@@ -117,11 +117,7 @@ def make_opt_plot(
     ax.set_yscale("log")
 
     fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
+    fig.savefig(figure_dir / filename, dpi=360, bbox_inches="tight")
     fig.savefig(
         figure_dir / filename.replace(".png", ".pdf"),
         dpi=360,
@@ -233,8 +229,97 @@ def make_plot(  # noqa: C901
     ax.set_xlabel("target $bac$ angle [$^\\circ$]", fontsize=16)
 
     fig.tight_layout()
+    fig.savefig(figure_dir / filename, dpi=360, bbox_inches="tight")
     fig.savefig(
-        figure_dir / filename,
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def make_main_plot(
+    figure_dir: pathlib.Path,
+    database_path: pathlib.Path,
+    filename: str,
+) -> None:
+    """Plot energies."""
+    energies = defaultdict(list)
+    bacs = defaultdict(list)
+    graphs = defaultdict(set)
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        multi = entry.properties["multiplier"]
+        energy = entry.properties["energy_per_bb"]
+        bac_angle = entry.properties["forcefield_dict"]["v_dict"]["b_a_c"]
+
+        lig, multiplier, idx, mash_idx = entry.key.split("_")
+        if entry.properties["num_components"] > 1:
+            continue
+
+        energies[multi].append((bac_angle, energy, entry.key))
+        bacs[bac_angle].append((multi, energy, entry.key))
+        graphs[multi].add(idx)
+
+    fig, ax = plt.subplots(figsize=(8, 2))
+    for i, multi in enumerate(sorted([int(i) for i in energies])):
+        idx = str(multi)
+        logging.info(
+            "there are %s graphs in m=%s", len(list(graphs[idx])), idx
+        )
+
+        bac_line = []
+        for bac_angle in sorted(bacs):
+            rel_energies = [i[1] for i in energies[idx] if i[0] == bac_angle]
+            if len(rel_energies) == 0:
+                continue
+            min_energy = min(rel_energies)
+            bac_line.append((bac_angle, min_energy))
+
+            found_names_minus_mash = set()
+            stable = []
+            for entry_data in energies[idx]:
+                if (
+                    entry_data[0] == bac_angle
+                    and entry_data[1] < isomer_energy()
+                ):
+                    names_minus_mash = "_".join(entry_data[-1].split("_")[:-1])
+
+                    if names_minus_mash in found_names_minus_mash:
+                        continue
+                    found_names_minus_mash.add(names_minus_mash)
+                    stable.append(entry_data)
+
+        ax.plot(
+            [i[0] for i in bac_line],
+            [i[1] for i in bac_line],
+            c=multi_cmap[str(multi)],
+            ls="-",
+            marker="o",
+            markersize=10,
+            markeredgecolor="k",
+            alpha=1.0,
+            zorder=2,
+            label=f"M{idx}",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_xlim(85, 155)
+    ax.set_xticks([90, 100, 110, 120, 130, 140, 150])
+    ax.set_yscale("log")
+
+    leg = ax.legend(ncols=1, fontsize=12)
+    for lh in leg.legend_handles:
+        lh.set_alpha(1)
+
+    ax.set_xlabel("$bac$ angle [$^\\circ$]", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(figure_dir / filename, dpi=360, bbox_inches="tight")
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
         dpi=360,
         bbox_inches="tight",
     )
@@ -606,6 +691,19 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     if args.nodoubles
                     else "validationi_1.png",
                 )
+
+    make_main_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="validationd_1c.png"
+        if args.nodoubles
+        else "validationi_1c.png",
+    )
+    raise SystemExit("main paper figure - not too high")
+    raise SystemExit("print the count of distinct graphs for each m")
+    raise SystemExit(
+        "put the opt plot and timings plot into one svg in the SI"
+    )
 
     make_plot(
         database_path=database_path,
