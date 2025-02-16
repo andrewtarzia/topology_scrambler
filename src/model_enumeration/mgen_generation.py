@@ -61,31 +61,6 @@ def contains_parallels(topology_code: cgx.scram.TopologyCode) -> bool:
     return num_parallel_edges != 0
 
 
-def get_possible_pairs(
-    pair: str,
-    ligand_types: dict[str, str],
-    pairs_to_predict: list[tuple[str, str]],
-) -> list[str]:
-    """Get pairs with the same model form."""
-    ll, ls = pair.split("_")
-
-    lltype = ligand_types[ll]
-    lstype = ligand_types[ls]
-
-    new_pairs = []
-    for poss_pair in pairs_to_predict:
-        nlltype = ligand_types[poss_pair[0]]
-        nlstype = ligand_types[poss_pair[1]]
-
-        pair_name = "_".join(poss_pair)
-        if pair_name == pair:
-            continue
-        if lltype == nlltype and lstype == nlstype:
-            new_pairs.append(pair_name)
-
-    return new_pairs
-
-
 def get_bb_topology_code_graph(
     topology_code: cgx.scram.TopologyCode,
     bb_config: cgx.scram.BuildingBlockConfiguration,
@@ -123,36 +98,6 @@ def get_bb_topology_code_graph(
         graph.add_edge(nodeaidx, nodebidx, None)
 
     return graph
-
-
-def get_stk_topology_code(
-    graph_type: str,
-) -> tuple[cgx.scram.TopologyCode, np.ndarray]:
-    """Get the default stk graph."""
-    knowns = {
-        "1P2": cgx.topologies.UnalignedM1L2,
-        "2P4": stk.cage.M2L4Lantern,
-        "3P6": stk.cage.M3L6,
-        "4P8": cgx.topologies.CGM4L8,
-    }
-
-    if graph_type not in knowns:
-        msg = f"{graph_type} not known"
-        raise RuntimeError(msg)
-
-    target = knowns[graph_type]
-    vps = target._vertex_prototypes  # noqa: SLF001
-    eps = target._edge_prototypes  # noqa: SLF001
-
-    combination = [(i.get_vertex1_id(), i.get_vertex2_id()) for i in eps]
-    tc = cgx.scram.TopologyCode(
-        vertex_map=combination,
-        as_string=cgx.scram.vmap_to_str(combination),
-    )
-
-    positions = [i.get_position() for i in vps]
-
-    return tc, positions
 
 
 def analyse_cage(
@@ -236,94 +181,6 @@ def analyse_cage(
                 ),
             },
         )
-
-
-def reanalyse_cage(
-    database_path: pathlib.Path,
-    name: str,
-) -> None:
-    """Analyse toy model cage."""
-    database = cgx.utilities.AtomliteDatabase(database_path)
-    properties = database.get_entry(key=name).properties
-    final_molecule = database.get_molecule(name)
-
-    database.add_properties(
-        key=name,
-        property_dict={
-            "energy_per_bb": cgx.utilities.get_energy_per_bb(
-                energy_decomposition=properties["energy_decomposition"],
-                number_building_blocks=properties["num_bbs"],
-            ),
-            "min_distance": (
-                cgx.analysis.GeomMeasure().calculate_min_distance(
-                    database.get_molecule(key=name)
-                )["min_distance"]
-            ),
-        },
-    )
-
-    ss_dists = stko.molecule_analysis.GeometryAnalyser().get_metal_distances(
-        molecule=final_molecule,
-        metal_atom_nos=(16,),
-    )
-    if len(ss_dists) != 0:
-        min_ss_value = min(ss_dists.values())
-        max_ss_value = max(ss_dists.values())
-
-        database.add_properties(
-            key=name,
-            property_dict={
-                "min_ss_dist": min_ss_value,
-                "max_ss_dist": max_ss_value,
-            },
-        )
-
-    # Get the bg angles.
-    ligands = stko.molecule_analysis.DecomposeMOC().decompose(
-        molecule=final_molecule,
-        metal_atom_nos=(46,),
-    )
-
-    small_binder_binder_angles = []
-    large_binder_binder_angles = []
-    potential_smiles = [
-        "[Pb]~[Ga]",  # Large.
-        "[Pb]~[Ba]",  # Small.
-        "[Pb]~[Mn]",  # Small.
-    ]
-    for lig in ligands:
-        for smiles in potential_smiles:
-            as_building_block = stk.BuildingBlock.init_from_molecule(
-                lig,
-                stk.SmartsFunctionalGroupFactory(
-                    smarts=smiles, bonders=(0,), deleters=(1,)
-                ),
-            )
-            if as_building_block.get_num_functional_groups() == 2:  # noqa: PLR2004
-                large = smiles in ("[Pb]~[Ga]",)
-                break
-
-        vectors = [
-            as_building_block.get_centroid(atom_ids=fg.get_bonder_ids())
-            - as_building_block.get_centroid(atom_ids=fg.get_deleter_ids())
-            for fg in as_building_block.get_functional_groups()
-        ]
-        normed = [i / np.linalg.norm(i) for i in vectors]
-        angle = np.degrees(
-            stko.vector_angle(vector1=normed[0], vector2=normed[1])
-        )
-        if large:
-            large_binder_binder_angles.append(angle)
-        else:
-            small_binder_binder_angles.append(angle)
-
-    database.add_properties(
-        key=name,
-        property_dict={
-            "large_binder_binder_angles": large_binder_binder_angles,
-            "small_binder_binder_angles": small_binder_binder_angles,
-        },
-    )
 
 
 def make_plot(
@@ -629,7 +486,7 @@ def make_summary_plot2(
     ax.set_xticks(list(range(len(pairs))))
     ax.set_xticklabels(["_".join(i) for i in pairs], rotation=90)
     ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_ylim(0, 10)
+    ax.set_yscale("log")
     ax.set_xlim(-0.5, len(pairs) - 0.5)
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
 
@@ -657,7 +514,10 @@ def make_opt_plot(
 ) -> dict:
     """Visualise stage of the optimisation produces the low-E conformer."""
     fig, (ax, ax1) = plt.subplots(
-        ncols=2, figsize=(10, 5), width_ratios=[3, 1], sharey=True
+        ncols=2,
+        figsize=(10, 5),
+        width_ratios=[3, 1],
+        sharey=True,
     )
 
     stages = (
@@ -677,23 +537,26 @@ def make_opt_plot(
         "nx22",
         "nx32",
         "ns",
-        "ns-final",
-        "ns-rescan",
     )
-    mash_ids = list(range(9))
+
     sources = {i: 0 for i in stages}
-    mashes = {i: 0 for i in mash_ids}
+    mashes = {}
     lowe_sources = {i: 0 for i in stages}  # Produces low energy structures.
-    lowe_mashes = {i: 0 for i in mash_ids}  # Produces low energy structures.
+    lowe_mashes = {}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
+        midx = entry.properties["mash_idx"]
+        if midx not in mashes:
+            mashes[midx] = 0
+            lowe_mashes[midx] = 0
+
         sources[entry.properties["source"]] += 1
-        mashes[entry.properties["mash_idx"]] += 1
+        mashes[midx] += 1
         energy = entry.properties["energy_per_bb"]
         if energy < 1:
             lowe_sources[entry.properties["source"]] += 1
-            lowe_mashes[entry.properties["mash_idx"]] += 1
+            lowe_mashes[midx] += 1
 
     ax.bar(
         stages,
@@ -713,16 +576,16 @@ def make_opt_plot(
     )
 
     ax1.bar(
-        [int(i) for i in mash_ids],
-        [lowe_mashes[i] for i in mash_ids],
+        [int(i) for i in mashes],
+        [lowe_mashes[i] for i in mashes],
         color="#086788",
         edgecolor="none",
         lw=2,
         label=f"{eb_str()} < 1.0",
     )
     ax1.bar(
-        [int(i) for i in mash_ids],
-        [mashes[i] for i in mash_ids],
+        [int(i) for i in mashes],
+        [mashes[i] for i in mashes],
         color="none",
         edgecolor="k",
         lw=2,
@@ -759,11 +622,6 @@ def _parse_args() -> argparse.Namespace:
         "--run",
         action="store_true",
         help="set to iterate through structure functions",
-    )
-    parser.add_argument(
-        "--rescan",
-        action="store_true",
-        help="set to rescan all structures",
     )
 
     return parser.parse_args()
@@ -970,15 +828,16 @@ def get_regraphed_molecule(
         vertex_positions=None,
     )
     stko_graph = stko.Network.init_from_molecule(constructed_molecule)
-    if scale == "regraphed-spring":
+    _, stype, scale_value = scale.split("-")
+    if stype == "spring":
         nx_positions = nx.spring_layout(stko_graph.get_graph(), dim=3)
-    elif scale == "regraphed-kamada":
+    elif stype == "kamada":
         nx_positions = nx.kamada_kawai_layout(stko_graph.get_graph(), dim=3)
     else:
         raise NotImplementedError
     pos_mat = np.array([nx_positions[i] for i in nx_positions])
     return constructed_molecule.with_position_matrix(
-        pos_mat * 5
+        pos_mat * float(scale_value)
     ).with_centroid(np.array((0.0, 0.0, 0.0)))
 
 
@@ -1346,14 +1205,24 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                 run_topology_codes = []
                 attempts = (
                     None,
-                    "regraphed-spring",
-                    "regraphed-kamada",
+                    "regraphed-spring-10",
+                    "regraphed-kamada-10",
+                    "regraphed-spring-5",
+                    "regraphed-kamada-5",
+                    "regraphed-spring-3",
+                    "regraphed-kamada-3",
+                    "set-kamada-15",
                     "set-kamada-10",
                     "set-kamada-5",
+                    "set-kamada-3",
+                    "set-spring-15",
                     "set-spring-10",
                     "set-spring-5",
+                    "set-spring-3",
+                    "set-spectral-15",
                     "set-spectral-10",
                     "set-spectral-5",
+                    "set-spectral-3",
                 )
 
                 for bb_config, (idx, topology_code) in it.product(
@@ -1551,85 +1420,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                         name=min_energy_name,
                     )
 
-    if args.rescan:
-        entries = list(
-            cgx.utilities.AtomliteDatabase(database_path).get_entries()
-        )
-
-        all_lowest_e = tuple(
-            i for i in entries if "lowest_e_of_mash" in i.properties
-        )
-        all_lowest_e_keys = tuple(i.key for i in all_lowest_e)
-
-        for entry in all_lowest_e:
-            pair = entry.properties["pair"]
-
-            large_name = pairs[pair]["large_name"]
-            small_name = pairs[pair]["small_name"]
-
-            large = pairs[pair]["large"]
-            small = pairs[pair]["small"]
-            tetra = pairs[pair]["tetra"]
-
-            small_bb = small.get_building_block()
-            tetra_bb = tetra.get_building_block()
-            large_bb = large.get_building_block()
-
-            forcefield = precursors_to_forcefield(
-                pair=pair,
-                large=large,
-                small=small,
-                large_meas=ligand_measures[large_name],
-                small_meas=ligand_measures[small_name],
-                vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
-            )
-
-            multi = entry.properties["multiplier"]
-            tidx = entry.properties["topology_idx"]
-            bidx = entry.properties["bb_config_idx"]
-
-            if not (structure_dir / f"{entry.key}_optc.mol").exists():
-                continue
-
-            current_cage = stk.BuildingBlock.init_from_file(
-                structure_dir / f"{entry.key}_optc.mol"
-            )
-
-            potential_names = []
-            for npair in get_possible_pairs(
-                pair, ligand_types, pairs_to_predict
-            ):
-                potential_name = tuple(
-                    i
-                    for i in all_lowest_e_keys
-                    if f"{npair}_{multi}_{tidx}_" in i
-                    if f"_b{bidx}" in i
-                )
-
-                potential_names.extend(potential_name)
-
-            logging.info(
-                "rescanning: %s from %s files",
-                entry.key,
-                len(potential_names),
-            )
-
-            conformer = cgx.scram.optimise_from_files(
-                molecule=current_cage,
-                name=entry.key,
-                output_dir=calculation_dir,
-                forcefield=forcefield,
-                platform=None,
-                database_path=database_path,
-                potential_names=potential_names,
-            )
-
-            conformer.molecule.with_centroid((0, 0, 0)).write(
-                str(structure_dir / f"{entry.key}_optc.mol")
-            )
-
-            reanalyse_cage(database_path=database_path, name=entry.key)
-
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -1666,6 +1456,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             figure_dir=figure_dir,
             filename=f"mgen_1_{pair}.png",
         )
+    raise SystemExit("a plot that shows the three/2? distinct case studies")
     raise SystemExit("rethink binders, because it is not handling minus")
 
 
