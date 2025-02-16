@@ -26,6 +26,21 @@ multi_cmap = {
     "11": to_hex(tstr_cmap(0.15)),
     "12": to_hex(tstr_cmap(0.9)),
 }
+topology_cmap = {
+    "2P4": to_hex(tstr_cmap(0.0)),
+    "3P6": to_hex(tstr_cmap(0.1)),
+    "4P8": to_hex(tstr_cmap(0.2)),
+    "4P82": to_hex(tstr_cmap(0.5)),
+    "6P12": to_hex(tstr_cmap(0.9)),
+    "6P122": to_hex(tstr_cmap(0.3)),
+    "8P16": to_hex(tstr_cmap(0.4)),
+    "8P162": to_hex(tstr_cmap(0.7)),
+    "2P3": to_hex(tstr_cmap(0.05)),
+    "4P6": to_hex(tstr_cmap(0.15)),
+    "4P62": to_hex(tstr_cmap(0.25)),
+    "6P9": to_hex(tstr_cmap(0.35)),
+    "8P12": to_hex(tstr_cmap(0.45)),
+}
 
 
 core_bead = cgx.molecular.CgBead(
