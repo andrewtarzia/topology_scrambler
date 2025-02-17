@@ -1014,7 +1014,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
     }
 
     ligand_types = {
-        # From prep.
         "lf": "sixbead",
         "e10": "sixbead",
         "e11": "sixbead",
@@ -1026,7 +1025,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "lb": "sixbead",
         "lc": "sixbead",
         "ld": "sixbead",
-        # From optl.
         "e16": "twoarm",
         "e18": "twoarm",
         "l2": "twoarm",
