@@ -33,7 +33,8 @@ plot_sudan2021_maps = "model_enumeration.plot_sudan2021_maps:main"
 environment_hunter = "model_enumeration.environment_hunter:main"
 mgen_crest_analysis = "model_enumeration.mgen_crest_analysis:main"
 mgen_generation = "model_enumeration.mgen_generation:main"
-top_output_scan = "model_enumeration.top_output_scan:main"
+mgen_known = "model_enumeration.mgen_known:main"
+mgen_scan = "model_enumeration.mgen_scan:main"
 validation_mnl2n = "model_enumeration.validation_mnl2n:main"
 
 
