@@ -652,6 +652,26 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
     database_path = data_dir / "mgenknown.db"
 
     ligand_measures = {
+        "lf-fake": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 8.0,
+            "de": 4.0,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "ls10-fake": {"ba": 2.8, "aa": 5.4, "bac": 165, "s": 0.0},
+        "lf-xrd": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 7.87,
+            "de": 4.25,
+            "dde": 126.9,
+            "eg": 2.75 / 2,
+            "gb": 2.75 / 2,
+        },
+        "ls10-xrd": {"ba": 2.8, "aa": 5.25, "bac": 166, "s": 0.0},
         # From prep.
         "lf": {
             "egb": 120,
@@ -769,6 +789,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
     ligand_types = {
         "lf": "sixbead",
+        "lf-fake": "sixbead",
+        "lf-xrd": "sixbead",
         "e10": "sixbead",
         "e11": "sixbead",
         "e12": "sixbead",
@@ -782,6 +804,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "e16": "twoarm",
         "e18": "twoarm",
         "l2": "twoarm",
+        "ls10-fake": "twoarm",
+        "ls10-xrd": "twoarm",
         "ls2": "twoarm",
         "ls3": "stwoarm",
         "ls4": "stwoarm",
@@ -797,6 +821,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
     pairs_to_predict = [
         # large, small.
         ("lf", "l2"),
+        ("lf-fake", "ls10-fake"),
+        ("lf-xrd", "ls10-xrd"),
         ("lf", "ls2"),
         ("lf", "ls3"),
         ("lf", "ls4"),
@@ -863,7 +889,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             msg = small
             raise NotImplementedError(msg)
 
-        multi = (2, 3, 4) if large == "lf" else (2, 3)
+        multi = (2, 3, 4) if large in ("lf", "lf-fake", "lf-xrd") else (2, 3)
         pairs[name] = {
             "large_name": large,
             "small_name": small,
@@ -1135,9 +1161,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         figure_dir=figure_dir,
         filename="mgen_7.png",
     )
-
-    raise SystemExit("a plot that shows the three/2? distinct case studies")
-    raise SystemExit("rethink binders, because it is not handling minus")
 
 
 if __name__ == "__main__":
