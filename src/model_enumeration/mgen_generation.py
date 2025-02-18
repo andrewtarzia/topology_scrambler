@@ -898,6 +898,26 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
     stoichiometry_l_l_m = (1, 1, 1)
     ligand_measures = {
+        "lf-f": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 8.0,
+            "de": 4.0,
+            "dde": 125,
+            "eg": 1.4,
+            "gb": 1.4,
+        },
+        "ls10-f": {"ba": 2.8, "aa": 5.4, "bac": 165, "s": 0.0},
+        "lf-x": {
+            "egb": 120,
+            "deg": 180,
+            "dd": 7.87,
+            "de": 4.25,
+            "dde": 126.9,
+            "eg": 2.75 / 2,
+            "gb": 2.75 / 2,
+        },
+        "ls10-x": {"ba": 2.8, "aa": 5.25, "bac": 166, "s": 0.0},
         # From prep.
         "lf": {
             "egb": 120,
@@ -1015,6 +1035,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
     ligand_types = {
         "lf": "sixbead",
+        "lf-f": "sixbead",
+        "lf-x": "sixbead",
         "e10": "sixbead",
         "e11": "sixbead",
         "e12": "sixbead",
@@ -1028,6 +1050,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "e16": "twoarm",
         "e18": "twoarm",
         "l2": "twoarm",
+        "ls10-f": "twoarm",
+        "ls10-x": "twoarm",
         "ls2": "twoarm",
         "ls3": "stwoarm",
         "ls4": "stwoarm",
@@ -1043,6 +1067,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
     pairs_to_predict = [
         # large, small.
         ("lf", "l2"),
+        ("lf-f", "ls10-f"),
+        ("lf-x", "ls10-x"),
         ("lf", "ls2"),
         ("lf", "ls3"),
         ("lf", "ls4"),
@@ -1109,7 +1135,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             msg = small
             raise NotImplementedError(msg)
 
-        multi = (1, 2, 3, 4) if large == "lf" else (1, 2, 3)
+        multi = (1, 2, 3, 4) if large in ("lf", "lf-f", "lf-x") else (1, 2, 3)
         pairs[name] = {
             "large_name": large,
             "small_name": small,
