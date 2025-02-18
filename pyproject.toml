@@ -35,6 +35,7 @@ mgen_crest_analysis = "model_enumeration.mgen_crest_analysis:main"
 mgen_generation = "model_enumeration.mgen_generation:main"
 mgen_known = "model_enumeration.mgen_known:main"
 mgen_scan = "model_enumeration.mgen_scan:main"
+mgen_steric = "model_enumeration.mgen_steric:main"
 validation_mnl2n = "model_enumeration.validation_mnl2n:main"
 
 
