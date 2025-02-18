@@ -258,8 +258,8 @@ def make_geom_plot(  # noqa: C901
         {
             "ffx": "a_c",
             "aay": "Ag_Ba",
-            "xlim": (None, None),
-            "ylim": (None, None),
+            "xlim": (0.5, 3),
+            "ylim": (0.5, 3),
             "xlbl": r"target $ac$ [$\mathrm{\AA}$]",
             "ylbl": r"observed $ac$ [$\mathrm{\AA}$]",
             "obs_source": "ff",
@@ -267,8 +267,8 @@ def make_geom_plot(  # noqa: C901
         {
             "ffx": "d_d",
             "aay": "Ni_Ni",
-            "xlim": (None, None),
-            "ylim": (None, None),
+            "xlim": (1.5, 6),
+            "ylim": (1.5, 6),
             "xlbl": r"target $dd$ [$\mathrm{\AA}$]",
             "ylbl": r"observed $dd$ [$\mathrm{\AA}$]",
             "obs_source": "ff",
@@ -276,8 +276,8 @@ def make_geom_plot(  # noqa: C901
         {
             "ffx": "d_e",
             "aay": "Fe_Ni",
-            "xlim": (None, None),
-            "ylim": (None, None),
+            "xlim": (0.5, 3),
+            "ylim": (0.5, 3),
             "xlbl": r"target $de$ [$\mathrm{\AA}$]",
             "ylbl": r"observed $de$ [$\mathrm{\AA}$]",
             "obs_source": "ff",
