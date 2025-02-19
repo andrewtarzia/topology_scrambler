@@ -5,13 +5,15 @@ import itertools as it
 import logging
 import pathlib
 import shutil
-from collections import defaultdict
+from collections import abc, defaultdict
 
+import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import openmm
 import rustworkx as rx
 import stk
 import stko
@@ -37,7 +39,6 @@ from model_enumeration.utilities import (
     eb_str,
     isomer_energy,
     multi_cmap,
-    pore_str,
 )
 
 logging.basicConfig(
@@ -45,6 +46,158 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
+
+
+def rank_entries(entries: abc.Sequence[atomlite.Entry]) -> abc.Sequence[str]:
+    """Rank the collated entries."""
+    return [
+        i.key
+        for i in sorted(entries, key=lambda x: x.properties["energy_per_bb"])
+    ]
+
+
+def percent_change(value: float, percent: float) -> float:
+    """Get a percentage change."""
+    return value * (percent / 100)
+
+
+def generate_nearby_forcefields(  # noqa: C901, PLR0912
+    forcefield: cgx.forcefields.ForceField,
+    actual_present_bead_elements: abc.Sequence[str],
+) -> cgx.forcefields.ForceFieldLibrary:
+    """Generate nearby forcefields."""
+    modifiable = (
+        # "dd",
+        # "de",
+        "deg",
+        "egb",
+        "dde",
+        # "ac",
+        "bac",
+        # "zz",
+        # "zr",
+        "zzr",
+        "zrf",
+        "rfb",
+    )
+
+    ff_targets = forcefield.get_targets()
+
+    fflib = cgx.forcefields.ForceFieldLibrary(
+        present_beads=forcefield.get_present_beads(),
+        vdw_bond_cutoff=forcefield.get_vdw_bond_cutoff(),
+        prefix=f"{forcefield.get_prefix()}_lib",
+    )
+    for fftype, currtargets in ff_targets.items():
+        for target in currtargets:
+            if fftype == "bonds":
+                cp = f"{target.type1}{target.type2}"
+
+                bond_r = target.bond_r.value_in_unit(openmm.unit.angstrom)
+                # Do not change bonds not in molecule!
+                if cp in modifiable and (
+                    target.element1
+                    and target.element2 in actual_present_bead_elements
+                ):
+                    bond_rs = [
+                        openmm.unit.Quantity(
+                            value=i,
+                            unit=openmm.unit.angstrom,
+                        )
+                        for i in (
+                            bond_r,
+                            bond_r - percent_change(bond_r, 2),
+                            bond_r + percent_change(bond_r, 2),
+                        )
+                    ]
+                else:
+                    bond_rs = [target.bond_r]
+
+                target_range = cgx.terms.TargetBondRange(
+                    type1=target.type1,
+                    type2=target.type2,
+                    element1=target.element1,
+                    element2=target.element2,
+                    bond_rs=bond_rs,
+                    bond_ks=[target.bond_k],
+                )
+                fflib.add_bond_range(target_range)
+
+            elif fftype == "angles":
+                if isinstance(
+                    target,
+                    cgx.terms.TargetPyramidAngle | cgx.terms.TargetAngle,
+                ):
+                    cp = f"{target.type1}{target.type2}{target.type3}"
+
+                    angle_v = target.angle.value_in_unit(openmm.unit.degrees)
+                    # Do not change bonds not in molecule!
+                    if cp in modifiable and (
+                        target.element1
+                        and target.element2
+                        and target.element3 in actual_present_bead_elements
+                    ):
+                        angles = [
+                            openmm.unit.Quantity(
+                                value=i, unit=openmm.unit.degrees
+                            )
+                            for i in [
+                                angle_v,
+                                angle_v - percent_change(angle_v, 2),
+                                angle_v + percent_change(angle_v, 2),
+                            ]
+                            if i <= 180  # noqa: PLR2004
+                        ]
+
+                    else:
+                        angles = [target.angle]
+
+                    if isinstance(target, cgx.terms.TargetPyramidAngle):
+                        func = cgx.terms.PyramidAngleRange
+                    elif isinstance(target, cgx.terms.TargetAngle):
+                        func = cgx.terms.TargetAngleRange
+
+                    target_range = func(
+                        type1=target.type1,
+                        type2=target.type2,
+                        type3=target.type3,
+                        element1=target.element1,
+                        element2=target.element2,
+                        element3=target.element3,
+                        angles=angles,
+                        angle_ks=[target.angle_k],
+                    )
+
+                if isinstance(target, cgx.terms.TargetCosineAngle):
+                    raise NotImplementedError
+
+                fflib.add_angle_range(target_range)
+
+            elif fftype == "torsions":
+                target_range = cgx.terms.TargetTorsionRange(
+                    search_string=target.search_string,
+                    search_estring=target.search_estring,
+                    measured_atom_ids=target.measured_atom_ids,
+                    phi0s=[target.phi0],
+                    torsion_ks=[target.torsion_k],
+                    torsion_ns=[target.torsion_n],
+                )
+                fflib.add_torsion_range(target_range)
+
+            elif fftype == "nonbondeds":
+                target_range = cgx.terms.TargetNonbondedRange(
+                    bead_class=target.bead_class,
+                    bead_element=target.bead_element,
+                    sigmas=[target.sigma],
+                    epsilons=[target.epsilon],
+                    force=target.force,
+                )
+                fflib.add_nonbonded_range(target_range)
+
+            else:
+                raise NotImplementedError
+
+    return fflib
 
 
 def contains_parallels(topology_code: cgx.scram.TopologyCode) -> bool:
@@ -183,108 +336,156 @@ def analyse_cage(
         )
 
 
-def make_plot(
+def make_plot(  # noqa: PLR0915
     target_pair: str,
     database_path: pathlib.Path,
-    structure_dir: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 5))
-    energies = {}
+    fig, (ax0, ax, ax1) = plt.subplots(
+        ncols=3,
+        figsize=(16, 5),
+        width_ratios=[1, 1, 1],
+    )
 
-    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+    entries = list(cgx.utilities.AtomliteDatabase(database_path).get_entries())
+    ff_entries = [i for i in entries if "_f-" in i.key]
+
+    systems = {}
+    for entry in entries:
         if "lowest_e_of_mash" not in entry.properties:
             continue
         multi = str(entry.properties["multiplier"])
-        l1 = entry.properties["l1"]
-        l2 = entry.properties["l2"]
-        pair = f"{l1}_{l2}"
-        if pair != target_pair:
-            continue
+        tidx = entry.properties["topology_idx"]
+        bidx = entry.properties["bb_config_idx"]
 
+        if entry.properties["pair"] != target_pair:
+            continue
         energy = entry.properties["energy_per_bb"]
-        min_distance = entry.properties["min_distance"]
 
-        if multi not in energies:
-            energies[multi] = []
+        ff_options = [i for i in ff_entries if i.key.startswith(entry.key)]
+        ff_energies = [
+            ff_entry.properties["energy_per_bb"] for ff_entry in ff_options
+        ]
+        ffidxs = [int(i.key.split("-")[-1]) for i in ff_options]
 
-        if entry.properties["num_components"] > 1:
-            continue
-        energies[multi].append((round(energy, 4), entry.key, min_distance))
+        systems[entry.key] = (energy, ff_energies, multi, tidx, bidx)
 
-    with (figure_dir / f"min_{pair}.txt").open("w") as f:
-        for multi, evalues in energies.items():
-            if len(evalues) == 0:
-                continue
+    rankings = {}
+    energies = [energy for energy, _, _, _, _ in systems.values()]
+    rankings[-1] = [energies.index(i) for i in sorted(energies)]
 
-            sorted_energies = sorted(evalues, key=lambda p: p[0])
-            min_energy = sorted_energies[0]
+    systems_counts_lt_1 = {
+        i: [-1] if values[0] < 1 else [] for i, values in systems.items()
+    }
 
-            sorted_pores = sorted(evalues, key=lambda p: p[2], reverse=True)
-            max_pore = sorted_pores[0]
+    systems_counts_as_best = {i: [] for i in systems}
+    systems_counts_as_best[list(systems.keys())[rankings[-1][0]]].append(-1)
 
-            offset = 20 * int(multi)
-            bbox = {"boxstyle": "round", "fc": "1.0"}
-            arrowprops = {
-                "arrowstyle": "->",
-                "connectionstyle": "angle,angleA=0,angleB=90,rad=10",
-            }
-            ax.annotate(
-                text=f"E: {round(min_energy[0], 3)} @ {min_energy[1]}",
-                xy=(min_energy[2], min_energy[0]),
-                xycoords="data",
-                xytext=(-0.5 * offset, -offset),
-                textcoords="offset points",
-                bbox=bbox,
-                arrowprops=arrowprops,
-                color=multi_cmap[multi],
-                fontsize=8,
-            )
-            offset = -20 * int(multi)
-            ax.annotate(
-                text=f"P: {round(max_pore[2], 3)} @ {max_pore[1]}",
-                xy=(max_pore[2], max_pore[0]),
-                xycoords="data",
-                xytext=(0.5 * offset, -offset),
-                textcoords="offset points",
-                bbox=bbox,
-                arrowprops=arrowprops,
-                color=multi_cmap[multi],
-                fontsize=8,
-            )
+    for idx in ffidxs:
+        energies = [
+            ffenergies[idx] for _, ffenergies, _, _, _ in systems.values()
+        ]
+        for system, values in systems.items():
+            if values[1][idx] < 1.0:
+                systems_counts_lt_1[system].append(idx)
 
-            ax.scatter(
-                [i[2] for i in evalues],
-                [i[0] for i in evalues],
-                marker="o",
-                c=multi_cmap[multi],
-                s=20,
-                ec="none",
-                alpha=0.3,
-                label=f"M={multi}",
-            )
-            ax.scatter(
-                min_energy[2],
-                min_energy[0],
-                marker="o",
-                c=multi_cmap[multi],
-                s=20,
+        rankings[idx] = [energies.index(i) for i in sorted(energies)]
+        lowest_energy = rankings[idx][0]
+
+        systems_counts_as_best[list(systems.keys())[lowest_energy]].append(idx)
+
+    labels = set()
+    for ix, (system, when_ranked) in enumerate(systems_counts_as_best.items()):
+        energies = [systems[system][0], *list(systems[system][1])]
+
+        count = len(when_ranked)
+        count_lt_1 = len(systems_counts_lt_1[system])
+        ax0.barh(
+            ix,
+            count_lt_1 / (len(ffidxs) + 1),
+            color=multi_cmap[systems[system][2]],
+            alpha=1,
+            height=0.8,
+            label=f"M={systems[system][2]}"
+            if systems[system][2] not in labels
+            else None,
+        )
+        ax.barh(
+            ix,
+            count / (len(ffidxs) + 1),
+            color=multi_cmap[systems[system][2]],
+            alpha=1,
+            height=0.8,
+            label=f"M={systems[system][2]}"
+            if systems[system][2] not in labels
+            else None,
+        )
+        labels.add(systems[system][2])
+
+        l1, l2, multi, tidx, midx, bidx = system.split("_")
+
+        if (multi, tidx, bidx) in (("3", "2", "b1"), ("4", "9", "b3")):
+            ax1.scatter(
+                [energies[0] for i, energy in enumerate(energies) if i != 0],
+                [energy for i, energy in enumerate(energies) if i != 0],
+                alpha=1,
                 ec="k",
+                s=120,
+                label=f"T: $m$: {systems[system][2]}, "
+                f"$t$: {systems[system][3]}"
+                f", $b$: {systems[system][4]}",
             )
-            opt_file = structure_dir / f"{min_energy[1]}_optc.mol"
-            f.write(f"{opt_file} ")
+
+        if count / (len(ffidxs) + 1) > 0:
+            ax1.scatter(
+                [
+                    energies[0]
+                    for i, energy in enumerate(energies)
+                    if i - 1 in when_ranked and i != 0
+                ],
+                [
+                    energy
+                    for i, energy in enumerate(energies)
+                    if i - 1 in when_ranked and i != 0
+                ],
+                alpha=1,
+                ec="k",
+                s=120,
+                label=f"$m$: {systems[system][2]}, $t$: {systems[system][3]}"
+                f", $b$: {systems[system][4]}",
+            )
+            ax.text(
+                count / (len(ffidxs) + 1) + 0.01,
+                ix,
+                f"$t$: {systems[system][3]}, $b$: {systems[system][4]}",
+                ha="left",
+                va="center",
+                fontsize=16,
+            )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(pore_str(), fontsize=16)
-    ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_yscale("log")
-    ax.set_xlim(0, 10)
+    ax.set_yticks([])
+    ax.set_xlim(0, 1.2)
+    ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_xlabel(f"prop. rank 1 (of {len(ffidxs) + 1})", fontsize=16)
+    ax.legend(fontsize=16)
 
-    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+    ax0.tick_params(axis="both", which="major", labelsize=16)
+    ax0.set_yticks([])
+    ax0.set_xlim(0, 1.2)
+    ax0.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    ax0.set_xlabel(f"prop. {eb_str()} < 1.0", fontsize=16)
 
-    ax.legend(ncols=1, fontsize=16)
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel(f"original {eb_str()}", fontsize=16)
+    ax1.set_ylabel(f"top ranked ffx {eb_str()}", fontsize=16)
+    ax1.plot((0, 10), (0, 10), c="k", zorder=-1)
+    ax1.set_xlim(0, 5)
+    ax1.set_ylim(0, 10)
+    ax1.legend(fontsize=16)
+
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -388,6 +589,96 @@ def make_summary_plot(
     )
     cbar.ax.tick_params(labelsize=16)
     cbar.set_label(f"1:1:1 {eb_str()}", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def parity_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    tarzia_result = {
+        # large, small.
+        ("la", "l1"): (0.54, "tab:orange"),
+        ("lb", "l1"): (0.35, "tab:blue"),
+        ("lc", "l1"): (0.34, "tab:blue"),
+        ("ld", "l1"): (0.32, "tab:orange"),
+        ("la", "l2"): (0.96, "tab:orange"),
+        ("lb", "l2"): (0.73, "tab:orange"),
+        ("lc", "l2"): (0.7, "tab:orange"),
+        ("ld", "l2"): (0.74, "tab:orange"),
+        ("la", "l3"): (1.19, "tab:orange"),
+        ("lb", "l3"): (0.94, "tab:orange"),
+        ("lc", "l3"): (0.92, "tab:orange"),
+        ("ld", "l3"): (0.96, "tab:orange"),
+        ("e10", "e16"): (0.47, "tab:blue"),
+        ("e17", "e16"): (0.25, "tab:blue"),
+        ("e17", "e10"): (0.35, "tab:orange"),
+        ("e10", "e11"): (0.61, "tab:blue"),
+        ("e14", "e16"): (0.44, "tab:blue"),
+        ("e14", "e18"): (0.55, "tab:blue"),
+        ("e10", "e18"): (0.59, "tab:blue"),
+        ("e10", "e12"): (0.61, "tab:blue"),
+        ("e14", "e11"): (0.57, "tab:blue"),
+        ("e14", "e12"): (0.57, "tab:blue"),
+        ("e13", "e11"): (0.5, "tab:blue"),
+        ("e13", "e12"): (0.5, "tab:blue"),
+        ("e14", "e13"): (0.65, "tab:orange"),
+        ("e12", "e11"): (0.66, "tab:orange"),
+    }
+
+    xs = []
+    ys = []
+    maxblue = 0
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+        multi = str(entry.properties["multiplier"])
+        l1 = str(entry.properties["l1"])
+        l2 = str(entry.properties["l2"])
+        if multi != "2" or (l1, l2) not in tarzia_result:
+            continue
+
+        x, c = tarzia_result[(l1, l2)]
+        y = entry.properties["energy_per_bb"]
+
+        xs.append(x)
+        ys.append(y)
+        if c == "tab:blue":
+            maxblue = max((maxblue, x))
+        ax.scatter(
+            x,
+            y,
+            c=c,
+            alpha=1.0,
+            edgecolor="k",
+            s=60,
+            marker="o",
+        )
+
+    ax.axhline(y=0.6, c="k")
+    ax.axvline(x=maxblue, c="k")
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(r"$g_{\mathrm{avg}}$", fontsize=16)
+    ax.set_ylabel(f"$m=2$ {eb_str()}", fontsize=16)
+    ax.set_xlim(0, None)
+    ax.set_ylim(0, None)
 
     fig.tight_layout()
     fig.savefig(
@@ -886,6 +1177,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgen_calculations"
     calculation_dir.mkdir(exist_ok=True)
+    ffcalculation_dir = calculation_dir / "ff_scan"
+    ffcalculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "mgen_structures"
     structure_dir.mkdir(exist_ok=True)
     ligand_dir = wd / "mgen_ligands"
@@ -1105,6 +1398,28 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         ("e12", "e11"),
     ]
 
+    attempts = (
+        None,
+        "regraphed-spring-10",
+        "regraphed-kamada-10",
+        "regraphed-spring-5",
+        "regraphed-kamada-5",
+        "regraphed-spring-3",
+        "regraphed-kamada-3",
+        "set-kamada-15",
+        "set-kamada-10",
+        "set-kamada-5",
+        "set-kamada-3",
+        "set-spring-15",
+        "set-spring-10",
+        "set-spring-5",
+        "set-spring-3",
+        "set-spectral-15",
+        "set-spectral-10",
+        "set-spectral-5",
+        "set-spectral-3",
+    )
+
     pairs = {}
     for large, small in pairs_to_predict:
         name = f"{large}_{small}"
@@ -1135,7 +1450,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             msg = small
             raise NotImplementedError(msg)
 
-        multi = (1, 2, 3, 4) if large in ("lf", "lf-f", "lf-x") else (1, 2, 3)
+        multi = (2, 3, 4) if large in ("lf", "lf-f", "lf-x") else (2, 3)
         pairs[name] = {
             "large_name": large,
             "small_name": small,
@@ -1227,28 +1542,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                 )
 
                 run_topology_codes = []
-                attempts = (
-                    None,
-                    "regraphed-spring-10",
-                    "regraphed-kamada-10",
-                    "regraphed-spring-5",
-                    "regraphed-kamada-5",
-                    "regraphed-spring-3",
-                    "regraphed-kamada-3",
-                    "set-kamada-15",
-                    "set-kamada-10",
-                    "set-kamada-5",
-                    "set-kamada-3",
-                    "set-spring-15",
-                    "set-spring-10",
-                    "set-spring-5",
-                    "set-spring-3",
-                    "set-spectral-15",
-                    "set-spectral-10",
-                    "set-spectral-5",
-                    "set-spectral-3",
-                )
-
                 for bb_config, (idx, topology_code) in it.product(
                     possible_bbdicts,
                     enumerate(iterator.yield_graphs()),
@@ -1444,6 +1737,110 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                         name=min_energy_name,
                     )
 
+                collated_entries = [
+                    i
+                    for i in cgx.utilities.AtomliteDatabase(
+                        database_path
+                    ).get_entries()
+                    if "_f-" not in i.key
+                    and i.properties["pair"] == pair
+                    and i.properties["multiplier"] == multiplier
+                    and "lowest_e_of_mash" in i.properties
+                ]
+
+                # Generate a series of new ffs.
+                forcefield_lib = tuple(
+                    generate_nearby_forcefields(
+                        forcefield=forcefield,
+                        actual_present_bead_elements={
+                            i.__class__.__name__
+                            for i in stk.BuildingBlock.init_from_rdkit_mol(
+                                atomlite.json_to_rdkit(
+                                    collated_entries[0].molecule
+                                )
+                            ).get_atoms()
+                        },
+                    ).yield_forcefields(),
+                )
+                logging.info(
+                    "exploring %s molecules with %s ffs",
+                    len(collated_entries),
+                    len(forcefield_lib),
+                )
+
+                for (ffidx, temp_forcefield), entry in it.product(
+                    enumerate(forcefield_lib), collated_entries
+                ):
+                    name = entry.key + f"_f-{ffidx}"
+
+                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
+                    if not fina_mol_file.exists():
+                        logging.info("optimising %s with ff %s", name, ffidx)
+                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
+                            atomlite.json_to_rdkit(entry.molecule)
+                        )
+                        conformer = cgx.utilities.run_optimisation(
+                            assigned_system=temp_forcefield.assign_terms(
+                                current_cage, name, ffcalculation_dir
+                            ),
+                            name=name,
+                            file_suffix=f"ff{ffidx}",
+                            output_dir=ffcalculation_dir,
+                            platform=None,
+                        )
+                        conformer.molecule.with_centroid((0, 0, 0)).write(
+                            fina_mol_file
+                        )
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_molecule(molecule=conformer.molecule, key=name)
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_properties(
+                            key=name,
+                            property_dict={
+                                "energy_decomposition": (
+                                    conformer.energy_decomposition,  # type:ignore[dict-item]
+                                ),
+                                "source": conformer.source,
+                                "optimised": True,
+                                "energy_per_bb": (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                ),
+                                "min_distance": (
+                                    cgx.analysis.GeomMeasure().calculate_min_distance(
+                                        conformer.molecule
+                                    )["min_distance"]
+                                ),
+                            },
+                        )
+
+    for pair in pairs:
+        make_plot(
+            database_path=database_path,
+            target_pair=pair,
+            figure_dir=figure_dir,
+            filename=f"mgen_1_{pair}.png",
+        )
+
+    raise SystemExit(
+        "SP workflow. Run the current code. Then do quick opt scan for "
+        "varying potential parameters. Do the min energies change?"
+    )
+
+    raise SystemExit
+    parity_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_8.png",
+    )
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -1472,15 +1869,11 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         figure_dir=figure_dir,
         filename="mgen_7.png",
     )
-    for pair in pairs:
-        make_plot(
-            database_path=database_path,
-            target_pair=pair,
-            structure_dir=structure_dir,
-            figure_dir=figure_dir,
-            filename=f"mgen_1_{pair}.png",
-        )
-    raise SystemExit("a plot that shows the three/2? distinct case studies")
+
+    raise SystemExit("show the known systems in the make plot")
+    raise SystemExit(
+        "a plot that shows the three/2? distinct case studies - for main"
+    )
     raise SystemExit("rethink binders, because it is not handling minus")
 
 
