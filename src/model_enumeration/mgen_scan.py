@@ -66,6 +66,7 @@ def analyse_cage(
                 energy_decomposition=properties["energy_decomposition"],
                 number_building_blocks=num_building_blocks,
             ),
+            "tstr": "3P6" if "3P6" in name else "4P8",
         },
     )
 
@@ -146,6 +147,7 @@ def make_energy_plot(
     combos: dict[str, dict[str, str | abc.Iterable]],
 ) -> None:
     """Visualise energies."""
+    target_tstr = "3P6" if "t" in filename else "4P8"
     fig, axs = plt.subplots(
         ncols=len(combos),
         nrows=2,
@@ -185,6 +187,8 @@ def make_energy_plot(
                 if combo != entry.key.split("_")[1]:
                     continue
 
+                if entry.properties["tstr"] != target_tstr:
+                    continue
                 ys.append(float(entry.properties["energy_per_bb"]))
                 if rowd["obs_source"] == "ff":
                     try:
@@ -234,6 +238,7 @@ def make_geom_plot(  # noqa: C901
     combos: dict[str, dict[str, str | abc.Iterable]],
 ) -> None:
     """Visualise energies."""
+    target_tstr = "3P6" if "t" in filename else "4P8"
     fig, axs = plt.subplots(ncols=7, nrows=5, figsize=(16, 16))
 
     row_plot = (
@@ -294,6 +299,8 @@ def make_geom_plot(  # noqa: C901
                 if combo != entry.key.split("_")[1]:
                     continue
 
+                if entry.properties["tstr"] != target_tstr:
+                    continue
                 xs.append(
                     float(
                         entry.properties["forcefield_dict"]["v_dict"][
@@ -366,6 +373,7 @@ def make_geom_grid(
     combos: dict[str, dict[str, str | abc.Iterable]],
 ) -> None:
     """Visualise energies."""
+    target_tstr = "3P6" if "t" in filename else "4P8"
     fig, axs = plt.subplots(
         ncols=4,
         nrows=2,
@@ -399,6 +407,8 @@ def make_geom_grid(
                 if combo != entry.key.split("_")[1]:
                     continue
 
+                if entry.properties["tstr"] != target_tstr:
+                    continue
                 xs = entry.properties[rowd["ffx"]]
                 ys = entry.properties[rowd["aay"]]
                 c = float(entry.properties["energy_per_bb"])
@@ -478,6 +488,7 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
     as_contour: bool,
 ) -> None:
     """Visualise energies."""
+    target_tstr = "3P6" if "t" in filename else "4P8"
     fig, axs = plt.subplots(ncols=4, nrows=2, figsize=(16, 10))
     cg_scale = 2
     flat_axs = axs.flatten()
@@ -592,9 +603,12 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
                 "$.energy_per_bb",
                 f"$.forcefield_dict.v_dict.{xoption}",
                 f"$.forcefield_dict.v_dict.{yoption}",
+                "$.tstr",
             ]
         )
+
         frame = frame.filter(pl.col("key").str.contains(cname))
+        frame = frame.filter(pl.col("$.tstr") == target_tstr)
 
         if frame.is_empty():
             continue
@@ -683,6 +697,7 @@ def make_main_contour_grid(
     as_contour: bool,
 ) -> None:
     """Visualise energies."""
+    target_tstr = "3P6" if "t" in filename else "4P8"
     fig, ax = plt.subplots(figsize=(6, 5))
 
     combo = "bac-dde"
@@ -739,11 +754,13 @@ def make_main_contour_grid(
     frame = cgx.utilities.AtomliteDatabase(database_path).get_property_df(
         properties=[
             "$.energy_per_bb",
+            "$.tstr",
             f"$.forcefield_dict.v_dict.{xoption}",
             f"$.forcefield_dict.v_dict.{yoption}",
         ]
     )
     frame = frame.filter(pl.col("key").str.contains(combo))
+    frame = frame.filter(pl.col("$.tstr") == target_tstr)
 
     xs = set(frame[f"$.forcefield_dict.v_dict.{xoption}"])
     ys = set(frame[f"$.forcefield_dict.v_dict.{yoption}"])
@@ -795,7 +812,7 @@ def make_main_contour_grid(
     plt.close()
 
 
-def main() -> None:  # noqa: PLR0915
+def main() -> None:  # noqa: C901, PLR0915
     """Run script."""
     args = _parse_args()
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
@@ -910,62 +927,79 @@ def main() -> None:  # noqa: PLR0915
                 )
                 diverging_bb = diverging_bb.clone()
 
-                name = f"scan_{cname}_{i}-{j}"
-                logging.info("building %s", name)
+                for toptions in ("4P8", "3P6"):
+                    tstr = "" if toptions == "4P8" else "_3P6"
+                    name = f"scan{tstr}_{cname}_{i}-{j}"
+                    logging.info("building %s", name)
 
-                cage = stk.ConstructedMolecule(
-                    cgx.topologies.CGM4L8(
-                        building_blocks={
-                            tetra_bb: (0, 1, 2, 3),
-                            converging_bb: (4, 6, 8, 10),
-                            diverging_bb: (5, 7, 9, 11),
-                        },
-                        vertex_positions=None,
-                        scale_multiplier=1.0,
-                    )
-                )
-                cage.write(str(structure_dir / f"{name}_unopt.mol"))
+                    if toptions == "4P8":
+                        cage = stk.ConstructedMolecule(
+                            cgx.topologies.CGM4L8(
+                                building_blocks={
+                                    tetra_bb: (0, 1, 2, 3),
+                                    converging_bb: (4, 6, 8, 10),
+                                    diverging_bb: (5, 7, 9, 11),
+                                },
+                                vertex_positions=None,
+                                scale_multiplier=1.0,
+                            )
+                        )
+                        num_bbs = 12
+                    elif toptions == "3P6":
+                        cage = stk.ConstructedMolecule(
+                            stk.cage.M3L6(
+                                building_blocks={
+                                    tetra_bb: (0, 1, 2),
+                                    converging_bb: (3, 5, 7),
+                                    diverging_bb: (4, 6, 8),
+                                },
+                                vertex_positions=None,
+                                scale_multiplier=1.0,
+                            )
+                        )
+                        num_bbs = 9
 
-                si, sj = name.split("_")[2].split("-")
-                potential_names = []
-                for cstr in combos:
-                    potential_names.extend(
-                        [
-                            f"scan_{cstr}_{int(si) - 2}-{int(sj) - 2}",
-                            f"scan_{cstr}_{int(si) - 1}-{int(sj) - 2}",
-                            f"scan_{cstr}_{int(si)}-{int(sj) - 2}",
-                            f"scan_{cstr}_{int(si) - 2}-{int(sj) - 1}",
-                            f"scan_{cstr}_{int(si) - 1}-{int(sj) - 1}",
-                            f"scan_{cstr}_{int(si)}-{int(sj) - 1}",
-                            f"scan_{cstr}_{int(si) - 2}-{int(sj)}",
-                            f"scan_{cstr}_{int(si) - 1}-{int(sj)}",
-                        ]
-                    )
+                    cage.write(str(structure_dir / f"{name}_unopt.mol"))
 
-                try:
-                    conformer = cgx.scram.optimise_cage(
-                        molecule=cage,
-                        name=name,
-                        output_dir=calculation_dir,
-                        forcefield=forcefield,
-                        platform=None,
-                        database_path=database_path,
-                        potential_names=potential_names,
-                    )
-                    if conformer is not None:
-                        conformer.molecule.with_centroid(
-                            np.array((0, 0, 0))
-                        ).write(str(structure_dir / f"{name}_optc.mol"))
+                    potential_names = []
+                    for cstr in combos:
+                        potential_names.extend(
+                            [
+                                f"scan{tstr}_{cstr}_{i - 2}-{j - 2}",
+                                f"scan{tstr}_{cstr}_{i - 1}-{j - 2}",
+                                f"scan{tstr}_{cstr}_{i}-{j - 2}",
+                                f"scan{tstr}_{cstr}_{i - 2}-{j - 1}",
+                                f"scan{tstr}_{cstr}_{i - 1}-{j - 1}",
+                                f"scan{tstr}_{cstr}_{i}-{j - 1}",
+                                f"scan{tstr}_{cstr}_{i - 2}-{j}",
+                                f"scan{tstr}_{cstr}_{i - 1}-{j}",
+                            ]
+                        )
 
-                    analyse_cage(
-                        database_path=database_path,
-                        name=name,
-                        forcefield=forcefield,
-                        num_building_blocks=12,
-                    )
+                    try:
+                        conformer = cgx.scram.optimise_cage(
+                            molecule=cage,
+                            name=name,
+                            output_dir=calculation_dir,
+                            forcefield=forcefield,
+                            platform=None,
+                            database_path=database_path,
+                            potential_names=potential_names,
+                        )
+                        if conformer is not None:
+                            conformer.molecule.with_centroid(
+                                np.array((0, 0, 0))
+                            ).write(str(structure_dir / f"{name}_optc.mol"))
 
-                except OpenMMException:
-                    pass
+                        analyse_cage(
+                            database_path=database_path,
+                            name=name,
+                            forcefield=forcefield,
+                            num_building_blocks=num_bbs,
+                        )
+
+                    except OpenMMException:
+                        pass
 
             # Rescan over the surface for improved energies.
             for (i, xp), (j, yp) in it.product(
@@ -985,66 +1019,92 @@ def main() -> None:  # noqa: PLR0915
                     vdw_bond_cutoff=2,
                 )
 
-                name = f"scan_{cname}_{i}-{j}"
-                logging.info("rescanning %s", name)
+                for toptions in ("4P8", "3P6"):
+                    tstr = "" if toptions == "4P8" else "_3P6"
+                    num_bbs = 12 if toptions == "4P8" else 9
+                    name = f"scan{tstr}_{cname}_{i}-{j}"
+                    logging.info("rescanning %s", name)
 
-                current_cage = stk.BuildingBlock.init_from_file(
-                    structure_dir / f"{name}_optc.mol"
-                )
-
-                potential_names = []
-
-                x_indices_of_interest = [
-                    pair_range_dict["xr"].index(x)
-                    for _, x in sorted(
-                        zip(
-                            [abs(i - xp) for i in pair_range_dict["xr"]],
-                            pair_range_dict["xr"],
-                            strict=False,
-                        )
+                    current_cage = stk.BuildingBlock.init_from_file(
+                        structure_dir / f"{name}_optc.mol"
                     )
-                ][:3]
-                y_indices_of_interest = [
-                    pair_range_dict["yr"].index(x)
-                    for _, x in sorted(
-                        zip(
-                            [abs(i - yp) for i in pair_range_dict["yr"]],
-                            pair_range_dict["yr"],
-                            strict=False,
+
+                    potential_names = []
+
+                    x_indices_of_interest = [
+                        pair_range_dict["xr"].index(x)
+                        for _, x in sorted(
+                            zip(
+                                [abs(i - xp) for i in pair_range_dict["xr"]],
+                                pair_range_dict["xr"],
+                                strict=False,
+                            )
                         )
+                    ][:3]
+                    y_indices_of_interest = [
+                        pair_range_dict["yr"].index(x)
+                        for _, x in sorted(
+                            zip(
+                                [abs(i - yp) for i in pair_range_dict["yr"]],
+                                pair_range_dict["yr"],
+                                strict=False,
+                            )
+                        )
+                    ][:3]
+
+                    for cstr, xidx, yidx in it.product(
+                        combos, x_indices_of_interest, y_indices_of_interest
+                    ):
+                        potential_names.append(
+                            f"scan{tstr}_{cstr}_{xidx}-{yidx}"
+                        )
+
+                    conformer = cgx.scram.optimise_from_files(
+                        molecule=current_cage,
+                        name=name,
+                        output_dir=calculation_dir,
+                        forcefield=forcefield,
+                        platform=None,
+                        database_path=database_path,
+                        potential_names=potential_names,
                     )
-                ][:3]
 
-                for cstr, xidx, yidx in it.product(
-                    combos, x_indices_of_interest, y_indices_of_interest
-                ):
-                    potential_names.append(f"scan_{cstr}_{xidx}-{yidx}")
+                    conformer.molecule.with_centroid(
+                        np.array((0, 0, 0))
+                    ).write(str(structure_dir / f"{name}_optc.mol"))
 
-                conformer = cgx.scram.optimise_from_files(
-                    molecule=current_cage,
-                    name=name,
-                    output_dir=calculation_dir,
-                    forcefield=forcefield,
-                    platform=None,
-                    database_path=database_path,
-                    potential_names=potential_names,
-                )
+                    analyse_cage(
+                        database_path=database_path,
+                        name=name,
+                        forcefield=forcefield,
+                        num_building_blocks=num_bbs,
+                    )
 
-                conformer.molecule.with_centroid(np.array((0, 0, 0))).write(
-                    str(structure_dir / f"{name}_optc.mol")
-                )
-
-                analyse_cage(
-                    database_path=database_path,
-                    name=name,
-                    forcefield=forcefield,
-                    num_building_blocks=12,
-                )
+    make_contour_grid(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_3t.png",
+        combos=combos,
+        as_contour=False,
+    )
+    make_contour_grid(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_3.png",
+        combos=combos,
+        as_contour=False,
+    )
 
     make_main_contour_grid(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="scan_6.png",
+        as_contour=True,
+    )
+    make_main_contour_grid(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_6t.png",
         as_contour=True,
     )
 
@@ -1054,17 +1114,25 @@ def main() -> None:  # noqa: PLR0915
         filename="scan_2.png",
         combos=combos,
     )
-    make_contour_grid(
+    make_geom_grid(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="scan_3.png",
+        filename="scan_2t.png",
         combos=combos,
-        as_contour=False,
     )
+
     make_contour_grid(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="scan_1.png",
+        combos=combos,
+        as_contour=True,
+    )
+
+    make_contour_grid(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_1t.png",
         combos=combos,
         as_contour=True,
     )
@@ -1074,10 +1142,22 @@ def main() -> None:  # noqa: PLR0915
         filename="scan_4.png",
         combos=combos,
     )
+    make_geom_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_4t.png",
+        combos=combos,
+    )
     make_energy_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="scan_5.png",
+        combos=combos,
+    )
+    make_energy_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_5t.png",
         combos=combos,
     )
 
