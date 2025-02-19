@@ -27,7 +27,7 @@ from model_enumeration.mgen_utilities import (
     precursors_to_forcefield,
     tetra_bead,
 )
-from model_enumeration.utilities import eb_str
+from model_enumeration.utilities import eb_str, multi_cmap
 
 logging.basicConfig(
     level=logging.INFO,
@@ -676,6 +676,125 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
     plt.close()
 
 
+def make_main_contour_grid(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+    as_contour: bool,
+) -> None:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    combo = "bac-dde"
+    xoption = "d_d_e"
+    yoption = "b_a_c"
+    experimental_m3s = (
+        (133, 150),
+        (133, 155),
+        (133, 145),
+    )
+    experimental_m4s = (
+        (133, 165),
+        (133, 167),
+    )
+    experimental_xrds = ((126.9, 166),)
+    xlbl = "$dde$  [$^\\circ$]"
+    ylbl = "$bac$  [$^\\circ$]"
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(xlbl, fontsize=16)
+    ax.set_ylabel(ylbl, fontsize=16)
+
+    ax.scatter(
+        [i[0] for i in experimental_m3s],
+        [i[1] for i in experimental_m3s],
+        c=multi_cmap["3"],
+        alpha=1.0,
+        edgecolor="k",
+        s=80,
+        marker="X",
+        zorder=2,
+    )
+    ax.scatter(
+        [i[0] for i in experimental_m4s],
+        [i[1] for i in experimental_m4s],
+        c=multi_cmap["4"],
+        alpha=1.0,
+        edgecolor="k",
+        s=80,
+        marker="X",
+        zorder=2,
+    )
+    ax.scatter(
+        [i[0] for i in experimental_xrds],
+        [i[1] for i in experimental_xrds],
+        c="cyan",
+        alpha=1.0,
+        edgecolor="k",
+        s=80,
+        marker="X",
+        zorder=2,
+    )
+
+    frame = cgx.utilities.AtomliteDatabase(database_path).get_property_df(
+        properties=[
+            "$.energy_per_bb",
+            f"$.forcefield_dict.v_dict.{xoption}",
+            f"$.forcefield_dict.v_dict.{yoption}",
+        ]
+    )
+    frame = frame.filter(pl.col("key").str.contains(combo))
+
+    xs = set(frame[f"$.forcefield_dict.v_dict.{xoption}"])
+    ys = set(frame[f"$.forcefield_dict.v_dict.{yoption}"])
+    # Plot the underlying grid.
+    if as_contour:
+        ax.scatter(
+            frame[f"$.forcefield_dict.v_dict.{xoption}"],
+            frame[f"$.forcefield_dict.v_dict.{yoption}"],
+            c="none",
+            alpha=0.4,
+            edgecolor="k",
+            s=50,
+            marker="s",
+            zorder=2,
+        )
+
+    frame = frame.sort(pl.col(f"$.forcefield_dict.v_dict.{xoption}")).sort(
+        pl.col(f"$.forcefield_dict.v_dict.{yoption}")
+    )
+    frame = frame.group_by(
+        f"$.forcefield_dict.v_dict.{xoption}", maintain_order=True
+    ).agg(pl.col("$.energy_per_bb"))
+
+    zs = np.array(frame["$.energy_per_bb"].to_list()).T
+    xs, ys = np.meshgrid(sorted(set(xs)), sorted(set(ys)))
+
+    if as_contour:
+        cs = ax.contourf(
+            xs,
+            ys,
+            zs,
+            levels=[0.0, 0.1, 0.3, 0.6, 1.0],
+            cmap="Blues_r",
+            alpha=0.8,
+            zorder=1,
+        )
+
+        cbar = fig.colorbar(cs)
+        cbar.ax.tick_params(labelsize=16)
+        cbar.ax.set_ylabel(eb_str(), fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(figure_dir / filename, dpi=360, bbox_inches="tight")
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def main() -> None:  # noqa: PLR0915
     """Run script."""
     args = _parse_args()
@@ -921,6 +1040,13 @@ def main() -> None:  # noqa: PLR0915
                     forcefield=forcefield,
                     num_building_blocks=12,
                 )
+
+    make_main_contour_grid(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_6.png",
+        as_contour=True,
+    )
 
     make_geom_grid(
         database_path=database_path,
