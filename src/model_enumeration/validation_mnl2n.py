@@ -8,12 +8,14 @@ import time
 import warnings
 from collections import defaultdict
 
+import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import polars as pl
+import stk
 from openmm import OpenMMException
 from rdkit import RDLogger
 
@@ -126,7 +128,7 @@ def make_opt_plot(
     plt.close()
 
 
-def make_plot(  # noqa: C901
+def make_plot(  # noqa: C901, PLR0915
     figure_dir: pathlib.Path,
     database_path: pathlib.Path,
     filename: str,
@@ -406,9 +408,15 @@ def make_summary_plot(
 
         if entry.properties["num_components"] > 1:
             continue
-        energies[(multi, bite_angle)].append((round(energy, 4), vstr))
+        energies[(multi, bite_angle)].append(
+            (round(energy, 4), vstr, entry.key)
+        )
         if energy < isomer_energy():
             to_save.append(entry.key)
+            rdkit_molecule = atomlite.json_to_rdkit(entry.molecule)
+            stk.BuildingBlock.init_from_rdkit_mol(rdkit_molecule).write(
+                structure_dir / f"{entry.key}_optc.mol"
+            )
 
     with tops.open("w") as f:
         for ts in sorted(to_save):
@@ -423,6 +431,12 @@ def make_summary_plot(
             energies[(multi, bite_angle)], key=lambda p: p[0]
         )
         min_energy = sorted_energies[0]
+
+        cgx.utilities.AtomliteDatabase(database_path).get_molecule(
+            min_energy[2]
+        ).with_centroid((0, 0, 0)).write(
+            structure_dir / f"{min_energy[2]}_optc.mol"
+        )
 
         x = int(bite_angle)
         y = int(multi)
@@ -699,11 +713,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         if args.nodoubles
         else "validationi_1c.png",
     )
-    raise SystemExit("main paper figure - not too high")
-    raise SystemExit("print the count of distinct graphs for each m")
-    raise SystemExit(
-        "put the opt plot and timings plot into one svg in the SI"
-    )
 
     make_plot(
         database_path=database_path,
@@ -736,6 +745,11 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         filename="validationd_times.png"
         if args.nodoubles
         else "validation_times.png",
+    )
+    raise SystemExit("main paper figure - not too high")
+    raise SystemExit("print the count of distinct graphs for each m")
+    raise SystemExit(
+        "put the opt plot and timings plot into one svg in the SI"
     )
 
 
