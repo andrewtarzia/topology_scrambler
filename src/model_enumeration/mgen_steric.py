@@ -252,7 +252,7 @@ def make_plot(
     filename: str,
 ) -> None:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(8, 3))
     cmaps = {
         "3P6-x": "tab:pink",
         "4P8-x": "tab:cyan",
