@@ -2,6 +2,11 @@
 default:
   @just --list
 
+# Install user environment.
+setup:
+  pip install '.'
+  mamba install -y openmm openmmtools
+
 # Install development environment.
 dev:
   pip install -e '.[dev]'
