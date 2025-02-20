@@ -4,13 +4,14 @@ import json
 import logging
 import pathlib
 import warnings
-from collections import Counter
+from collections import Counter, abc
 
 import cgexplore as cgx
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import rustworkx as rx
+import stk
 from rdkit import RDLogger
 
 from model_enumeration.mgen_utilities import (
@@ -28,6 +29,9 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
 
+mlogger = logging.getLogger("matplotlib")
+mlogger.setLevel(logging.WARNING)
+
 
 def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PLR0915
     """Analyse the rustworkx graphs."""
@@ -42,27 +46,24 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PL
         abead1=binder_bead,
     ).get_building_block()
 
+    fake_m12l24_path = (
+        pathlib.Path(__file__).parent.absolute() / "rxnd_12P24.json"
+    )
+
     stable_graphs = {
         "rx": {
             2: (1,),
             3: (2,),
-            4: (9,),
+            4: (0, 9),
             5: (27,),
-            6: (2, 52, 94, 14),
-            7: (82, 106),
-            8: (555, 104, 378),
-            9: (873, 39, 694, 696, 920),
-            10: (664, 37, 728),
+            6: (2, 14),
+            8: (555,),
         },
-        "rx_nodoubles": {
-            6: (0,),
-            8: (3,),
-            9: (9,),
-            11: (209,),
-        },
+        "rx_nodoubles": {6: (0,), 8: (3,), 10: (50,)},
+        "rx_fake": {},
     }
 
-    for gset in ("rx", "rx_nodoubles"):
+    for gset in ("rx", "rx_nodoubles", "rx_fake"):
         output = figure_dir / f"ganalysis_{gset}.json"
         if output.exists():
             with output.open("r") as f:
@@ -71,16 +72,29 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PL
         else:
             properties = {i: {} for i in multipliers}
             for multi in multipliers:
-                iterator = cgx.scram.TopologyIterator(
-                    building_block_counts={
-                        fake_tetra_bb: 1 * multi,
-                        fake_ditopic_bb: 2 * multi,
-                    },
-                    graph_type=f"{1 * multi}P{2 * multi}",
-                    graph_set=gset,
-                )
+                if gset == "rx_fake":
+                    with fake_m12l24_path.open("r") as f:
+                        all_graphs = json.load(f)
+                    graphs = [
+                        cgx.scram.TopologyCode(
+                            vertex_map=combination,
+                            as_string=cgx.scram.vmap_to_str(combination),
+                        )
+                        for combination in all_graphs
+                    ]
 
-                for idx, topology_code in enumerate(iterator.yield_graphs()):
+                else:
+                    iterator = cgx.scram.TopologyIterator(
+                        building_block_counts={
+                            fake_tetra_bb: 1 * multi,
+                            fake_ditopic_bb: 2 * multi,
+                        },
+                        graph_type=f"{1 * multi}P{2 * multi}",
+                        graph_set=gset,
+                    )
+                    graphs = list(iterator.yield_graphs())
+
+                for idx, topology_code in enumerate(graphs):
                     nx_graph = topology_code.get_nx_graph()
 
                     avg_eccentricity = np.mean(
@@ -136,67 +150,43 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PL
             with output.open("w") as f:
                 json.dump(properties, f)
 
-        pairs = (
-            ("avg_eccentricity", "diameter"),
-            ("multi", 6),
-            ("multi", 8),
-            ("multi", 10),
-        )
+        pair = ("avg_eccentricity", "diameter")
 
-        fig, axs = plt.subplots(ncols=2, nrows=2, figsize=(16, 10))
-        flat_axs = axs.flatten()
+        fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(8, 5))
+
         for multi, datas in properties.items():
-            for ax, pair in zip(flat_axs, pairs, strict=False):
-                if pair[0] == "multi":
-                    xs = [int(multi) for i in datas]
-                    xs1 = [int(multi) for i in datas if datas[i]["stable"]]
-                    ys = [
-                        int(datas[i]["counter"][str(pair[1])]) for i in datas
-                    ]
-                    ys1 = [
-                        int(datas[i]["counter"][str(pair[1])])
-                        for i in datas
-                        if datas[i]["stable"]
-                    ]
+            xs = [float(datas[i][pair[0]]) for i in datas]
+            xs1 = [
+                float(datas[i][pair[0]]) for i in datas if datas[i]["stable"]
+            ]
+            if pair[1] == "diameter":
+                ylbl = f"{pair[1]}/multi"
+                scale = int(multi)
+                ax.set_xlim(1, 13)
+                ax.set_ylim(0, 2)
+            else:
+                scale = 1
+                ylbl = pair[1]
+            ys = [float(datas[i][pair[1]]) / scale for i in datas]
+            ys1 = [
+                float(datas[i][pair[1]]) / scale
+                for i in datas
+                if datas[i]["stable"]
+            ]
+            ax.tick_params(axis="both", which="major", labelsize=16)
+            ax.set_xlabel(pair[0], fontsize=16)
+            ax.set_ylabel(ylbl, fontsize=16)
 
-                    ax.tick_params(axis="both", which="major", labelsize=16)
-                    ax.set_xlabel("multiplier", fontsize=16)
-                    ax.set_ylabel(f"count({pair[1]})", fontsize=16)
-
-                else:
-                    xs = [float(datas[i][pair[0]]) for i in datas]
-                    xs1 = [
-                        float(datas[i][pair[0]])
-                        for i in datas
-                        if datas[i]["stable"]
-                    ]
-                    if pair[1] == "diameter":
-                        ylbl = f"{pair[1]}/multi"
-                        scale = int(multi)
-                        ax.set_xlim(1, 13)
-                        ax.set_ylim(0, 2)
-                    else:
-                        scale = 1
-                        ylbl = pair[1]
-                    ys = [float(datas[i][pair[1]]) / scale for i in datas]
-                    ys1 = [
-                        float(datas[i][pair[1]]) / scale
-                        for i in datas
-                        if datas[i]["stable"]
-                    ]
-                    ax.tick_params(axis="both", which="major", labelsize=16)
-                    ax.set_xlabel(pair[0], fontsize=16)
-                    ax.set_ylabel(ylbl, fontsize=16)
-
-                ax.scatter(
-                    xs,
-                    ys,
-                    c="tab:gray",
-                    s=40,
-                    alpha=0.1,
-                    ec="none",
-                    zorder=1,
-                )
+            ax.scatter(
+                xs,
+                ys,
+                c="tab:gray",
+                s=40,
+                alpha=0.1,
+                ec="none",
+                zorder=1,
+            )
+            if len(xs1) > 0:
                 ax.scatter(
                     xs1,
                     ys1,
@@ -205,9 +195,11 @@ def analyse_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PL
                     alpha=1,
                     ec="k",
                     zorder=2,
+                    label=f"$m$={multi}",
                 )
 
-        filename = f"graph_analysis_{gset}_1"
+        ax.legend(fontsize=16)
+        filename = f"graph_analysis_{gset}_1.png"
         fig.tight_layout()
         fig.savefig(
             figure_dir / filename,
@@ -228,6 +220,8 @@ def count_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PLR0
 
     output = figure_dir / "count.json"
     gset = "rx"
+    # output = figure_dir / "count_nodoubles.json"  # noqa: ERA001
+    # gset = "rx_nodoubles"  # noqa: ERA001
 
     if output.exists():
         with output.open("r") as f:
@@ -381,6 +375,19 @@ def count_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PLR0
         )
 
     for idx, (title, c, m, s) in titles.items():
+        logging.info(
+            r"%s percentage change from all: %s percent",
+            title,
+            round(
+                (
+                    sum([i[1] for i in toplots[idx]])
+                    / sum([i[1] for i in toplots[0]])
+                )
+                * 100,
+                2,
+            ),
+        )
+
         ec = "none" if s < 12 else "k"  # noqa: PLR2004
         ax.plot(
             [i[0] for i in toplots[idx] if i[1] != 0],
@@ -402,7 +409,7 @@ def count_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PLR0
     ax.set_yscale("log")
     ax.legend(fontsize=16)
 
-    filename = f"graph_analysis_{gset}_2"
+    filename = f"graph_analysis_{gset}_2.png"
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -417,17 +424,139 @@ def count_graphs(figure_dir: pathlib.Path) -> None:  # noqa: C901, PLR0912, PLR0
     plt.close()
 
 
+def get_stk_topology_code(
+    tfunction: abc.Callable,
+) -> tuple[cgx.scram.TopologyCode, np.ndarray]:
+    """Get the default stk graph."""
+    vps = tfunction._vertex_prototypes  # noqa: SLF001
+    eps = tfunction._edge_prototypes  # noqa: SLF001
+
+    combination = [(i.get_vertex1_id(), i.get_vertex2_id()) for i in eps]
+    tc = cgx.scram.TopologyCode(
+        vertex_map=combination,
+        as_string=cgx.scram.vmap_to_str(combination),
+    )
+
+    positions = [i.get_position() for i in vps]
+
+    return tc, positions
+
+
+def find_stk_graphs() -> None:  # noqa: C901
+    """Analyse the rustworkx graphs matching to stk graphs."""
+    stk_graphs = {
+        2: (("2P4", stk.cage.M2L4Lantern),),
+        3: (("3P6", stk.cage.M3L6),),
+        4: (("4P8", cgx.topologies.CGM4L8), ("4P82", cgx.topologies.M4L82)),
+        5: (("5P10", stk.cage.FivePlusTen),),
+        6: (("6P12", stk.cage.M6L12Cube), ("6P122", cgx.topologies.M6L122)),
+        8: (
+            ("8P16", stk.cage.EightPlusSixteen),
+            ("8P162", cgx.topologies.M8L162),
+        ),
+        10: (("10P20", stk.cage.TenPlusTwenty),),
+        12: (("12P24", cgx.topologies.CGM12L24),),
+    }
+
+    fake_m12l24_path = (
+        pathlib.Path(__file__).parent.absolute() / "rxnd_12P24.json"
+    )
+
+    fake_ditopic_bb = cgx.molecular.TwoC1Arm(
+        bead=cbead_d,
+        abead1=abead_d,
+    ).get_building_block()
+    fake_tetra_bb = cgx.molecular.FourC1Arm(
+        bead=tetra_bead,
+        abead1=binder_bead,
+    ).get_building_block()
+
+    for multi, options in stk_graphs.items():
+        iterator1 = cgx.scram.TopologyIterator(
+            building_block_counts={
+                fake_tetra_bb: 1 * multi,
+                fake_ditopic_bb: 2 * multi,
+            },
+            graph_type=f"{1 * multi}P{2 * multi}",
+            graph_set="rx",
+        )
+        graphs1 = list(iterator1.yield_graphs())
+        logging.info(
+            "for m=%s from rx, there are %s graphs", multi, len(graphs1)
+        )
+        iterator2 = cgx.scram.TopologyIterator(
+            building_block_counts={
+                fake_tetra_bb: 1 * multi,
+                fake_ditopic_bb: 2 * multi,
+            },
+            graph_type=f"{1 * multi}P{2 * multi}",
+            graph_set="rx_nodoubles",
+        )
+        graphs2 = list(iterator2.yield_graphs())
+        logging.info(
+            "for m=%s from rx_nodoubles, there are %s graphs",
+            multi,
+            len(graphs2),
+        )
+
+        stk_tcs = {i[0]: get_stk_topology_code(i[1]) for i in options}
+
+        for idx, topology_code in enumerate(graphs1):
+            for name, (tc, _) in stk_tcs.items():
+                test_graph = tc.get_graph()
+                if rx.is_isomorphic(topology_code.get_graph(), test_graph):
+                    logging.info(
+                        "m=%s, from rx, graph %s is isomorphic to %s",
+                        multi,
+                        idx,
+                        name,
+                    )
+
+        for idx, topology_code in enumerate(graphs2):
+            for name, (tc, _) in stk_tcs.items():
+                test_graph = tc.get_graph()
+                if rx.is_isomorphic(topology_code.get_graph(), test_graph):
+                    logging.info(
+                        "m=%s, from rx_nodoubles, graph %s is "
+                        "isomorphic to %s",
+                        multi,
+                        idx,
+                        name,
+                    )
+
+        if multi == 12:  # noqa: PLR2004
+            with fake_m12l24_path.open("r") as f:
+                all_graphs = json.load(f)
+
+            logging.info(
+                "Loaded %d graphs from %s", len(all_graphs), fake_m12l24_path
+            )
+            for combination in all_graphs:
+                topology_code = cgx.scram.TopologyCode(
+                    vertex_map=combination,
+                    as_string=cgx.scram.vmap_to_str(combination),
+                )
+                for name, (tc, _) in stk_tcs.items():
+                    test_graph = tc.get_graph()
+                    if rx.is_isomorphic(topology_code.get_graph(), test_graph):
+                        logging.info(
+                            "m=%s, from rx_nodoubles with 1e6, graph %s is "
+                            "isomorphic to %s",
+                            multi,
+                            idx,
+                            name,
+                        )
+
+
 def main() -> None:
     """Run script."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     figure_dir = wd / "figures"
     figure_dir.mkdir(exist_ok=True)
 
+    find_stk_graphs()
     count_graphs(figure_dir)
     analyse_graphs(figure_dir)
-    raise SystemExit(
-        "for nx gen positions - can you mess around with clustering the geometries?"
-    )
 
 
 if __name__ == "__main__":
