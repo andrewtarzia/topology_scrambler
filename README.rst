@@ -35,47 +35,49 @@ This will not install other dependencies available through conda:
 
 CREST must be downloaded from `crest <https://crest-lab.github.io/crest-docs/page/documentation/keywords.html>`_
 
-.. important::
-    In each script, you will have to update the environment variables, namely
-    the paths where the data is written to and where some software is.
+Important
+---------
+
+In each script, you will have to update the environment variables, namely
+the paths where the data is written to and where some software is.
 
 Projects scripts
 ================
 
-* ``model_enumeration.all_database_analysis`` Does something.
+From ``model_enumeration``, you get the following scripts available in the
+command line.
+
+Section 1: Angle hunter
+-----------------------
+
+``angle_hunter`` Does something.
+
+``plot_li2023_maps`` Does something.
+
+``plot_sudan2021_maps`` Does something.
 
 
-* ``model_enumeration.analyse_graphs`` Does something.
+Section 2: Torsion environment hunter
+-------------------------------------
+
+``environment_hunter`` Does something.
 
 
-* ``model_enumeration.angle_hunter`` Does something.
+Section 3: Structure prediction
+-------------------------------
 
+``validation_mnl2n`` Does something.
+``mgen_crest_analysis`` Does something.
+``mgen_generation`` Does something.
+``mgen_scan`` Does something.
+``mgen_steric`` Does something.
 
-* ``model_enumeration.plot_geometrical`` Does something.
+Section 4: Graph and database analysis
+--------------------------------------
 
-
-* ``model_enumeration.plot_li2023_maps`` Does something.
-
-
-* ``model_enumeration.plot_sudan2021_maps`` Does something.
-
-
-* ``model_enumeration.environment_hunter`` Does something.
-
-
-* ``model_enumeration.mgen_crest_analysis`` Does something.
-
-
-* ``model_enumeration.mgen_generation`` Does something.
-
-
-* ``model_enumeration.mgen_scan`` Does something.
-
-
-* ``model_enumeration.mgen_steric`` Does something.
-
-
-* ``model_enumeration.validation_mnl2n`` Does something.
+``all_database_analysis`` Does something.
+``analyse_graphs`` Does something.
+``plot_geometrical`` Does something.
 
 
 Acknowledgements
