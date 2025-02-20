@@ -14,11 +14,20 @@ This project is built on
 Installation
 ============
 
-This code can be installed by cloning this repository and using `just <https://github.com/casey/just>`_:
+This code can be installed by cloning this repository and either using
+`just <https://github.com/casey/just>`_:
 
 .. code-block:: bash
 
   just dev
+
+
+or using ``conda``/``mamba`` (this will give the exact environment used in the paper):
+
+.. code-block:: bash
+
+  conda env create -f environment.yml
+  mamba env create -f environment.yml
 
 This will install the ``model_enumeration`` in a development state allowing
 you to edit the source code, and will install the required dependencies
