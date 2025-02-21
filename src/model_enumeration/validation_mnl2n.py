@@ -65,10 +65,6 @@ def make_opt_plot(
         "opt1",
         "smd",
         "shifted",
-        "nx0",
-        "nx1",
-        "nx2",
-        "nx3",
         "nx00",
         "nx10",
         "nx20",
@@ -81,7 +77,6 @@ def make_opt_plot(
         "nx12",
         "nx22",
         "nx32",
-        "ns",
     )
     sources = {i: 0 for i in stages}
     # Produces low energy structures.
@@ -310,9 +305,9 @@ def make_main_plot(
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_xlim(85, 155)
     ax.set_xticks([90, 100, 110, 120, 130, 140, 150])
-    ax.set_yscale("log")
+    ax.set_ylim(0, 2)
 
-    leg = ax.legend(ncols=1, fontsize=12)
+    leg = ax.legend(ncols=3, fontsize=12)
     for lh in leg.legend_handles:
         lh.set_alpha(1)
 
@@ -357,6 +352,7 @@ def make_timings_plot(
         alpha=1,
         label="optimisation time",
         ec="k",
+        rasterized=True,
     )
     ax.scatter(
         timings["num_vertices"],
@@ -366,17 +362,20 @@ def make_timings_plot(
         alpha=1,
         label="analysis time",
         ec="k",
+        rasterized=True,
     )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("num. vertices", fontsize=16)
     ax.set_ylabel("time [s]", fontsize=16)
-    ax.set_yscale("log")
+    ax.set_xlim(0, 40)
+    ax.set_ylim(0, 50)
     ax.legend(fontsize=16)
 
     fig.tight_layout()
+    fig.savefig(figure_dir / filename, dpi=360, bbox_inches="tight")
     fig.savefig(
-        figure_dir / filename,
+        figure_dir / filename.replace(".png", ".pdf"),
         dpi=360,
         bbox_inches="tight",
     )
@@ -413,6 +412,12 @@ def make_summary_plot(
         )
         if energy < isomer_energy():
             to_save.append(entry.key)
+            rdkit_molecule = atomlite.json_to_rdkit(entry.molecule)
+            stk.BuildingBlock.init_from_rdkit_mol(rdkit_molecule).write(
+                structure_dir / f"{entry.key}_optc.mol"
+            )
+
+        if multi == "4":
             rdkit_molecule = atomlite.json_to_rdkit(entry.molecule)
             stk.BuildingBlock.init_from_rdkit_mol(rdkit_molecule).write(
                 structure_dir / f"{entry.key}_optc.mol"
@@ -706,6 +711,21 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     else "validationi_1.png",
                 )
 
+    make_summary_plot(
+        database_path=database_path,
+        structure_dir=structure_dir,
+        figure_dir=figure_dir,
+        filename="validationd_2.png"
+        if args.nodoubles
+        else "validationi_2.png",
+    )
+    make_timings_plot(
+        timing_file=timing_file,
+        figure_dir=figure_dir,
+        filename="validationd_times.png"
+        if args.nodoubles
+        else "validation_times.png",
+    )
     make_main_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -728,28 +748,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
         filename="validationd_5.png"
         if args.nodoubles
         else "validationi_5.png",
-    )
-
-    make_summary_plot(
-        database_path=database_path,
-        structure_dir=structure_dir,
-        figure_dir=figure_dir,
-        filename="validationd_2.png"
-        if args.nodoubles
-        else "validationi_2.png",
-    )
-
-    make_timings_plot(
-        timing_file=timing_file,
-        figure_dir=figure_dir,
-        filename="validationd_times.png"
-        if args.nodoubles
-        else "validation_times.png",
-    )
-    raise SystemExit("main paper figure - not too high")
-    raise SystemExit("print the count of distinct graphs for each m")
-    raise SystemExit(
-        "put the opt plot and timings plot into one svg in the SI"
     )
 
 
