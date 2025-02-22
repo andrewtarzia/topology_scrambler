@@ -140,7 +140,7 @@ def analyse_cage(
     )
 
 
-def make_energy_plot(
+def make_energy_plot(  # noqa: C901
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
@@ -160,8 +160,8 @@ def make_energy_plot(
         {
             "ffx": "b_a_c",
             "aay": "diverging_binder_binder_angles",
-            "xlim": (None, None),
-            "ylim": (None, None),
+            "xlim": (0, 180),
+            "ylim": (0, 20),
             "ylbl": eb_str(),
             "xlbl": "rigid angle  [$^\\circ$]",
             "obs_source": "bba",
@@ -169,8 +169,8 @@ def make_energy_plot(
         {
             "ffx": "d_d_e",
             "aay": "converging_binder_binder_angles",
-            "xlim": (None, None),
-            "ylim": (None, None),
+            "xlim": (0, 180),
+            "ylim": (0, 20),
             "ylbl": eb_str(),
             "xlbl": "twistable angle  [$^\\circ$]",
             "obs_source": "bba",
@@ -184,7 +184,7 @@ def make_energy_plot(
             for entry in cgx.utilities.AtomliteDatabase(
                 database_path
             ).get_entries():
-                if combo != entry.key.split("_")[1]:
+                if combo not in tuple(entry.key.split("_")):
                     continue
 
                 if entry.properties["tstr"] != target_tstr:
@@ -239,7 +239,7 @@ def make_geom_plot(  # noqa: C901
 ) -> None:
     """Visualise energies."""
     target_tstr = "3P6" if "t" in filename else "4P8"
-    fig, axs = plt.subplots(ncols=7, nrows=5, figsize=(16, 16))
+    fig, axs = plt.subplots(ncols=8, nrows=5, figsize=(16, 16))
 
     row_plot = (
         {
@@ -296,7 +296,7 @@ def make_geom_plot(  # noqa: C901
             for entry in cgx.utilities.AtomliteDatabase(
                 database_path
             ).get_entries():
-                if combo != entry.key.split("_")[1]:
+                if combo not in tuple(entry.key.split("_")):
                     continue
 
                 if entry.properties["tstr"] != target_tstr:
@@ -404,11 +404,12 @@ def make_geom_grid(
             for entry in cgx.utilities.AtomliteDatabase(
                 database_path
             ).get_entries():
-                if combo != entry.key.split("_")[1]:
+                if combo not in tuple(entry.key.split("_")):
                     continue
 
                 if entry.properties["tstr"] != target_tstr:
                     continue
+
                 xs = entry.properties[rowd["ffx"]]
                 ys = entry.properties[rowd["aay"]]
                 c = float(entry.properties["energy_per_bb"])
@@ -498,14 +499,21 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "a_c"
             xoption2 = "a_a"
             yoption = "b_a_c"
-            experimental_xs = (
+            experimental_m3s = (
                 (4.9 / (2 * cg_scale), 150),
                 (4.7 / (2 * cg_scale), 155),
                 (5.0 / (2 * cg_scale), 145),
                 (5.0 / (2 * cg_scale), 150),
+            )
+            experimental_m4s = (
                 (5.3 / (2 * cg_scale), 165),
                 (5.4 / (2 * cg_scale), 167),
             )
+            experimental_xrds = (
+                (5.25 / (2 * cg_scale), 166),
+                (5.0 / (2 * cg_scale), 150),
+            )
+
             xlbl = r"$ac$  [$\mathrm{\AA}$]"
             ylbl = "$bac$  [$^\\circ$]"
 
@@ -513,13 +521,10 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "d_d_e"
             xoption2 = None
             yoption = "b_a_c"
-            experimental_xs = (
-                (133, 150),
-                (133, 155),
-                (133, 145),
-                (133, 165),
-                (133, 167),
-            )
+            experimental_m3s = ((133, 150), (133, 155), (133, 145))
+            experimental_m4s = ((133, 165), (133, 167))
+            experimental_xrds = ((126.9, 166), (124.7, 150), (126.0, 150))
+
             xlbl = "$dde$  [$^\\circ$]"
             ylbl = "$bac$  [$^\\circ$]"
 
@@ -527,7 +532,14 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "d_d_e"
             xoption2 = None
             yoption = "d_d"
-            experimental_xs = ((133, 8.0 / cg_scale),)
+            experimental_m3s = ((133, 6.0 / cg_scale),)
+            experimental_m4s = ((133, 6.0 / cg_scale),)
+            experimental_xrds = (
+                (126.9, 7.87 / cg_scale),
+                (124.7, 7.86 / cg_scale),
+                (126.0, 7.97 / cg_scale),
+            )
+
             xlbl = "$dde$  [$^\\circ$]"
             ylbl = r"$dd$  [$\mathrm{\AA}$]"
 
@@ -535,13 +547,20 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "d_d"
             xoption2 = None
             yoption = "b_a_c"
-            experimental_xs = (
-                (8.0 / cg_scale, 150),
-                (8.0 / cg_scale, 155),
-                (8.0 / cg_scale, 145),
-                (8.0 / cg_scale, 165),
-                (8.0 / cg_scale, 167),
+            experimental_m3s = (
+                (6.0 / cg_scale, 150),
+                (6.0 / cg_scale, 155),
+                (6.0 / cg_scale, 145),
             )
+            experimental_m4s = (
+                (6.0 / cg_scale, 164),
+                (6.0 / cg_scale, 167),
+            )
+            experimental_xrds = (
+                (6.02 / cg_scale, 166),
+                (6.01 / cg_scale, 150),
+            )
+
             xlbl = r"$dd$  [$\mathrm{\AA}$]"
             ylbl = "$bac$  [$^\\circ$]"
 
@@ -549,7 +568,14 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "d_d_e"
             xoption2 = None
             yoption = "d_e"
-            experimental_xs = ((133, 4.3 / cg_scale),)
+            experimental_m3s = ((133, 5.7 / cg_scale),)
+            experimental_m4s = ((133, 5.7 / cg_scale),)
+            experimental_xrds = (
+                (126.9, 5.73 / cg_scale),
+                (124.7, 5.73 / cg_scale),
+                (126.0, 5.73 / cg_scale),
+            )
+
             xlbl = "$dde$  [$^\\circ$]"
             ylbl = r"$de$  [$\mathrm{\AA}$]"
 
@@ -557,7 +583,10 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "d_d"
             xoption2 = None
             yoption = "d_e"
-            experimental_xs = ((8.0 / cg_scale, 4.3 / cg_scale),)
+            experimental_m3s = ((6.0 / cg_scale, 5.7 / cg_scale),)
+            experimental_m4s = ((6.0 / cg_scale, 5.7 / cg_scale),)
+            experimental_xrds = ((6.01 / cg_scale, 5.73 / cg_scale),)
+
             xlbl = r"$dd$  [$\mathrm{\AA}$]"
             ylbl = r"$de$  [$\mathrm{\AA}$]"
 
@@ -565,14 +594,31 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
             xoption = "d_e"
             xoption2 = None
             yoption = "b_a_c"
-            experimental_xs = (
-                (4.3 / cg_scale, 150),
-                (4.3 / cg_scale, 155),
-                (4.3 / cg_scale, 145),
-                (4.3 / cg_scale, 165),
-                (4.3 / cg_scale, 167),
+            experimental_m3s = (
+                (5.7 / cg_scale, 150),
+                (5.7 / cg_scale, 155),
+                (5.7 / cg_scale, 145),
+            )
+            experimental_m4s = (
+                (5.7 / cg_scale, 165),
+                (5.7 / cg_scale, 167),
+            )
+            experimental_xrds = (
+                (5.73 / cg_scale, 166),
+                (5.73 / cg_scale, 150),
             )
             xlbl = r"$de$  [$\mathrm{\AA}$]"
+            ylbl = "$bac$  [$^\\circ$]"
+
+        elif combo == "bac-deg":
+            xoption = "d_e_g"
+            xoption2 = None
+            yoption = "b_a_c"
+            experimental_m3s = ((180, 150), (180, 155), (180, 145))
+            experimental_m4s = ((180, 165), (180, 167))
+            experimental_xrds = ()
+
+            xlbl = "$deg$  [$^\\circ$]"
             ylbl = "$bac$  [$^\\circ$]"
 
         else:
@@ -583,9 +629,29 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
         ax.set_ylabel(ylbl, fontsize=16)
 
         ax.scatter(
-            [i[0] for i in experimental_xs],
-            [i[1] for i in experimental_xs],
-            c="tab:red",
+            [i[0] for i in experimental_m3s],
+            [i[1] for i in experimental_m3s],
+            c=multi_cmap["3"],
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
+            marker="X",
+            zorder=2,
+        )
+        ax.scatter(
+            [i[0] for i in experimental_m4s],
+            [i[1] for i in experimental_m4s],
+            c=multi_cmap["4"],
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
+            marker="X",
+            zorder=2,
+        )
+        ax.scatter(
+            [i[0] for i in experimental_xrds],
+            [i[1] for i in experimental_xrds],
+            c="cyan",
             alpha=1.0,
             edgecolor="k",
             s=80,
@@ -672,7 +738,7 @@ def make_contour_grid(  # noqa: C901, PLR0912, PLR0915
                     alpha=0.8,
                     zorder=1,
                 )
-                if combo == "bac-de":
+                if combo == "dd-de":
                     cbar = fig.colorbar(cs)
                     cbar.ax.tick_params(labelsize=16)
                     cbar.ax.set_ylabel(eb_str(), fontsize=16)
@@ -712,7 +778,8 @@ def make_main_contour_grid(
         (133, 165),
         (133, 167),
     )
-    experimental_xrds = ((126.9, 166),)
+    experimental_xrds = ((126.9, 166), (124.7, 150), (126.0, 150))
+
     xlbl = "$dde$  [$^\\circ$]"
     ylbl = "$bac$  [$^\\circ$]"
 
@@ -842,9 +909,10 @@ def main() -> None:  # noqa: C901, PLR0915
         }
     )
 
+    deg_range = sorted({*list(np.linspace(160.0, 180.0, 5))})
     dde_range = sorted({*list(np.linspace(115.0, 175.0, 10)), 133.0})
-    dd_range = sorted({*list(np.linspace(4.0, 10.0, 5)), 8.0})
-    de_range = sorted({*list(np.linspace(2.0, 5.0, 5)), 4.3})
+    dd_range = sorted({*list(np.linspace(4.0, 10.0, 5)), 6.0})
+    de_range = sorted({*list(np.linspace(2.0, 7.0, 10)), 5.7})
 
     pair = "lf_l2"
     converging = cgx.molecular.SixBead(
@@ -859,6 +927,7 @@ def main() -> None:  # noqa: C901, PLR0915
 
     combos = {
         "bac-aa": {"yr": bac_range, "xr": aa_range, "yl": "l2", "xl": "l2"},
+        "bac-deg": {"yr": bac_range, "xr": deg_range, "yl": "l2", "xl": "lf"},
         "bac-dde": {"yr": bac_range, "xr": dde_range, "yl": "l2", "xl": "lf"},
         "bac-dd": {"yr": bac_range, "xr": dd_range, "yl": "l2", "xl": "lf"},
         "bac-de": {"yr": bac_range, "xr": de_range, "yl": "l2", "xl": "lf"},
@@ -874,8 +943,8 @@ def main() -> None:  # noqa: C901, PLR0915
                 "lf": {
                     "egb": 120.0,
                     "deg": 180.0,
-                    "dd": 8.0,
-                    "de": 4.3,
+                    "dd": 6.0,
+                    "de": 5.7,
                     "dde": 133.0,
                     "eg": 1.4,
                     "gb": 1.4,
