@@ -16,7 +16,6 @@ import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
 
-from model_enumeration.mgen_known import convert_coordinates
 from model_enumeration.mgen_utilities import (
     StericTwoC1Arm,
     abead_c,
@@ -29,7 +28,12 @@ from model_enumeration.mgen_utilities import (
     steric_bead,
     tetra_bead,
 )
-from model_enumeration.utilities import convert_topo, eb_str, topology_cmap
+from model_enumeration.utilities import (
+    convert_topo,
+    eb_str,
+    isomer_energy,
+    topology_cmap,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +41,20 @@ logging.basicConfig(
 )
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore")
+
+
+def convert_coordinates(
+    molecule: stk.ConstructedMolecule,
+    nx_positions: np.ndarray,
+) -> stk.ConstructedMolecule:
+    """Convert networkx coordinates to molecule position matrix."""
+    # We allow these to independantly fail because the nx graphs can
+    # be ridiculous, just get the first that passes.
+    for scaler in (3, 5, 10, 15):
+        pos_mat = np.array([nx_positions[i] for i in nx_positions])
+        new_mol = molecule.with_position_matrix(pos_mat * scaler)
+        break
+    return new_mol.with_centroid(np.array((0.0, 0.0, 0.0)))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -68,6 +86,7 @@ def analyse_cage(
                 energy_decomposition=properties["energy_decomposition"],
                 number_building_blocks=num_building_blocks,
             ),
+            "num_bbs": num_building_blocks,
         },
     )
 
@@ -175,8 +194,8 @@ def make_geom_grid(
     }
 
     cmaps = {
-        "3P6-x": "tab:pink",
-        "4P8-x": "tab:cyan",
+        "3P6-x": topology_cmap["4P6"],
+        "4P8-x": topology_cmap["4P62"],
     }
     lbls = set()
     for tstr in ("3P6", "4P8", "3P6-x", "4P8-x"):
@@ -250,25 +269,32 @@ def make_plot(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
+    nonbonded: bool = False,
 ) -> None:
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(8, 3))
     cmaps = {
-        "3P6-x": "tab:pink",
-        "4P8-x": "tab:cyan",
+        "3P6-x": topology_cmap["4P6"],
+        "4P8-x": topology_cmap["4P62"],
     }
     datas: dict[str, dict[str, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         tstr = entry.key.split("_")[1]
-        if (
-            "forcefield_dict" not in entry.properties
-            or "forcefield_dict" not in entry.properties
-        ):
+        if "forcefield_dict" not in entry.properties:
             continue
         x = entry.properties["forcefield_dict"]["v_dict"]["s"]
-        y = entry.properties["energy_per_bb"]
+        if nonbonded:
+            y = (
+                entry.properties["energy_decomposition"][
+                    "(3, 'CustomNonbondedForce')"
+                ][0]
+                / entry.properties["num_bbs"]
+            )
+
+        else:
+            y = entry.properties["energy_per_bb"]
 
         datas[tstr][x].append(y)
 
@@ -280,9 +306,12 @@ def make_plot(
             colour = cmaps[tstr]
             label = convert_topo(tstr.replace("-x", "")) + "-x"
 
+        min_e = min([min(tdatas[i]) for i in tdatas])
+
         ax.plot(
             list(tdatas),
-            [min(tdatas[i]) for i in tdatas],
+            [(min(tdatas[i]) / min_e) - 1 for i in tdatas],
+            # [min(tdatas[i]) for i in tdatas],
             alpha=1.0,
             marker="o",
             markerfacecolor=colour,
@@ -290,16 +319,20 @@ def make_plot(
             markersize=10,
             ls="-",
             label=label,
-            c="k" if "s" in tstr else "w",
+            c=colour,
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel(r"$\sigma_{s}$  [$\mathrm{\AA}$]", fontsize=16)
-    ax.set_ylabel(eb_str(), fontsize=16)
+    if nonbonded:
+        ax.set_ylabel(f"nonbonded\n{eb_str()}", fontsize=16)
+    else:
+        ax.set_ylabel(eb_str(), fontsize=16)
 
     ax.legend(ncol=1, fontsize=16)
+    ax.set_ylim(0.001, 5)
     ax.set_yscale("log")
-
+    ax.axhline(y=isomer_energy(), c="k")
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -347,8 +380,8 @@ def ss_plot(
     xlbl = r"$r_{s-s}$ [$\AA$]"
 
     cmaps = {
-        "3P6-x": "tab:pink",
-        "4P8-x": "tab:cyan",
+        "3P6-x": topology_cmap["4P6"],
+        "4P8-x": topology_cmap["4P62"],
     }
     for tstr, tdatas in datas.items():
         try:
@@ -399,6 +432,84 @@ def ss_plot(
     plt.close()
 
 
+def ss_energy_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> None:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    datas: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(tuple)
+    )
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        tstr = entry.key.split("_")[1]
+        if (
+            "forcefield_dict" not in entry.properties
+            or "forcefield_dict" not in entry.properties
+        ):
+            continue
+        if "min_ss_dist" not in entry.properties:
+            continue
+        c = entry.properties["forcefield_dict"]["v_dict"]["s"]
+
+        x = entry.properties["min_ss_dist"]
+        y = entry.properties["energy_per_bb"]
+
+        try:
+            if entry.properties["energy_per_bb"] < datas[tstr][c][0]:
+                datas[tstr][c] = (y, x)
+        except IndexError:
+            datas[tstr][c] = (y, x)
+
+    xlbl = r"min. $r_{s-s}$ [\mathrm{AA}]"
+
+    cmaps = {
+        "3P6-x": topology_cmap["4P6"],
+        "4P8-x": topology_cmap["4P62"],
+    }
+    for tstr, tdatas in datas.items():
+        try:
+            colour = topology_cmap[tstr]
+            label = convert_topo(tstr)
+        except KeyError:
+            colour = cmaps[tstr]
+            label = convert_topo(tstr.replace("-x", "")) + "-x"
+
+        ax.plot(
+            [tdatas[i][1] for i in tdatas],
+            [tdatas[i][0] for i in tdatas],
+            alpha=1,
+            c=colour,
+            label=label,
+            marker="o",
+            markersize=8,
+            markerfacecolor=colour,
+            markeredgecolor="k",
+            markeredgewidth=1,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_xlabel(xlbl, fontsize=16)
+    ax.legend(ncol=1, fontsize=16)
+    ax.set_yscale("log")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def main() -> None:  # noqa: C901, PLR0912, PLR0915
     """Run script."""
     args = _parse_args()
@@ -415,6 +526,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
     figure_dir.mkdir(exist_ok=True)
     database_path = data_dir / "mgensteric.db"
 
+    vdw_bond_cutoff = 4
     s_range = list(np.linspace(0.0, 7.0, 15))
 
     pair = "lf_l2"
@@ -444,8 +556,8 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                         "lf": {
                             "egb": 120.0,
                             "deg": 180.0,
-                            "dd": 7.87,
-                            "de": 4.25,
+                            "dd": 6.02,
+                            "de": 5.73,
                             "dde": 125.0,
                             "eg": 1.4,
                             "gb": 1.4,
@@ -456,11 +568,11 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 else:
                     ligand_measures = {
                         "lf": {
-                            "egb": 120.0,
-                            "deg": 180.0,
-                            "dd": 8.0,
-                            "de": 4.25,
-                            "dde": 125.0,
+                            "egb": 120,
+                            "deg": 180,
+                            "dd": 6.0,
+                            "de": 5.7,
+                            "dde": 134,
                             "eg": 1.4,
                             "gb": 1.4,
                         },
@@ -476,7 +588,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                     small=diverging,
                     large_meas=ligand_measures[converging_name],
                     small_meas=ligand_measures[diverging_name],
-                    vdw_bond_cutoff=2,
+                    vdw_bond_cutoff=vdw_bond_cutoff,
                 )
 
                 converging_bb = cgx.utilities.optimise_ligand(
@@ -712,7 +824,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                     small=diverging,
                     large_meas=ligand_measures[converging_name],
                     small_meas=ligand_measures[diverging_name],
-                    vdw_bond_cutoff=2,
+                    vdw_bond_cutoff=vdw_bond_cutoff,
                 )
 
                 name = f"scan_{textstr}_{cname}_{i}"
@@ -769,10 +881,21 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="scan_1.png",
     )
+    make_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_4.png",
+        nonbonded=True,
+    )
     ss_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="scan_3.png",
+    )
+    ss_energy_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="scan_5.png",
     )
 
 
