@@ -259,3 +259,22 @@ def cage_topology_options(
             raise RuntimeError(msg)
 
     return topologies
+
+
+def contains_parallels(topology_code: cgx.scram.TopologyCode) -> bool:
+    """True if the graph contains "1-loops"."""
+    weighted_graph = topology_code.get_weighted_graph()
+    num_parallel_edges = len(
+        [
+            i
+            for i in weighted_graph.edges()
+            if i == 2  # noqa: PLR2004
+        ]
+    )
+
+    return num_parallel_edges != 0
+
+
+def percent_change(value: float, percent: float) -> float:
+    """Get a percentage change."""
+    return value * (percent / 100)
