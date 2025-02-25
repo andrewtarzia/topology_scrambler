@@ -146,6 +146,12 @@ steric_bead = cgx.molecular.CgBead(
     bead_type="s",
     coordination=1,
 )
+trigonal_bead = cgx.molecular.CgBead(
+    element_string="C",
+    bead_class="n",
+    bead_type="n",
+    coordination=3,
+)
 
 constant_definer_dict = {
     # Bonds.

@@ -220,11 +220,24 @@ def main() -> None:
         "cs5_pxy": (
             "C1=CC(=CC=C1CN2C=C(C=N2)C3=CC=NC=C3)CN4C=C(C=N4)C5=CC=NC=C5"
         ),
+        # Case study 6, only non sterics.#
+        "cs6_l1": "C(=CC(=O)O)C(=O)O",
+        "cs6_l2": "C1=CC(=CC=C1C(=O)O)C(=O)O",
+        "cs6_l5": "C1=CC2=C(C=CC(=C2)C(=O)O)C=C1C(=O)O",
+        "cs6_l6": "C1=C(SC(=C1)C=CC(=O)O)C=CC(=O)O",
+        "cs6_l9": "C1=CC(=CC=C1C2=CC=C(C=C2)C(=O)O)C3=CC=C(C=C3)C(=O)O",
+        "cs6_cc31": "C1=C(C=C(C=C1C=O)C=O)C=O",
+        "cs6_cc32": "C1CCC(C(C1)N)N",
     }
 
     ensembles = {}
     for ligand, lsmiles in ligands.items():
-        if "cs3" in ligand or "cs4" in ligand or "cs5" in ligand:
+        if (
+            "cs3" in ligand
+            or "cs4" in ligand
+            or "cs5" in ligand
+            or "cs6" in ligand
+        ):
             new_dir = calculation_dir / f"{ligand}_confs"
             new_dir.mkdir(exist_ok=True)
             logging.info("building confs for %s", ligand)
