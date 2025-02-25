@@ -6,6 +6,35 @@ import cgexplore as cgx
 import numpy as np
 import stk
 
+ligand_name_conversion = {
+    "lf": "t1",
+    "ls2": "r6",
+    "ls3": "r7",
+    "ls4": "r8",
+    "ls5": "r9",
+    "ls7": "r10",
+    "ls8": "r11",
+    "ls10": "r12",
+    # Diverging-tarzia_2024.
+    "l1": "r3",
+    "l2": "r4",
+    "l3": "r5",
+    # Converging-tarzia_2024.
+    "la": "m2",
+    "lb": "m3",
+    "lc": "m4",
+    "ld": "m5",
+    # Experimental.
+    "e10": "t2",
+    "e11": "t3",
+    "e12": "t4",
+    "e13": "t5",
+    "e14": "t6",
+    "e16": "r1",
+    "e17": "m1",
+    "e18": "r2",
+}
+
 
 class StericTwoC1Arm(cgx.molecular.Precursor):
     """A `TwoC1Arm` Precursor."""
@@ -151,12 +180,13 @@ constant_definer_dict = {
 }
 
 
-def precursors_to_forcefield(  # noqa: PLR0913
+def precursors_to_forcefield(  # noqa: C901, PLR0913, PLR0915
     pair: str,
     large: cgx.molecular.Precursor,
     small: cgx.molecular.Precursor,
     large_meas: dict[str, float],
     small_meas: dict[str, float],
+    constant_definer_dict: dict[str, tuple],
     vdw_bond_cutoff: int | None = None,
 ) -> cgx.forcefields.ForceField:
     """Get a forcefield from precursor definitions."""
@@ -191,6 +221,16 @@ def precursors_to_forcefield(  # noqa: PLR0913
         definer_dict["dde"] = ("angle", large_meas["dde"], 1e2)
         definer_dict["egb"] = ("angle", large_meas["egb"], 1e2)
         definer_dict["deg"] = ("angle", large_meas["deg"], 1e2)
+    elif isinstance(large, cgx.molecular.TwoC1Arm):
+        beads = large.get_bead_set()
+        if "e" not in beads or "d" not in beads:
+            raise RuntimeError
+        definer_dict["be"] = ("bond", large_meas["ba"] / cg_scale, 1e5)
+        ac = large_meas["aa"] / 2
+        definer_dict["ed"] = ("bond", ac / cg_scale, 1e5)
+        definer_dict["bed"] = ("angle", large_meas["bac"], 1e2)
+    else:
+        raise NotImplementedError
 
     if isinstance(small, cgx.molecular.TwoC1Arm):
         beads = small.get_bead_set()
