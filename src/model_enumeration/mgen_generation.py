@@ -29,6 +29,7 @@ from model_enumeration.mgen_utilities import (
     c2bead_d,
     cbead_c,
     cbead_d,
+    constant_definer_dict,
     e2bead_d,
     ebead_c,
     precursors_to_forcefield,
@@ -36,9 +37,11 @@ from model_enumeration.mgen_utilities import (
     tetra_bead,
 )
 from model_enumeration.utilities import (
+    contains_parallels,
     eb_str,
     isomer_energy,
     multi_cmap,
+    percent_change,
 )
 
 logging.basicConfig(
@@ -48,17 +51,14 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
-def rank_entries(entries: abc.Sequence[atomlite.Entry]) -> abc.Sequence[str]:
-    """Rank the collated entries."""
-    return [
-        i.key
-        for i in sorted(entries, key=lambda x: x.properties["energy_per_bb"])
-    ]
-
-
-def percent_change(value: float, percent: float) -> float:
-    """Get a percentage change."""
-    return value * (percent / 100)
+attempts = (
+    None,
+    "regraphed-spring-10",
+    "regraphed-kamada-10",
+    "set-kamada-10",
+    "set-spring-10",
+    "set-spectral-10",
+)
 
 
 def generate_nearby_forcefields(  # noqa: C901, PLR0912
@@ -74,6 +74,7 @@ def generate_nearby_forcefields(  # noqa: C901, PLR0912
         "dde",
         # "ac",
         "bac",
+        "bed",
         # "zz",
         # "zr",
         "zzr",
@@ -200,20 +201,6 @@ def generate_nearby_forcefields(  # noqa: C901, PLR0912
     return fflib
 
 
-def contains_parallels(topology_code: cgx.scram.TopologyCode) -> bool:
-    """True if the graph contains "1-loops"."""
-    weighted_graph = topology_code.get_weighted_graph()
-    num_parallel_edges = len(
-        [
-            i
-            for i in weighted_graph.edges()
-            if i == 2  # noqa: PLR2004
-        ]
-    )
-
-    return num_parallel_edges != 0
-
-
 def get_bb_topology_code_graph(
     topology_code: cgx.scram.TopologyCode,
     bb_config: cgx.scram.BuildingBlockConfiguration,
@@ -253,10 +240,7 @@ def get_bb_topology_code_graph(
     return graph
 
 
-def analyse_cage(
-    database_path: pathlib.Path,
-    name: str,
-) -> None:
+def analyse_cage(database_path: pathlib.Path, name: str) -> None:
     """Analyse toy model cage."""
     database = cgx.utilities.AtomliteDatabase(database_path)
     properties = database.get_entry(key=name).properties
@@ -293,6 +277,7 @@ def analyse_cage(
         large_binder_binder_angles = []
         potential_smiles = [
             "[Pb]~[Ga]",  # Large.
+            "[Pb]~[Fe]",  # Large.
             "[Pb]~[Ba]",  # Small.
             "[Pb]~[Mn]",  # Small.
         ]
@@ -305,7 +290,7 @@ def analyse_cage(
                     ),
                 )
                 if as_building_block.get_num_functional_groups() == 2:  # noqa: PLR2004
-                    large = smiles in ("[Pb]~[Ga]",)
+                    large = smiles in ("[Pb]~[Ga]", "[Pb]~[Fe]")
                     break
 
             vectors = [
@@ -507,16 +492,19 @@ def make_summary_plot(
     pairs: list[tuple[str, str]],
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 10))
+    fig, ax = plt.subplots(figsize=(7, 10))
     energies = {}
 
-    xs = ["1", "2", "3", "4"]
+    xs = []
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
         multi = str(entry.properties["multiplier"])
+        if multi not in xs:
+            xs.append(multi)
         pair = tuple(entry.key.split("_")[:2])
+
         tidx = entry.properties["topology_idx"]
         bidx = entry.properties["bb_config_idx"]
         midx = entry.properties["mash_idx"]
@@ -545,7 +533,7 @@ def make_summary_plot(
         min_energy = sorted_energies[0]
 
         x = xs.index(multi)
-        y = pairs.index(pair)
+        y = [i[0] for i in pairs].index(pair)
 
         ax.scatter(
             x,
@@ -573,12 +561,10 @@ def make_summary_plot(
     ax.set_xticks(list(range(len(xs))))
     ax.set_xticklabels(xs)
     ax.set_yticks(list(range(len(pairs))))
-    ax.set_yticklabels(["_".join(i) for i in pairs])
-    ax.set_xlim(None, 4)
+    ax.set_yticklabels(["_".join(i) for i in [i[0] for i in pairs]])
 
-    ax.axvline(0.8, c="k", alpha=0.5)
-    ax.axvline(1.8, c="k", alpha=0.5)
-    ax.axvline(2.8, c="k", alpha=0.5)
+    for i in list(range(len(xs))):
+        ax.axvline(int(i) + 0.8, c="k", alpha=0.5)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
 
@@ -604,13 +590,13 @@ def make_summary_plot(
     plt.close()
 
 
-def parity_plot(
+def parity_plot(  # noqa: C901, PLR0915
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 5))
+    fig, (ax, ax1) = plt.subplots(ncols=2, figsize=(10, 5))
 
     tarzia_result = {
         # large, small.
@@ -642,9 +628,9 @@ def parity_plot(
         ("e12", "e11"): (0.66, "tab:orange"),
     }
 
-    xs = []
-    ys = []
-    maxblue = 0
+    ys = {i: float("inf") for i in tarzia_result}
+    max_blue_g = 0
+    max_blue_e = 0
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
@@ -657,28 +643,237 @@ def parity_plot(
         x, c = tarzia_result[(l1, l2)]
         y = entry.properties["energy_per_bb"]
 
-        xs.append(x)
-        ys.append(y)
+        ys[(l1, l2)] = min((y, ys[(l1, l2)]))
+
+    for (l1, l2), (x, c) in tarzia_result.items():
         if c == "tab:blue":
-            maxblue = max((maxblue, x))
+            max_blue_g = max((x, max_blue_g))
+            if ys[(l1, l2)] != float("inf"):
+                max_blue_e = max((ys[(l1, l2)], max_blue_e))
+
+    rng = np.random.default_rng(12345)
+    g_fps = 0
+    e_fps = 0
+    for (l1, l2), (x, c) in tarzia_result.items():
+        if c == "tab:blue":
+            xval = 0
+
+        elif c == "tab:orange":
+            xval = 1
+
+            if x < max_blue_g:
+                logging.info("g FP: %s", (l1, l2))
+                g_fps += 1
+            if ys[(l1, l2)] < max_blue_e:
+                logging.info("e FP: %s", (l1, l2))
+                e_fps += 1
+
         ax.scatter(
+            (rng.random() - 0.5) * 0.6 + xval,
             x,
-            y,
             c=c,
             alpha=1.0,
             edgecolor="k",
-            s=60,
+            s=80,
+            marker="o",
+        )
+        ax1.scatter(
+            (rng.random() - 0.5) * 0.6 + xval,
+            ys[(l1, l2)],
+            c=c,
+            alpha=1.0,
+            edgecolor="k",
+            s=80,
             marker="o",
         )
 
-    ax.axhline(y=0.6, c="k")
-    ax.axvline(x=maxblue, c="k")
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(r"$g_{\mathrm{avg}}$", fontsize=16)
+    ax1.set_ylabel(f"$m=2$ {eb_str()}", fontsize=16)
+    ax.set_ylim(0, None)
+    ax1.set_ylim(0, None)
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["forms $cis$ cage", "not"])
+    ax1.set_xticks([0, 1])
+    ax1.set_xticklabels(["forms $cis$ cage", "not"])
+    ax.axvline(x=0.5, c="k")
+    ax1.axvline(x=0.5, c="k")
+    ax.axhline(y=max_blue_g, c="k")
+    ax1.axhline(y=max_blue_e, c="k")
+    ax.set_xlim(-0.5, 1.5)
+    ax1.set_xlim(-0.5, 1.5)
+    ax.set_title(f"FP: {g_fps}", fontsize=16)
+    ax1.set_title(f"FP: {e_fps}", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study2_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
+
+    targets = {
+        ("lf", "l2"): {
+            "2": float("inf"),
+            "3": float("inf"),
+            "4": float("inf"),
+        },
+        ("lf", "ls2"): {
+            "2": float("inf"),
+            "3": float("inf"),
+            "4": float("inf"),
+        },
+        ("lf", "ls3"): {
+            "2": float("inf"),
+            "3": float("inf"),
+            "4": float("inf"),
+        },
+        ("lf", "l3"): {
+            "2": float("inf"),
+            "3": float("inf"),
+            "4": float("inf"),
+        },
+        ("lf", "ls10"): {
+            "2": float("inf"),
+            "3": float("inf"),
+            "4": float("inf"),
+        },
+    }
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        l1 = str(entry.properties["l1"])
+        l2 = str(entry.properties["l2"])
+        if (l1, l2) not in targets:
+            continue
+
+        targets[(l1, l2)][str(entry.properties["multiplier"])] = min(
+            (
+                entry.properties["energy_per_bb"],
+                targets[(l1, l2)][str(entry.properties["multiplier"])],
+            )
+        )
+
+    for pair, edict in targets.items():
+        min_e = min(edict.values())
+        ax.plot(
+            [int(i) for i, ed in edict.items() if ed != float("inf")],
+            [ed - min_e for ed in edict.values() if ed != float("inf")],
+            alpha=1.0,
+            mec="k",
+            markersize=8,
+            marker="o",
+            label=pair,
+        )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel(r"$g_{\mathrm{avg}}$", fontsize=16)
-    ax.set_ylabel(f"$m=2$ {eb_str()}", fontsize=16)
-    ax.set_xlim(0, None)
+    ax.set_ylabel(f"rel. {eb_str()}", fontsize=16)
     ax.set_ylim(0, None)
+    ax.legend(fontsize=16)
+    ax.set_xticks([2, 3, 4])
+    ax.set_xticklabels([2, 3, 4], fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study_5_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
+
+    tmap = {"mix1": "tab:blue", "mix2": "tab:orange"}
+    targets = {
+        "mix1": {
+            "0": float("inf"),
+            "1": float("inf"),
+            "2": float("inf"),
+        },
+        "mix2": {
+            "0": float("inf"),
+            "1": float("inf"),
+            "2": float("inf"),
+        },
+    }
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        targets[entry.properties["mix"]][str(entry.properties["sidx"])] = min(
+            (
+                entry.properties["energy_per_bb"],
+                targets[entry.properties["mix"]][
+                    str(entry.properties["sidx"])
+                ],
+            )
+        )
+        ax.scatter(
+            entry.properties["sidx"],
+            entry.properties["energy_per_bb"],
+            c=tmap[entry.properties["mix"]],
+            alpha=0.5,
+            ec="none",
+            s=60,
+            marker="o",
+        )
+        logging.info(
+            "E for %s, %s is %s (%s)",
+            entry.properties["mix"],
+            entry.properties["sidx"],
+            round(entry.properties["energy_per_bb"], 2),
+            entry.key,
+        )
+
+    for pair, edict in targets.items():
+        ax.plot(
+            [int(i) for i, ed in edict.items() if ed != float("inf")],
+            [ed for ed in edict.values() if ed != float("inf")],
+            alpha=1.0,
+            c=tmap[pair],
+            mec="k",
+            markersize=8,
+            marker="o",
+            label=pair,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(f"{eb_str()}", fontsize=16)
+    ax.set_yscale("log")
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+    ax.legend(fontsize=16)
+    ax.set_xticks([0, 1, 2])
+    ax.set_xticklabels(["2:2:1:1", "2:2:0:2", "2:2:2:0"], fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -712,14 +907,13 @@ def make_summary_plot2(
     x_count = {i: defaultdict(int) for i in multi_cmap}
     min_at_all_xs = defaultdict(int)
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
         multi = str(entry.properties["multiplier"])
         l1 = entry.properties["l1"]
         l2 = entry.properties["l2"]
-        x = pairs.index((l1, l2))
+        x = [i[0] for i in pairs].index((l1, l2))
         x_count[multi][x] += 1
-
-        if "lowest_e_of_mash" not in entry.properties:
-            continue
         energy = entry.properties["energy_per_bb"]
 
         if entry.properties["num_components"] > 1:
@@ -775,7 +969,9 @@ def make_summary_plot2(
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks(list(range(len(pairs))))
-    ax.set_xticklabels(["_".join(i) for i in pairs], rotation=90)
+    ax.set_xticklabels(
+        ["_".join(i) for i in [i[0] for i in pairs]], rotation=90
+    )
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_xlim(-0.5, len(pairs) - 0.5)
@@ -913,6 +1109,36 @@ def _parse_args() -> argparse.Namespace:
         "--run",
         action="store_true",
         help="set to iterate through structure functions",
+    )
+    parser.add_argument(
+        "--study1",
+        action="store_true",
+        help="set to run and or visualise case study 1 (w/o --run, only viz)",
+    )
+    parser.add_argument(
+        "--study3",
+        action="store_true",
+        help="set to run and or visualise case study 3 (w/o --run, only viz)",
+    )
+    parser.add_argument(
+        "--study4",
+        action="store_true",
+        help="set to run and or visualise case study 4 (w/o --run, only viz)",
+    )
+    parser.add_argument(
+        "--study5",
+        action="store_true",
+        help="set to run and or visualise case study 5 (w/o --run, only viz)",
+    )
+    parser.add_argument(
+        "--study6",
+        action="store_true",
+        help="set to run and or visualise case study 6 (w/o --run, only viz)",
+    )
+    parser.add_argument(
+        "--study7",
+        action="store_true",
+        help="set to run and or visualise case study 7 (w/o --run, only viz)",
     )
 
     return parser.parse_args()
@@ -1112,12 +1338,32 @@ def get_regraphed_molecule(
     bb_config: cgx.scram.BuildingBlockConfiguration,
 ) -> stk.ConstructedMolecule:
     """Take a graph that considers all atoms, and get atom positions."""
-    constructed_molecule = cgx.scram.try_except_construction(
-        iterator=iterator,
-        topology_code=topology_code,
-        building_block_configuration=bb_config,
-        vertex_positions=None,
-    )
+    try:
+        constructed_molecule = cgx.scram.try_except_construction(
+            iterator=iterator,
+            topology_code=topology_code,
+            building_block_configuration=bb_config,
+            vertex_positions=None,
+        )
+
+    except IndexError:
+        # Handling index error not excepted in try_except.
+        constructed_molecule = stk.ConstructedMolecule(
+            cgx.topologies.CustomTopology(  # type: ignore[arg-type]
+                building_blocks=bb_config.get_building_block_dictionary(),
+                vertex_prototypes=iterator.get_vertex_prototypes(
+                    unaligning=True
+                ),
+                # Convert to edge prototypes.
+                edge_prototypes=topology_code.edges_from_connection(
+                    iterator.get_vertex_prototypes(unaligning=True)
+                ),
+                vertex_alignments=None,
+                vertex_positions=None,
+                scale_multiplier=iterator.scale_multiplier,
+            )
+        )
+
     stko_graph = stko.Network.init_from_molecule(constructed_molecule)
     _, stype, scale_value = scale.split("-")
     if stype == "spring":
@@ -1140,12 +1386,32 @@ def get_vertexset_molecule(
 ) -> stk.ConstructedMolecule:
     """Take a graph and genereate from graph vertex positions.."""
     if scale is None:
-        return cgx.scram.try_except_construction(
-            iterator=iterator,
-            topology_code=topology_code,
-            building_block_configuration=bb_config,
-            vertex_positions=None,
-        )
+        try:
+            constructed_molecule = cgx.scram.try_except_construction(
+                iterator=iterator,
+                topology_code=topology_code,
+                building_block_configuration=bb_config,
+                vertex_positions=None,
+            )
+
+        except IndexError:
+            # Handling index error not excepted in try_except.
+            constructed_molecule = stk.ConstructedMolecule(
+                cgx.topologies.CustomTopology(  # type: ignore[arg-type]
+                    building_blocks=bb_config.get_building_block_dictionary(),
+                    vertex_prototypes=iterator.get_vertex_prototypes(
+                        unaligning=True
+                    ),
+                    # Convert to edge prototypes.
+                    edge_prototypes=topology_code.edges_from_connection(
+                        iterator.get_vertex_prototypes(unaligning=True)
+                    ),
+                    vertex_alignments=None,
+                    vertex_positions=None,
+                    scale_multiplier=iterator.scale_multiplier,
+                )
+            )
+        return constructed_molecule
 
     nx_graph = topology_code.get_nx_graph()
     _, stype, scale_value = scale.split("-")
@@ -1170,10 +1436,62 @@ def get_vertexset_molecule(
     )
 
 
-def main() -> None:  # noqa: C901, PLR0915, PLR0912
-    """Run script."""
-    args = _parse_args()
+def define_pairs(
+    pairs_to_predict: abc.Sequence[
+        tuple[abc.Sequence[str]], abc.Sequence[int]
+    ],
+    ligand_types: dict[str, str],
+) -> dict[str, dict[str, cgx.molecular.Precursor | tuple | int]]:
+    """Define pairs from provided information."""
+    pairs = {}
+    for (large, small), multis in pairs_to_predict:
+        name = f"{large}_{small}"
 
+        if ligand_types[large] == "sixbead":
+            large_prec = cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            )
+        elif ligand_types[large] == "twoarm":
+            large_prec = cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c)
+
+        else:
+            msg = large
+            raise NotImplementedError(msg)
+
+        if ligand_types[small] == "twoarm":
+            small_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
+        elif ligand_types[small] == "stwoarm":
+            small_prec = StericTwoC1Arm(
+                bead=cbead_d, abead1=abead_d, steric_bead=steric_bead
+            )
+        elif ligand_types[small] == "sixbead":
+            small_prec = cgx.molecular.SixBead(
+                bead=c2bead_d,
+                abead1=a2bead_d,
+                abead2=e2bead_d,
+            )
+        else:
+            msg = small
+            raise NotImplementedError(msg)
+
+        pairs[name] = {
+            "large_name": large,
+            "small_name": small,
+            "large": large_prec,
+            "small": small_prec,
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
+            "multipliers": multis,
+            "vdw_cutoff": 2,
+        }
+    return pairs
+
+
+def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+    """Run case study 1/2 studying Pd(II) heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgen_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -1191,33 +1509,13 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
     stoichiometry_l_l_m = (1, 1, 1)
     ligand_measures = {
-        "lf-f": {
-            "egb": 120,
-            "deg": 180,
-            "dd": 8.0,
-            "de": 4.0,
-            "dde": 125,
-            "eg": 1.4,
-            "gb": 1.4,
-        },
-        "ls10-f": {"ba": 2.8, "aa": 5.4, "bac": 165, "s": 0.0},
-        "lf-x": {
-            "egb": 120,
-            "deg": 180,
-            "dd": 7.87,
-            "de": 4.25,
-            "dde": 126.9,
-            "eg": 2.75 / 2,
-            "gb": 2.75 / 2,
-        },
-        "ls10-x": {"ba": 2.8, "aa": 5.25, "bac": 166, "s": 0.0},
         # From prep.
         "lf": {
             "egb": 120,
             "deg": 180,
-            "dd": 8.0,
-            "de": 4.3,
-            "dde": 133,
+            "dd": 6.0,
+            "de": 5.7,
+            "dde": 134,
             "eg": 1.4,
             "gb": 1.4,
         },
@@ -1267,14 +1565,10 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
             "gb": 1.4,
         },
         # From optl.
-        "l2": {"ba": 2.8, "aa": 4.9, "bac": 150, "s": 0.0},
-        "ls2": {"ba": 2.8, "aa": 4.7, "bac": 155, "s": 0.0},
-        "ls3": {"ba": 2.8, "aa": 5.0, "bac": 145, "s": 0.5},
-        "ls4": {"ba": 2.8, "aa": 5.0, "bac": 150, "s": 1.0},
-        "ls5": {"ba": 2.8, "aa": 5.0, "bac": 150, "s": 0.5},
-        "ls7": {"ba": 2.8, "aa": 5.0, "bac": 150, "s": 1.5},
-        "ls8": {"ba": 2.8, "aa": 5.0, "bac": 150, "s": 2.0},
-        "l3": {"ba": 2.8, "aa": 5.3, "bac": 165, "s": 0.0},
+        "l2": {"ba": 2.8, "aa": 5.0, "bac": 150, "s": 0.0},
+        "ls2": {"ba": 2.8, "aa": 4.7, "bac": 144, "s": 0.0},
+        "ls3": {"ba": 2.8, "aa": 5.0, "bac": 153, "s": 0.5},
+        "l3": {"ba": 2.8, "aa": 5.3, "bac": 164, "s": 0.0},
         "ls10": {"ba": 2.8, "aa": 5.4, "bac": 167, "s": 0.0},
         "l1": {"ba": 2.8, "aa": 8.2, "bac": 136, "s": 0.0},
         "e16": {"ba": 2.8, "aa": 7.3, "bac": 121, "s": 0.0},
@@ -1300,8 +1594,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "lb": {
             "egb": 90,
             "deg": 150,
-            "dd": 6.7,
-            "de": 5.7,
+            "dd": 2.3,
+            "de": 8.3,
             "dde": 148,
             "eg": 2.4,
             "gb": 2.8,
@@ -1309,8 +1603,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "lc": {
             "egb": 90,
             "deg": 150,
-            "dd": 7.0,
-            "de": 5.7,
+            "dd": 2.3,
+            "de": 8.3,
             "dde": 150,
             "eg": 2.4,
             "gb": 2.8,
@@ -1318,8 +1612,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "ld": {
             "egb": 90,
             "deg": 150,
-            "dd": 7.5,
-            "de": 5.7,
+            "dd": 2.3,
+            "de": 8.3,
             "dde": 165,
             "eg": 2.4,
             "gb": 2.8,
@@ -1328,8 +1622,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
     ligand_types = {
         "lf": "sixbead",
-        "lf-f": "sixbead",
-        "lf-x": "sixbead",
         "e10": "sixbead",
         "e11": "sixbead",
         "e12": "sixbead",
@@ -1343,15 +1635,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         "e16": "twoarm",
         "e18": "twoarm",
         "l2": "twoarm",
-        "ls10-f": "twoarm",
-        "ls10-x": "twoarm",
         "ls2": "twoarm",
         "ls3": "stwoarm",
-        "ls4": "stwoarm",
-        "ls5": "stwoarm",
-        "ls7": "stwoarm",
-        "ls8": "stwoarm",
-        "ls9": "twoarm",
         "ls10": "twoarm",
         "l1": "twoarm",
         "l3": "twoarm",
@@ -1359,165 +1644,92 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
     pairs_to_predict = [
         # large, small.
-        ("lf", "l2"),
-        ("lf-f", "ls10-f"),
-        ("lf-x", "ls10-x"),
-        ("lf", "ls2"),
-        ("lf", "ls3"),
-        ("lf", "ls4"),
-        ("lf", "ls5"),
-        ("lf", "ls7"),
-        ("lf", "ls8"),
-        ("lf", "l3"),
-        ("lf", "ls10"),
-        ("la", "l1"),
-        ("lb", "l1"),
-        ("lc", "l1"),
-        ("ld", "l1"),
-        ("la", "l2"),
-        ("lb", "l2"),
-        ("lc", "l2"),
-        ("ld", "l2"),
-        ("la", "l3"),
-        ("lb", "l3"),
-        ("lc", "l3"),
-        ("ld", "l3"),
-        ("e10", "e16"),
-        ("e17", "e16"),
-        ("e17", "e10"),
-        ("e10", "e11"),
-        ("e14", "e16"),
-        ("e14", "e18"),
-        ("e10", "e18"),
-        ("e10", "e12"),
-        ("e14", "e11"),
-        ("e14", "e12"),
-        ("e13", "e11"),
-        ("e13", "e12"),
-        ("e14", "e13"),
-        ("e12", "e11"),
+        (("la", "l1"), (2,)),
+        (("lb", "l1"), (2,)),
+        (("lc", "l1"), (2,)),
+        (("ld", "l1"), (2,)),
+        (("la", "l2"), (2,)),
+        (("lb", "l2"), (2,)),
+        (("lc", "l2"), (2,)),
+        (("ld", "l2"), (2,)),
+        (("la", "l3"), (2,)),
+        (("lb", "l3"), (2,)),
+        (("lc", "l3"), (2,)),
+        (("ld", "l3"), (2,)),
+        (("e10", "e16"), (2,)),
+        (("e17", "e16"), (2,)),
+        (("e17", "e10"), (2,)),
+        (("e10", "e11"), (2,)),
+        (("e14", "e16"), (2,)),
+        (("e14", "e18"), (2,)),
+        (("e10", "e18"), (2,)),
+        (("e10", "e12"), (2,)),
+        (("e14", "e11"), (2,)),
+        (("e14", "e12"), (2,)),
+        (("e13", "e11"), (2,)),
+        (("e13", "e12"), (2,)),
+        (("e14", "e13"), (2,)),
+        (("e12", "e11"), (2,)),
+        (("lf", "l2"), (2, 3, 4)),
+        (("lf", "ls2"), (2, 3, 4)),
+        (("lf", "ls3"), (2, 3, 4)),
+        (("lf", "l3"), (2, 3, 4)),
+        (("lf", "ls10"), (2, 3, 4)),
     ]
+    pairs = define_pairs(pairs_to_predict, ligand_types)
 
-    attempts = (
-        None,
-        "regraphed-spring-10",
-        "regraphed-kamada-10",
-        "regraphed-spring-5",
-        "regraphed-kamada-5",
-        "regraphed-spring-3",
-        "regraphed-kamada-3",
-        "set-kamada-15",
-        "set-kamada-10",
-        "set-kamada-5",
-        "set-kamada-3",
-        "set-spring-15",
-        "set-spring-10",
-        "set-spring-5",
-        "set-spring-3",
-        "set-spectral-15",
-        "set-spectral-10",
-        "set-spectral-5",
-        "set-spectral-3",
-    )
-
-    pairs = {}
-    for large, small in pairs_to_predict:
-        name = f"{large}_{small}"
-
-        if ligand_types[large] == "sixbead":
-            large_prec = cgx.molecular.SixBead(
-                bead=cbead_c,
-                abead1=abead_c,
-                abead2=ebead_c,
-            )
-        else:
-            msg = large
-            raise NotImplementedError(msg)
-
-        if ligand_types[small] == "twoarm":
-            small_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
-        elif ligand_types[small] == "stwoarm":
-            small_prec = StericTwoC1Arm(
-                bead=cbead_d, abead1=abead_d, steric_bead=steric_bead
-            )
-        elif ligand_types[small] == "sixbead":
-            small_prec = cgx.molecular.SixBead(
-                bead=c2bead_d,
-                abead1=a2bead_d,
-                abead2=e2bead_d,
-            )
-        else:
-            msg = small
-            raise NotImplementedError(msg)
-
-        multi = (2, 3, 4) if large in ("lf", "lf-f", "lf-x") else (2, 3)
-        pairs[name] = {
-            "large_name": large,
-            "small_name": small,
-            "large": large_prec,
-            "small": small_prec,
-            "tetra": cgx.molecular.FourC1Arm(
-                bead=tetra_bead, abead1=binder_bead
-            ),
-            "multipliers": multi,
-            "vdw_cutoff": 2,
-        }
-
-    if args.run:
+    if run:
         for pair in pairs:
-            large_name = pairs[pair]["large_name"]
-            small_name = pairs[pair]["small_name"]
-
-            large = pairs[pair]["large"]
-            small = pairs[pair]["small"]
-            tetra = pairs[pair]["tetra"]
-
             forcefield = precursors_to_forcefield(
                 pair=pair,
-                large=large,
-                small=small,
-                large_meas=ligand_measures[large_name],
-                small_meas=ligand_measures[small_name],
+                large=pairs[pair]["large"],
+                small=pairs[pair]["small"],
+                large_meas=ligand_measures[pairs[pair]["large_name"]],
+                small_meas=ligand_measures[pairs[pair]["small_name"]],
                 vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
+                constant_definer_dict=constant_definer_dict,
             )
 
             small_bb = cgx.utilities.optimise_ligand(
-                molecule=small.get_building_block(),
-                name=f"{pair}_{small.get_name()}",
+                molecule=pairs[pair]["small"].get_building_block(),
+                name=f"{pair}_{pairs[pair]['small'].get_name()}",
                 output_dir=calculation_dir,
                 forcefield=forcefield,
                 platform=None,
             ).clone()
             small_bb.write(
-                str(ligand_dir / f"{pair}_{small.get_name()}_optl.mol")
+                str(
+                    ligand_dir
+                    / f"{pair}_{pairs[pair]['small'].get_name()}_optl.mol"
+                )
             )
 
             tetra_bb = cgx.utilities.optimise_ligand(
-                molecule=tetra.get_building_block(),
-                name=tetra.get_name(),
+                molecule=pairs[pair]["tetra"].get_building_block(),
+                name=pairs[pair]["tetra"].get_name(),
                 output_dir=calculation_dir,
                 forcefield=forcefield,
                 platform=None,
             ).clone()
-            tetra_bb.write(str(ligand_dir / f"{tetra.get_name()}_optl.mol"))
+            tetra_bb.write(
+                str(ligand_dir / f"{pairs[pair]['tetra'].get_name()}_optl.mol")
+            )
 
             large_bb = cgx.utilities.optimise_ligand(
-                molecule=large.get_building_block(),
-                name=f"{pair}_{large.get_name()}",
+                molecule=pairs[pair]["large"].get_building_block(),
+                name=f"{pair}_{pairs[pair]['large'].get_name()}",
                 output_dir=calculation_dir,
                 forcefield=forcefield,
                 platform=None,
             ).clone()
             large_bb.write(
-                str(ligand_dir / f"{pair}_{large.get_name()}_optl.mol")
+                str(
+                    ligand_dir
+                    / f"{pair}_{pairs[pair]['large'].get_name()}_optl.mol"
+                )
             )
 
-            pair_lowest_energy = float("inf")
-
             for multiplier in pairs[pair]["multipliers"]:
-                if pair_lowest_energy < isomer_energy():
-                    continue
-
                 logging.info("doing: pair %s, multi %s", pair, multiplier)
                 # Define a connectivity based on a multiplier.
                 iterator = cgx.scram.TopologyIterator(
@@ -1550,14 +1762,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                     if contains_parallels(topology_code):
                         continue
 
-                    if pair_lowest_energy < isomer_energy():
-                        logging.info(
-                            "energy < 0.1 for tidx: %s and bidx: %s, stopping",
-                            idx,
-                            bb_config.idx,
-                        )
-                        continue
-
                     # Testing bb-config aware graph check.
                     # Convert TopologyCode to a graph.
                     current_graph = get_bb_topology_code_graph(
@@ -1583,6 +1787,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
                     if not passed_iso:
                         continue
+
                     run_topology_codes.append((topology_code, bb_config))
 
                     generated_conformers = []
@@ -1600,6 +1805,7 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                                     iterator=iterator,
                                     bb_config=bb_config,
                                 )
+
                             else:
                                 constructed_molecule = get_vertexset_molecule(
                                     scale=scale,
@@ -1674,8 +1880,8 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                                         forcefield.get_forcefield_dictionary()
                                     ),
                                     "energy_per_bb": energy_per_bb,
-                                    "l1": large_name,
-                                    "l2": small_name,
+                                    "l1": pairs[pair]["large_name"],
+                                    "l2": pairs[pair]["small_name"],
                                     "pair": pair,
                                     "num_components": num_components,
                                     "num_bbs": (
@@ -1708,18 +1914,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
 
                         except OpenMMException:
                             logging.info("failed optimisation of %s", name)
-                        try:
-                            current_energy = (
-                                cgx.utilities.AtomliteDatabase(database_path)
-                                .get_entry(name)
-                                .properties["energy_per_bb"]
-                            )
-                            pair_lowest_energy = min(
-                                (pair_lowest_energy, current_energy)
-                            )
-
-                        except RuntimeError:
-                            pass
 
                     min_energy_conformer = sorted(
                         generated_conformers, key=lambda p: p[2]
@@ -1822,25 +2016,6 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
                             },
                         )
 
-    for pair in pairs:
-        make_plot(
-            database_path=database_path,
-            target_pair=pair,
-            figure_dir=figure_dir,
-            filename=f"mgen_1_{pair}.png",
-        )
-
-    raise SystemExit(
-        "SP workflow. Run the current code. Then do quick opt scan for "
-        "varying potential parameters. Do the min energies change?"
-    )
-
-    raise SystemExit
-    parity_plot(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_8.png",
-    )
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -1853,15 +2028,34 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         filename="mgen_4.png",
         pairs=pairs_to_predict,
     )
-    sterics_plot(
+
+    study2_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_6.png",
+        filename="mgen_9.png",
+    )
+    parity_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_8.png",
     )
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_5.png",
+    )
+    for pair in pairs:
+        make_plot(
+            database_path=database_path,
+            target_pair=pair,
+            figure_dir=figure_dir,
+            filename=f"mgen_1_{pair}.png",
+        )
+
+    sterics_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_6.png",
     )
 
     binder_vector_angles_plot(
@@ -1869,12 +2063,1386 @@ def main() -> None:  # noqa: C901, PLR0915, PLR0912
         figure_dir=figure_dir,
         filename="mgen_7.png",
     )
-
+    raise SystemExit(
+        "main fig 1: because we do not specify stericd exactly, we do screen, so here is just change in binder angle -- show propotion"
+    )
+    raise SystemExit(
+        "main fig 2: show sterics for ufos again -- redo to fit the new model"
+    )
+    raise SystemExit("add another grid to sterics to show we can do all that")
+    raise SystemExit("recompute xrds based on new model")
+    raise SystemExit(
+        "big si fig shows the cis-het structures - need to recheck their calcs"
+    )
+    raise SystemExit(
+        "one bar chart - top - min E of original. then bar of prop in "
+        "target 4, target 3, 3, 4"
+    )
     raise SystemExit("show the known systems in the make plot")
     raise SystemExit(
         "a plot that shows the three/2? distinct case studies - for main"
     )
     raise SystemExit("rethink binders, because it is not handling minus")
+
+
+def case_study_3(run: bool) -> None:
+    """Run case study 3 studying Rh heteroleptic systems."""
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    calculation_dir = wd / "mgencs3_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    ffcalculation_dir = calculation_dir / "ff_scan"
+    ffcalculation_dir.mkdir(exist_ok=True)
+    structure_dir = wd / "mgencs3_structures"
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / "mgencs3_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir = wd / "mgencs3_data"
+    data_dir.mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / "mgen_cs3"
+    figure_dir.mkdir(exist_ok=True)
+    database_path = data_dir / "mgencs3.db"
+
+    stoichiometry_l_l_m = (1, 1, 1)
+    ligand_measures = {
+        "cs3l1": {"ba": 1.5, "aa": 7.9, "bac": 120},
+        "cs3l2": {"ba": 1.5, "aa": 7.7, "bac": 120},
+        "cs3l1p": {"ba": 1.5, "aa": 2.4, "bac": 150},
+        "cs3l6p": {"ba": 1.5, "aa": 4.8, "bac": 150},
+    }
+    ligand_types = {
+        "cs3l1": "twoarm",
+        "cs3l2": "twoarm",
+        "cs3l1p": "twoarm",
+        "cs3l6p": "twoarm",
+    }
+    pairs_to_predict = [
+        # large, small.
+        (("cs3l1", "cs3l1p"), (2, 3, 4, 5, 6)),
+        (("cs3l1", "cs3l6p"), (6,)),
+        (("cs3l2", "cs3l1p"), (6,)),
+        (("cs3l2", "cs3l6p"), (6,)),
+    ]
+
+    pairs = define_pairs(pairs_to_predict, ligand_types)
+
+    cs3_definer_dict = {
+        # Bonds.
+        "mb": ("bond", 1.0, 1e5),
+        # Angles.
+        "bmb": ("pyramid", 90, 1e2),
+        "mba": ("angle", 180, 1e2),
+        "mbe": ("angle", 180, 1e2),
+        "aca": ("angle", 180, 1e2),
+        "ede": ("angle", 180, 1e2),
+        # Torsions.
+        "bacab": ("tors", "0134", 180, 50, 1),
+        # Nonbondeds.
+        "m": ("nb", 10.0, 1.0),
+        "d": ("nb", 10.0, 1.0),
+        "e": ("nb", 10.0, 1.0),
+        "a": ("nb", 10.0, 1.0),
+        "b": ("nb", 10.0, 1.0),
+        "c": ("nb", 10.0, 1.0),
+    }
+
+    if run:
+        for pair in pairs:
+            forcefield = precursors_to_forcefield(
+                pair=pair,
+                large=pairs[pair]["large"],
+                small=pairs[pair]["small"],
+                large_meas=ligand_measures[pairs[pair]["large_name"]],
+                small_meas=ligand_measures[pairs[pair]["small_name"]],
+                vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
+                constant_definer_dict=cs3_definer_dict,
+            )
+
+            small_bb = cgx.utilities.optimise_ligand(
+                molecule=pairs[pair]["small"].get_building_block(),
+                name=f"{pair}_{pairs[pair]['small'].get_name()}",
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            small_bb.write(
+                str(
+                    ligand_dir
+                    / f"{pair}_{pairs[pair]['small'].get_name()}_optl.mol"
+                )
+            )
+
+            tetra_bb = cgx.utilities.optimise_ligand(
+                molecule=pairs[pair]["tetra"].get_building_block(),
+                name=pairs[pair]["tetra"].get_name(),
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            tetra_bb.write(
+                str(ligand_dir / f"{pairs[pair]['tetra'].get_name()}_optl.mol")
+            )
+
+            large_bb = cgx.utilities.optimise_ligand(
+                molecule=pairs[pair]["large"].get_building_block(),
+                name=f"{pair}_{pairs[pair]['large'].get_name()}",
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            large_bb.write(
+                str(
+                    ligand_dir
+                    / f"{pair}_{pairs[pair]['large'].get_name()}_optl.mol"
+                )
+            )
+
+            for multiplier in pairs[pair]["multipliers"]:
+                logging.info("doing: pair %s, multi %s", pair, multiplier)
+                # Define a connectivity based on a multiplier.
+                iterator = cgx.scram.TopologyIterator(
+                    building_block_counts={
+                        tetra_bb: stoichiometry_l_l_m[2] * multiplier,
+                        large_bb: stoichiometry_l_l_m[0] * multiplier,
+                        small_bb: stoichiometry_l_l_m[1] * multiplier,
+                    },
+                    graph_type=f"{1 * multiplier}P{2 * multiplier}",
+                    graph_set="rx",
+                )
+                logging.info(
+                    "graph iteration has %s graphs", iterator.count_graphs()
+                )
+
+                possible_bbdicts = cgx.scram.get_custom_bb_configurations(
+                    iterator=iterator
+                )
+                logging.info(
+                    "building block iteration has %s options",
+                    len(possible_bbdicts),
+                )
+
+                run_topology_codes = []
+                for bb_config, (idx, topology_code) in it.product(
+                    possible_bbdicts,
+                    enumerate(iterator.yield_graphs()),
+                ):
+                    # Filter graphs for 1-loops.
+                    if contains_parallels(topology_code):
+                        continue
+
+                    # Testing bb-config aware graph check.
+                    # Convert TopologyCode to a graph.
+                    current_graph = get_bb_topology_code_graph(
+                        topology_code=topology_code,
+                        bb_config=bb_config,
+                    )
+
+                    # Check that graph for isomorphism with others graphs.
+                    passed_iso = True
+                    for tc, bc in run_topology_codes:
+                        test_graph = get_bb_topology_code_graph(
+                            topology_code=tc, bb_config=bc
+                        )
+
+                        if rx.is_isomorphic(
+                            current_graph,
+                            test_graph,
+                            node_matcher=lambda x, y: x.split("-")[1]
+                            == y.split("-")[1],
+                        ):
+                            passed_iso = False
+                            break
+
+                    if not passed_iso:
+                        continue
+
+                    run_topology_codes.append((topology_code, bb_config))
+
+                    generated_conformers = []
+                    for midx, scale in enumerate(attempts):
+                        name = (
+                            f"{pair}_{multiplier}_{idx}_{midx}"
+                            f"_b{bb_config.idx}"
+                        )
+
+                        try:
+                            if isinstance(scale, str) and "regraphed" in scale:
+                                constructed_molecule = get_regraphed_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+
+                            else:
+                                constructed_molecule = get_vertexset_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+                        except ValueError:
+                            continue
+
+                        constructed_molecule.write(
+                            structure_dir / f"{name}_unopt.mol"
+                        )
+                        # Optimise and save.
+                        logging.info("building %s", name)
+
+                        try:
+                            potential_names = [
+                                f"{pair}_{multiplier}_{idx}_"
+                                f"{nmash_idx}_b{bb_config.idx}"
+                                for nmash_idx in range(len(attempts))
+                            ]
+                            if scale is None:
+                                conformer = cgx.scram.graph_optimise_cage(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                )
+                                # Copy the file over.
+                                wipfinal = (
+                                    calculation_dir / f"{name}_wipfinal.mol"
+                                )
+                                wipfinal_new = (
+                                    calculation_dir / f"{name}_final.mol"
+                                )
+                                if wipfinal.exists():
+                                    shutil.copy(wipfinal, wipfinal_new)
+
+                            else:
+                                conformer = cgx.scram.optimise_cage(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                    potential_names=potential_names,
+                                )
+
+                            if conformer is not None:
+                                num_components = len(
+                                    stko.Network.init_from_molecule(
+                                        conformer.molecule
+                                    ).get_connected_components()
+                                )
+                                energy_per_bb = (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                )
+
+                                properties = {
+                                    "forcefield_dict": (
+                                        forcefield.get_forcefield_dictionary()
+                                    ),
+                                    "energy_per_bb": energy_per_bb,
+                                    "l1": pairs[pair]["large_name"],
+                                    "l2": pairs[pair]["small_name"],
+                                    "pair": pair,
+                                    "num_components": num_components,
+                                    "num_bbs": (
+                                        iterator.get_num_building_blocks()
+                                    ),
+                                    "multiplier": multiplier,
+                                    "topology_idx": idx,
+                                    "mash_idx": midx,
+                                    "topology_code_vmap": tuple(
+                                        (int(i[0]), int(i[1]))
+                                        for i in topology_code.vertex_map
+                                    ),
+                                    "bb_config_idx": bb_config.idx,
+                                }
+                                cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ).add_properties(
+                                    key=name,
+                                    property_dict=properties,
+                                )
+                                generated_conformers.append(
+                                    (
+                                        name,
+                                        conformer.molecule.with_centroid(
+                                            (0, 0, 0)
+                                        ),
+                                        energy_per_bb,
+                                    )
+                                )
+
+                        except OpenMMException:
+                            logging.info("failed optimisation of %s", name)
+
+                    min_energy_conformer = sorted(
+                        generated_conformers, key=lambda p: p[2]
+                    )[0]
+                    min_energy_name, min_energy_structure, _ = (
+                        min_energy_conformer
+                    )
+
+                    min_energy_structure.write(
+                        str(structure_dir / f"{min_energy_name}_optc.mol")
+                    )
+
+                    analyse_cage(
+                        database_path=database_path,
+                        name=min_energy_name,
+                    )
+
+                collated_entries = [
+                    i
+                    for i in cgx.utilities.AtomliteDatabase(
+                        database_path
+                    ).get_entries()
+                    if "_f-" not in i.key
+                    and i.properties["pair"] == pair
+                    and i.properties["multiplier"] == multiplier
+                    and "lowest_e_of_mash" in i.properties
+                ]
+
+                # Generate a series of new ffs.
+                forcefield_lib = tuple(
+                    generate_nearby_forcefields(
+                        forcefield=forcefield,
+                        actual_present_bead_elements={
+                            i.__class__.__name__
+                            for i in stk.BuildingBlock.init_from_rdkit_mol(
+                                atomlite.json_to_rdkit(
+                                    collated_entries[0].molecule
+                                )
+                            ).get_atoms()
+                        },
+                    ).yield_forcefields(),
+                )
+                logging.info(
+                    "exploring %s molecules with %s ffs",
+                    len(collated_entries),
+                    len(forcefield_lib),
+                )
+
+                for (ffidx, temp_forcefield), entry in it.product(
+                    enumerate(forcefield_lib), collated_entries
+                ):
+                    name = entry.key + f"_f-{ffidx}"
+
+                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
+                    if not fina_mol_file.exists():
+                        logging.info("optimising %s with ff %s", name, ffidx)
+                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
+                            atomlite.json_to_rdkit(entry.molecule)
+                        )
+                        conformer = cgx.utilities.run_optimisation(
+                            assigned_system=temp_forcefield.assign_terms(
+                                current_cage, name, ffcalculation_dir
+                            ),
+                            name=name,
+                            file_suffix=f"ff{ffidx}",
+                            output_dir=ffcalculation_dir,
+                            platform=None,
+                        )
+                        conformer.molecule.with_centroid((0, 0, 0)).write(
+                            fina_mol_file
+                        )
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_molecule(molecule=conformer.molecule, key=name)
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_properties(
+                            key=name,
+                            property_dict={
+                                "energy_decomposition": (
+                                    conformer.energy_decomposition,  # type:ignore[dict-item]
+                                ),
+                                "source": conformer.source,
+                                "optimised": True,
+                                "energy_per_bb": (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                ),
+                                "min_distance": (
+                                    cgx.analysis.GeomMeasure().calculate_min_distance(
+                                        conformer.molecule
+                                    )["min_distance"]
+                                ),
+                            },
+                        )
+
+    make_summary_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_3.png",
+        pairs=pairs_to_predict,
+    )
+    make_summary_plot2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_4.png",
+        pairs=pairs_to_predict,
+    )
+
+
+def case_study_4(run: bool) -> None:
+    """Run case study 4 studying PW heteroleptic systems."""
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    calculation_dir = wd / "mgencs4_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    ffcalculation_dir = calculation_dir / "ff_scan"
+    ffcalculation_dir.mkdir(exist_ok=True)
+    structure_dir = wd / "mgencs4_structures"
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / "mgencs4_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir = wd / "mgencs4_data"
+    data_dir.mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / "mgen_cs4"
+    figure_dir.mkdir(exist_ok=True)
+    database_path = data_dir / "mgencs4.db"
+
+    stoichiometry_l_l_m = (1, 1, 1)
+    ligand_measures = {
+        "cs41a": {"ba": 1.5, "aa": 9.5, "bac": 145},
+        "cs41b": {"ba": 5.7, "aa": 2.4, "bac": 145},
+        "cs41c": {"ba": 1.5, "aa": 9.5, "bac": 150},
+        "cs41d": {"ba": 5.7, "aa": 2.4, "bac": 150},
+        "cs490": {"ba": 1.5, "aa": 5.9, "bac": 135},
+    }
+    ligand_types = {
+        "cs41a": "twoarm",
+        "cs41b": "twoarm",
+        "cs41c": "twoarm",
+        "cs41d": "twoarm",
+        "cs490": "twoarm",
+    }
+    pairs_to_predict = [
+        # large, small.
+        (("cs490", "cs41c"), (2, 3, 4, 5, 6, 7, 8, 9)),
+        (("cs490", "cs41d"), (2, 3, 4, 5, 6, 7, 8, 9)),
+        (("cs490", "cs41a"), (9,)),
+        (("cs490", "cs41b"), (9,)),
+    ]
+
+    pairs = define_pairs(pairs_to_predict, ligand_types)
+
+    cs4_definer_dict = {
+        # Bonds.
+        "mb": ("bond", 1.0, 1e5),
+        # Angles.
+        "bmb": ("pyramid", 90, 1e2),
+        "mba": ("angle", 180, 1e2),
+        "mbe": ("angle", 180, 1e2),
+        "aca": ("angle", 180, 1e2),
+        "ede": ("angle", 180, 1e2),
+        # Torsions.
+        "bacab": ("tors", "0134", 180, 50, 1),
+        # Nonbondeds.
+        "m": ("nb", 10.0, 1.0),
+        "d": ("nb", 10.0, 1.0),
+        "e": ("nb", 10.0, 1.0),
+        "a": ("nb", 10.0, 1.0),
+        "b": ("nb", 10.0, 1.0),
+        "c": ("nb", 10.0, 1.0),
+    }
+
+    if run:
+        for pair in pairs:
+            forcefield = precursors_to_forcefield(
+                pair=pair,
+                large=pairs[pair]["large"],
+                small=pairs[pair]["small"],
+                large_meas=ligand_measures[pairs[pair]["large_name"]],
+                small_meas=ligand_measures[pairs[pair]["small_name"]],
+                vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
+                constant_definer_dict=cs4_definer_dict,
+            )
+
+            small_bb = cgx.utilities.optimise_ligand(
+                molecule=pairs[pair]["small"].get_building_block(),
+                name=f"{pair}_{pairs[pair]['small'].get_name()}",
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            small_bb.write(
+                str(
+                    ligand_dir
+                    / f"{pair}_{pairs[pair]['small'].get_name()}_optl.mol"
+                )
+            )
+
+            tetra_bb = cgx.utilities.optimise_ligand(
+                molecule=pairs[pair]["tetra"].get_building_block(),
+                name=pairs[pair]["tetra"].get_name(),
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            tetra_bb.write(
+                str(ligand_dir / f"{pairs[pair]['tetra'].get_name()}_optl.mol")
+            )
+
+            large_bb = cgx.utilities.optimise_ligand(
+                molecule=pairs[pair]["large"].get_building_block(),
+                name=f"{pair}_{pairs[pair]['large'].get_name()}",
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            large_bb.write(
+                str(
+                    ligand_dir
+                    / f"{pair}_{pairs[pair]['large'].get_name()}_optl.mol"
+                )
+            )
+
+            for multiplier in pairs[pair]["multipliers"]:
+                logging.info("doing: pair %s, multi %s", pair, multiplier)
+                # Define a connectivity based on a multiplier.
+                iterator = cgx.scram.TopologyIterator(
+                    building_block_counts={
+                        tetra_bb: stoichiometry_l_l_m[2] * multiplier,
+                        large_bb: stoichiometry_l_l_m[0] * multiplier,
+                        small_bb: stoichiometry_l_l_m[1] * multiplier,
+                    },
+                    graph_type=f"{1 * multiplier}P{2 * multiplier}",
+                    graph_set="rx",
+                )
+                logging.info(
+                    "graph iteration has %s graphs", iterator.count_graphs()
+                )
+
+                possible_bbdicts = cgx.scram.get_custom_bb_configurations(
+                    iterator=iterator
+                )
+                logging.info(
+                    "building block iteration has %s options",
+                    len(possible_bbdicts),
+                )
+
+                run_topology_codes = []
+                for bb_config, (idx, topology_code) in it.product(
+                    possible_bbdicts,
+                    enumerate(iterator.yield_graphs()),
+                ):
+                    # Filter graphs for 1-loops.
+                    if contains_parallels(topology_code):
+                        continue
+
+                    # Testing bb-config aware graph check.
+                    # Convert TopologyCode to a graph.
+                    current_graph = get_bb_topology_code_graph(
+                        topology_code=topology_code,
+                        bb_config=bb_config,
+                    )
+
+                    # Check that graph for isomorphism with others graphs.
+                    passed_iso = True
+                    for tc, bc in run_topology_codes:
+                        test_graph = get_bb_topology_code_graph(
+                            topology_code=tc, bb_config=bc
+                        )
+
+                        if rx.is_isomorphic(
+                            current_graph,
+                            test_graph,
+                            node_matcher=lambda x, y: x.split("-")[1]
+                            == y.split("-")[1],
+                        ):
+                            passed_iso = False
+                            break
+
+                    if not passed_iso:
+                        continue
+
+                    run_topology_codes.append((topology_code, bb_config))
+
+                    generated_conformers = []
+                    for midx, scale in enumerate(attempts):
+                        name = (
+                            f"{pair}_{multiplier}_{idx}_{midx}"
+                            f"_b{bb_config.idx}"
+                        )
+
+                        try:
+                            if isinstance(scale, str) and "regraphed" in scale:
+                                constructed_molecule = get_regraphed_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+
+                            else:
+                                constructed_molecule = get_vertexset_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+                        except ValueError:
+                            continue
+
+                        constructed_molecule.write(
+                            structure_dir / f"{name}_unopt.mol"
+                        )
+                        # Optimise and save.
+                        logging.info("building %s", name)
+
+                        try:
+                            potential_names = [
+                                f"{pair}_{multiplier}_{idx}_"
+                                f"{nmash_idx}_b{bb_config.idx}"
+                                for nmash_idx in range(len(attempts))
+                            ]
+                            if scale is None:
+                                conformer = cgx.scram.graph_optimise_cage(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                )
+                                # Copy the file over.
+                                wipfinal = (
+                                    calculation_dir / f"{name}_wipfinal.mol"
+                                )
+                                wipfinal_new = (
+                                    calculation_dir / f"{name}_final.mol"
+                                )
+                                if wipfinal.exists():
+                                    shutil.copy(wipfinal, wipfinal_new)
+
+                            else:
+                                conformer = cgx.scram.optimise_cage(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                    potential_names=potential_names,
+                                )
+
+                            if conformer is not None:
+                                num_components = len(
+                                    stko.Network.init_from_molecule(
+                                        conformer.molecule
+                                    ).get_connected_components()
+                                )
+                                energy_per_bb = (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                )
+
+                                properties = {
+                                    "forcefield_dict": (
+                                        forcefield.get_forcefield_dictionary()
+                                    ),
+                                    "energy_per_bb": energy_per_bb,
+                                    "l1": pairs[pair]["large_name"],
+                                    "l2": pairs[pair]["small_name"],
+                                    "pair": pair,
+                                    "num_components": num_components,
+                                    "num_bbs": (
+                                        iterator.get_num_building_blocks()
+                                    ),
+                                    "multiplier": multiplier,
+                                    "topology_idx": idx,
+                                    "mash_idx": midx,
+                                    "topology_code_vmap": tuple(
+                                        (int(i[0]), int(i[1]))
+                                        for i in topology_code.vertex_map
+                                    ),
+                                    "bb_config_idx": bb_config.idx,
+                                }
+                                cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ).add_properties(
+                                    key=name,
+                                    property_dict=properties,
+                                )
+                                generated_conformers.append(
+                                    (
+                                        name,
+                                        conformer.molecule.with_centroid(
+                                            (0, 0, 0)
+                                        ),
+                                        energy_per_bb,
+                                    )
+                                )
+
+                        except OpenMMException:
+                            logging.info("failed optimisation of %s", name)
+
+                    min_energy_conformer = sorted(
+                        generated_conformers, key=lambda p: p[2]
+                    )[0]
+                    min_energy_name, min_energy_structure, _ = (
+                        min_energy_conformer
+                    )
+
+                    min_energy_structure.write(
+                        str(structure_dir / f"{min_energy_name}_optc.mol")
+                    )
+
+                    analyse_cage(
+                        database_path=database_path,
+                        name=min_energy_name,
+                    )
+
+                collated_entries = [
+                    i
+                    for i in cgx.utilities.AtomliteDatabase(
+                        database_path
+                    ).get_entries()
+                    if "_f-" not in i.key
+                    and i.properties["pair"] == pair
+                    and i.properties["multiplier"] == multiplier
+                    and "lowest_e_of_mash" in i.properties
+                ]
+
+                # Generate a series of new ffs.
+                forcefield_lib = tuple(
+                    generate_nearby_forcefields(
+                        forcefield=forcefield,
+                        actual_present_bead_elements={
+                            i.__class__.__name__
+                            for i in stk.BuildingBlock.init_from_rdkit_mol(
+                                atomlite.json_to_rdkit(
+                                    collated_entries[0].molecule
+                                )
+                            ).get_atoms()
+                        },
+                    ).yield_forcefields(),
+                )
+                logging.info(
+                    "exploring %s molecules with %s ffs",
+                    len(collated_entries),
+                    len(forcefield_lib),
+                )
+
+                for (ffidx, temp_forcefield), entry in it.product(
+                    enumerate(forcefield_lib), collated_entries
+                ):
+                    name = entry.key + f"_f-{ffidx}"
+
+                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
+                    if not fina_mol_file.exists():
+                        logging.info("optimising %s with ff %s", name, ffidx)
+                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
+                            atomlite.json_to_rdkit(entry.molecule)
+                        )
+                        conformer = cgx.utilities.run_optimisation(
+                            assigned_system=temp_forcefield.assign_terms(
+                                current_cage, name, ffcalculation_dir
+                            ),
+                            name=name,
+                            file_suffix=f"ff{ffidx}",
+                            output_dir=ffcalculation_dir,
+                            platform=None,
+                        )
+                        conformer.molecule.with_centroid((0, 0, 0)).write(
+                            fina_mol_file
+                        )
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_molecule(molecule=conformer.molecule, key=name)
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_properties(
+                            key=name,
+                            property_dict={
+                                "energy_decomposition": (
+                                    conformer.energy_decomposition,  # type:ignore[dict-item]
+                                ),
+                                "source": conformer.source,
+                                "optimised": True,
+                                "energy_per_bb": (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                ),
+                                "min_distance": (
+                                    cgx.analysis.GeomMeasure().calculate_min_distance(
+                                        conformer.molecule
+                                    )["min_distance"]
+                                ),
+                            },
+                        )
+
+    make_summary_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_3.png",
+        pairs=pairs_to_predict,
+    )
+    make_summary_plot2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_4.png",
+        pairs=pairs_to_predict,
+    )
+
+
+def case_study_5(run: bool) -> None:
+    """Run case study 5 studying Pd(II) heteroleptic systems."""
+    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    calculation_dir = wd / "mgencs5_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    ffcalculation_dir = calculation_dir / "ff_scan"
+    ffcalculation_dir.mkdir(exist_ok=True)
+    structure_dir = wd / "mgencs5_structures"
+    structure_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / "mgencs5_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    data_dir = wd / "mgencs5_data"
+    data_dir.mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / "mgen_cs5"
+    figure_dir.mkdir(exist_ok=True)
+    database_path = data_dir / "mgencs5.db"
+
+    present_beads = (
+        cbead_d,
+        abead_d,
+        cbead_c,
+        abead_c,
+        ebead_c,
+        c2bead_d,
+        a2bead_d,
+        e2bead_d,
+        binder_bead,
+        tetra_bead,
+        steric_bead,
+    )
+
+    ligand_measures = {
+        "lin": {"ba": 2.8, "aa": 1.5, "bac": 180},
+        "mxy": {"be": 7.6, "ee": 5.0, "bed": 90},
+        "pxy": {"be": 7.7, "ee": 5.8, "bed": 110},
+        "tetra": {"mb": 2.0, "bmb": 90},
+        "sqp": {"bf": 2.0, "bfb": 90, "fbm": 90},
+    }
+    stoichs_mcll = ((2, 2, 1, 1), (2, 2, 0, 2), (2, 2, 2, 0))
+    mixtures = {
+        "mix1": {
+            "linear": (
+                "lin",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "tetra": (
+                "tetra",
+                cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            ),
+            "corner": ("sqp", cgx.molecular.TwoC0Arm(bead=e2bead_d)),
+            "bent": (
+                "mxy",
+                cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
+            ),
+            "stoichiometries": stoichs_mcll,
+            "vdw_cutoff": 2,
+        },
+        "mix2": {
+            "linear": (
+                "lin",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "tetra": (
+                "tetra",
+                cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            ),
+            "corner": ("sqp", cgx.molecular.TwoC0Arm(bead=e2bead_d)),
+            "bent": (
+                "pxy",
+                cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
+            ),
+            "stoichiometries": stoichs_mcll,
+            "vdw_cutoff": 2,
+        },
+    }
+
+    cg_scale = 2
+    if run:
+        for mix, mdict in mixtures.items():
+            cgx.molecular.BeadLibrary(present_beads)
+            bent_name, bent = mdict["bent"]
+            linear_name, linear = mdict["linear"]
+            corner_name, corner = mdict["corner"]
+            tetra_name, tetra = mdict["tetra"]
+            cs5_definer_dict = {
+                # Bent.
+                "be": (
+                    "bond",
+                    ligand_measures[bent_name]["be"] / cg_scale,
+                    1e5,
+                ),
+                "ed": (
+                    "bond",
+                    ligand_measures[bent_name]["ee"] / 2 / cg_scale,
+                    1e5,
+                ),
+                "bed": (
+                    "angle",
+                    ligand_measures[bent_name]["bed"],
+                    1e2,
+                ),
+                "ede": ("angle", 180, 1e2),
+                # Corner.
+                "mb": (
+                    "bond",
+                    ligand_measures[tetra_name]["mb"] / cg_scale,
+                    1e5,
+                ),
+                "bf": (
+                    "bond",
+                    ligand_measures[corner_name]["bf"] / cg_scale,
+                    1e5,
+                ),
+                "bmb": ("pyramid", ligand_measures[tetra_name]["bmb"], 1e2),
+                "bfb": ("angle", ligand_measures[corner_name]["bfb"], 1e2),
+                "fbm": ("angle", ligand_measures[corner_name]["fbm"], 1e2),
+                # Linear.
+                "ba": (
+                    "bond",
+                    ligand_measures[linear_name]["ba"] / cg_scale,
+                    1e5,
+                ),
+                "ac": (
+                    "bond",
+                    ligand_measures[linear_name]["aa"] / 2 / cg_scale,
+                    1e5,
+                ),
+                "bac": (
+                    "angle",
+                    ligand_measures[linear_name]["bac"],
+                    1e2,
+                ),
+                "aca": ("angle", 180, 1e2),
+                # Bonds.
+                # Constant.
+                "mba": ("angle", 180, 1e2),
+                "mbe": ("angle", 180, 1e2),
+                # Nonbondeds.
+                "m": ("nb", 10.0, 1.0),
+                "d": ("nb", 10.0, 1.0),
+                "e": ("nb", 10.0, 1.0),
+                "a": ("nb", 10.0, 1.0),
+                "b": ("nb", 10.0, 1.0),
+                "c": ("nb", 10.0, 1.0),
+                "f": ("nb", 10.0, 1.0),
+            }
+
+            forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
+                identifier=f"{mix}ff",
+                prefix=f"{mix}ff",
+                vdw_bond_cutoff=mixtures[mix]["vdw_cutoff"],
+                present_beads=present_beads,
+                definer_dict=cs5_definer_dict,
+            )
+
+            bent_bb = cgx.utilities.optimise_ligand(
+                molecule=bent.get_building_block(),
+                name=f"{mix}_{bent.get_name()}",
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            bent_bb.write(
+                str(ligand_dir / f"{mix}_{bent.get_name()}_optl.mol")
+            )
+
+            linear_bb = cgx.utilities.optimise_ligand(
+                molecule=linear.get_building_block(),
+                name=f"{mix}_{linear.get_name()}",
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            linear_bb.write(
+                str(ligand_dir / f"{mix}_{linear.get_name()}_optl.mol")
+            )
+
+            tetra_bb = cgx.utilities.optimise_ligand(
+                molecule=tetra.get_building_block(),
+                name=tetra.get_name(),
+                output_dir=calculation_dir,
+                forcefield=forcefield,
+                platform=None,
+            ).clone()
+            tetra_bb.write(
+                str(ligand_dir / f"{mix}_{tetra.get_name()}_optl.mol")
+            )
+
+            corner_bb = corner.get_building_block()
+            corner_bb.write(
+                str(ligand_dir / f"{mix}_{corner.get_name()}_optl.mol")
+            )
+
+            for sidx, stoichiometry in enumerate(mdict["stoichiometries"]):
+                logging.info("doing: %s, stoich %s", mix, stoichiometry)
+                gtype = f"{stoichiometry[0]}P{stoichiometry[0] * 2}"
+
+                if sum(stoichiometry[1:]) != stoichiometry[0] * 2:
+                    raise RuntimeError
+
+                if stoichiometry[2] == 0:
+                    b_counts = {
+                        tetra_bb: stoichiometry[0],
+                        corner_bb: stoichiometry[1],
+                        bent_bb: stoichiometry[3],
+                    }
+                elif stoichiometry[3] == 0:
+                    b_counts = {
+                        tetra_bb: stoichiometry[0],
+                        linear_bb: stoichiometry[2],
+                        corner_bb: stoichiometry[1],
+                    }
+                else:
+                    b_counts = {
+                        tetra_bb: stoichiometry[0],
+                        linear_bb: stoichiometry[2],
+                        corner_bb: stoichiometry[1],
+                        bent_bb: stoichiometry[3],
+                    }
+
+                # Define a connectivity based on a multiplier.
+                iterator = cgx.scram.TopologyIterator(
+                    building_block_counts=b_counts,
+                    graph_type=gtype,
+                    graph_set="rx",
+                )
+                logging.info(
+                    "graph iteration has %s graphs", iterator.count_graphs()
+                )
+
+                possible_bbdicts = cgx.scram.get_custom_bb_configurations(
+                    iterator=iterator
+                )
+                logging.info(
+                    "building block iteration has %s options",
+                    len(possible_bbdicts),
+                )
+
+                run_topology_codes = []
+                for bb_config, (idx, topology_code) in it.product(
+                    possible_bbdicts,
+                    enumerate(iterator.yield_graphs()),
+                ):
+                    # Testing bb-config aware graph check.
+                    # Convert TopologyCode to a graph.
+                    current_graph = get_bb_topology_code_graph(
+                        topology_code=topology_code,
+                        bb_config=bb_config,
+                    )
+
+                    # Check that graph for isomorphism with others graphs.
+                    passed_iso = True
+                    for tc, bc in run_topology_codes:
+                        test_graph = get_bb_topology_code_graph(
+                            topology_code=tc, bb_config=bc
+                        )
+
+                        if rx.is_isomorphic(
+                            current_graph,
+                            test_graph,
+                            node_matcher=lambda x, y: x.split("-")[1]
+                            == y.split("-")[1],
+                        ):
+                            passed_iso = False
+                            break
+
+                    if not passed_iso:
+                        continue
+
+                    run_topology_codes.append((topology_code, bb_config))
+
+                    generated_conformers = []
+                    for midx, scale in enumerate(attempts):
+                        name = f"{mix}_s{sidx}_{idx}_{midx}_b{bb_config.idx}"
+
+                        try:
+                            if isinstance(scale, str) and "regraphed" in scale:
+                                constructed_molecule = get_regraphed_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+
+                            else:
+                                constructed_molecule = get_vertexset_molecule(
+                                    scale=scale,
+                                    topology_code=topology_code,
+                                    iterator=iterator,
+                                    bb_config=bb_config,
+                                )
+
+                        except (ValueError, KeyError):
+                            continue
+
+                        constructed_molecule.write(
+                            structure_dir / f"{name}_unopt.mol"
+                        )
+                        # Optimise and save.
+                        logging.info("building %s", name)
+
+                        try:
+                            potential_names = [
+                                f"{mix}_s{sidx}_{idx}_"
+                                f"{nmash_idx}_b{bb_config.idx}"
+                                for nmash_idx in range(len(attempts))
+                            ]
+                            if scale is None:
+                                conformer = cgx.scram.graph_optimise_cage(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                )
+                                # Copy the file over.
+                                wipfinal = (
+                                    calculation_dir / f"{name}_wipfinal.mol"
+                                )
+                                wipfinal_new = (
+                                    calculation_dir / f"{name}_final.mol"
+                                )
+                                if wipfinal.exists():
+                                    shutil.copy(wipfinal, wipfinal_new)
+
+                            else:
+                                conformer = cgx.scram.optimise_cage(
+                                    molecule=constructed_molecule,
+                                    name=name,
+                                    output_dir=calculation_dir,
+                                    forcefield=forcefield,
+                                    platform=None,
+                                    database_path=database_path,
+                                    potential_names=potential_names,
+                                )
+
+                            if conformer is not None:
+                                num_components = len(
+                                    stko.Network.init_from_molecule(
+                                        conformer.molecule
+                                    ).get_connected_components()
+                                )
+                                energy_per_bb = (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                )
+
+                                properties = {
+                                    "forcefield_dict": (
+                                        forcefield.get_forcefield_dictionary()
+                                    ),
+                                    "energy_per_bb": energy_per_bb,
+                                    "linear": linear_name,
+                                    "tetra": tetra_name,
+                                    "corner": corner_name,
+                                    "bent": bent_name,
+                                    "mix": mix,
+                                    "num_components": num_components,
+                                    "num_bbs": (
+                                        iterator.get_num_building_blocks()
+                                    ),
+                                    "sidx": sidx,
+                                    "stoichiometry": stoichiometry,
+                                    "topology_idx": idx,
+                                    "mash_idx": midx,
+                                    "topology_code_vmap": tuple(
+                                        (int(i[0]), int(i[1]))
+                                        for i in topology_code.vertex_map
+                                    ),
+                                    "bb_config_idx": bb_config.idx,
+                                }
+
+                                cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ).add_properties(
+                                    key=name,
+                                    property_dict=properties,
+                                )
+                                generated_conformers.append(
+                                    (
+                                        name,
+                                        conformer.molecule.with_centroid(
+                                            (0, 0, 0)
+                                        ),
+                                        energy_per_bb,
+                                    )
+                                )
+
+                        except OpenMMException:
+                            logging.info("failed optimisation of %s", name)
+
+                    if len(generated_conformers) == 0:
+                        continue
+                    min_energy_conformer = sorted(
+                        generated_conformers, key=lambda p: p[2]
+                    )[0]
+                    min_energy_name, min_energy_structure, _ = (
+                        min_energy_conformer
+                    )
+
+                    min_energy_structure.write(
+                        str(structure_dir / f"{min_energy_name}_optc.mol")
+                    )
+
+                    analyse_cage(
+                        database_path=database_path,
+                        name=min_energy_name,
+                    )
+
+                collated_entries = [
+                    i
+                    for i in cgx.utilities.AtomliteDatabase(
+                        database_path
+                    ).get_entries()
+                    if "_f-" not in i.key
+                    and i.properties["mix"] == mix
+                    and i.properties["sidx"] == sidx
+                    and "lowest_e_of_mash" in i.properties
+                ]
+
+                # Generate a series of new ffs.
+                forcefield_lib = tuple(
+                    generate_nearby_forcefields(
+                        forcefield=forcefield,
+                        actual_present_bead_elements={
+                            i.__class__.__name__
+                            for i in stk.BuildingBlock.init_from_rdkit_mol(
+                                atomlite.json_to_rdkit(
+                                    collated_entries[0].molecule
+                                )
+                            ).get_atoms()
+                        },
+                    ).yield_forcefields(),
+                )
+                logging.info(
+                    "exploring %s molecules with %s ffs",
+                    len(collated_entries),
+                    len(forcefield_lib),
+                )
+
+                for (ffidx, temp_forcefield), entry in it.product(
+                    enumerate(forcefield_lib), collated_entries
+                ):
+                    name = entry.key + f"_f-{ffidx}"
+
+                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
+                    if not fina_mol_file.exists():
+                        logging.info("optimising %s with ff %s", name, ffidx)
+                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
+                            atomlite.json_to_rdkit(entry.molecule)
+                        )
+                        conformer = cgx.utilities.run_optimisation(
+                            assigned_system=temp_forcefield.assign_terms(
+                                current_cage, name, ffcalculation_dir
+                            ),
+                            name=name,
+                            file_suffix=f"ff{ffidx}",
+                            output_dir=ffcalculation_dir,
+                            platform=None,
+                        )
+                        conformer.molecule.with_centroid((0, 0, 0)).write(
+                            fina_mol_file
+                        )
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_molecule(molecule=conformer.molecule, key=name)
+                        cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).add_properties(
+                            key=name,
+                            property_dict={
+                                "energy_decomposition": (
+                                    conformer.energy_decomposition,  # type:ignore[dict-item]
+                                ),
+                                "source": conformer.source,
+                                "optimised": True,
+                                "energy_per_bb": (
+                                    cgx.utilities.get_energy_per_bb(
+                                        energy_decomposition=(
+                                            conformer.energy_decomposition
+                                        ),
+                                        number_building_blocks=(
+                                            iterator.get_num_building_blocks()
+                                        ),
+                                    )
+                                ),
+                                "min_distance": (
+                                    cgx.analysis.GeomMeasure().calculate_min_distance(
+                                        conformer.molecule
+                                    )["min_distance"]
+                                ),
+                            },
+                        )
+
+    study_5_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_1.png",
+    )
+
+
+def case_study_6(run: bool) -> None:
+    """Run case study 6 studying Pd(II) heteroleptic systems."""
+
+
+def case_study_7(run: bool) -> None:
+    """Run case study 7 studying Pd(II) heteroleptic systems."""
+
+
+def main() -> None:
+    """Run script."""
+    args = _parse_args()
+
+    if args.study1:
+        case_study_1_2(args.run)
+    if args.study3:
+        case_study_3(args.run)
+    if args.study4:
+        case_study_4(args.run)
+    if args.study5:
+        case_study_5(args.run)
+    if args.study6:
+        case_study_6(args.run)
+    if args.study7:
+        case_study_7(args.run)
 
 
 if __name__ == "__main__":
