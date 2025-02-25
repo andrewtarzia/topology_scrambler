@@ -4,6 +4,7 @@ import logging
 import pathlib
 from collections import Counter
 
+import bbprep
 import cgexplore as cgx
 import matplotlib.pyplot as plt
 import numpy as np
@@ -145,6 +146,7 @@ def main() -> None:
     )
 
     ligands = {
+        # Case study 2.
         "lf": (
             "C1=C(C2=CC=C(C3C=CC4C(=O)C5C=CC(C6=CC=C(C7=CC=CN=C7)C=C6)=CC"
             "=5C=4C=3)C=C2)C=NC=C1"
@@ -156,6 +158,7 @@ def main() -> None:
         "ls7": "C1(C(C2C=CN=CC=2)=CC=CC=1C1C=CN=CC=1)OC(=O)C(C)(C)C",
         "ls8": "C1(C(C2C=CN=CC=2)=CC=CC=1C1C=CN=CC=1)OC(=O)C1C=CC=CC=1",
         "ls10": "C1=CN=CC=C1C2=CC=C([Se]2)C3=CC=NC=C3",
+        # Case study 1.
         # Diverging-tarzia_2024.
         "l1": "C1=NC=CC(C2=CC=C3OC4C=CC(C5C=CN=CC=5)=CC=4C3=C2)=C1",
         "l2": "C1=CC(=CC(=C1)C2=CC=NC=C2)C3=CC=NC=C3",
@@ -201,27 +204,60 @@ def main() -> None:
             "C1(=CC=NC=C1)C#CC1=CC2C3C=C(C#CC4=CC=NC=C4)C=CC=3C(OC)=C(O"
             "C)C=2C=C1"
         ),
+        # Case study 3.
+        "cs3_l1": "C1=CC(=CC(=C1)C(=O)O)/C=C/C2=CC(=CC=C2)C(=O)O",
+        "cs3_l2": "C1=CC(=CC(=C1)N=NC2=CC=CC(=C2)C(=O)O)C(=O)O",
+        "cs3_l1p": "C1=CC(=CC(=C1)C(=O)O)C(=O)O",
+        "cs3_l6p": "C1=CC(=CC2=C1C=CC(=C2)C(=O)O)C(=O)O",
+        # Case study 4.
+        "cs4_1": "C1=CC(=NC(=C1)C2=CC=C(C=C2)C(=O)O)C3=CC=C(C=C3)C(=O)O",
+        "cs4_90": "C1=CC2=C(C=C1C(=O)O)C3=C(N2)C=CC(=C3)C(=O)O",
+        # Case study 5.
+        "cs5_lin": "C1=CN=CC=C1C2=CC=NC=C2",
+        "cs5_mxy": (
+            "C1=CC(=CC(=C1)CN2C=CC(=N2)C3=CC=NC=C3)CN4C=CC(=N4)C5=CC=NC=C5"
+        ),
+        "cs5_pxy": (
+            "C1=CC(=CC=C1CN2C=C(C=N2)C3=CC=NC=C3)CN4C=C(C=N4)C5=CC=NC=C5"
+        ),
     }
 
     ensembles = {}
     for ligand, lsmiles in ligands.items():
-        logging.info("doing %s", ligand)
-        molecule = stk.BuildingBlock(lsmiles)
+        if "cs3" in ligand or "cs4" in ligand or "cs5" in ligand:
+            new_dir = calculation_dir / f"{ligand}_confs"
+            new_dir.mkdir(exist_ok=True)
+            logging.info("building confs for %s", ligand)
 
-        molecule.write(ligand_dir / f"{ligand}_unopt.mol")
+            input_molecule = stk.BuildingBlock(lsmiles)
+            input_molecule.write(new_dir / f"{ligand}_input.mol")
+            generator = bbprep.generators.ETKDG(num_confs=100)
+            ensemble = generator.generate_conformers(input_molecule)
+            for conformer in ensemble.yield_conformers():
+                conformer.molecule.write(
+                    new_dir / f"{ligand}_{conformer.conformer_id}.mol"
+                )
 
-        ensemble = cgx.atomistic.run_conformer_analysis(
-            ligand_name=ligand,
-            molecule=molecule,
-            ligand_dir=ligand_dir,
-            calculation_dir=calculation_dir,
-            functional_group_factories=(
-                stko.functional_groups.ThreeSiteFactory("[#6]~[#7X2]~[#6]"),
-            ),
-            crest_path=crest_path,
-            xtb_path=xtb_path,
-        )
-        ensembles[ligand] = ensemble
+        else:
+            logging.info("doing %s", ligand)
+            molecule = stk.BuildingBlock(lsmiles)
+
+            molecule.write(ligand_dir / f"{ligand}_unopt.mol")
+
+            ensemble = cgx.atomistic.run_conformer_analysis(
+                ligand_name=ligand,
+                molecule=molecule,
+                ligand_dir=ligand_dir,
+                calculation_dir=calculation_dir,
+                functional_group_factories=(
+                    stko.functional_groups.ThreeSiteFactory(
+                        "[#6]~[#7X2]~[#6]"
+                    ),
+                ),
+                crest_path=crest_path,
+                xtb_path=xtb_path,
+            )
+            ensembles[ligand] = ensemble
 
     plot_distance_angle(ensembles=ensembles, figure_dir=figure_dir)
 
