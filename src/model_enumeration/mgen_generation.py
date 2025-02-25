@@ -814,24 +814,19 @@ def study_5_plot(
     """Visualise energies."""
     fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
 
-    tmap = {"mix1": "tab:blue", "mix2": "tab:orange", "mix3": "tab:red"}
-    targets = {
-        "mix1": {
-            "0": float("inf"),
-            "1": float("inf"),
-            "2": float("inf"),
-        },
-        "mix2": {
-            "0": float("inf"),
-            "1": float("inf"),
-            "2": float("inf"),
-        },
-        "mix3": {
-            "0": float("inf"),
-            "1": float("inf"),
-            "2": float("inf"),
-        },
+    tmap = {
+        "mix1": "tab:blue",
+        "mix2": "tab:orange",
+        "mix3": "tab:green",
+        "mix4": "tab:red",
+        "mix5": "tab:purple",
     }
+    targets = {
+        i: {"0": float("inf"), "1": float("inf"), "2": float("inf")}
+        for i in tmap
+    }
+
+    possible_pos = [-0.3, -0.15, 0, 0.15, 0.3]
 
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
@@ -846,7 +841,8 @@ def study_5_plot(
             )
         )
         ax.scatter(
-            entry.properties["sidx"],
+            entry.properties["sidx"]
+            + possible_pos[int(entry.properties["mix"][-1]) - 1],
             entry.properties["energy_per_bb"],
             c=tmap[entry.properties["mix"]],
             alpha=0.5,
@@ -862,25 +858,86 @@ def study_5_plot(
             entry.key,
         )
 
-    for pair, edict in targets.items():
-        ax.plot(
-            [int(i) for i, ed in edict.items() if ed != float("inf")],
+    for xi, (pair, edict) in enumerate(targets.items()):
+        ax.bar(
+            [
+                int(i) + possible_pos[xi]
+                for i, ed in edict.items()
+                if ed != float("inf")
+            ],
             [ed for ed in edict.values() if ed != float("inf")],
             alpha=1.0,
-            c=tmap[pair],
-            mec="k",
-            markersize=8,
-            marker="o",
+            width=0.1,
+            fc=tmap[pair],
+            ec="k",
             label=pair,
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel(f"{eb_str()}", fontsize=16)
     ax.set_yscale("log")
+
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
     ax.legend(fontsize=16)
     ax.set_xticks([0, 1, 2])
     ax.set_xticklabels(["2:2:1:1", "2:2:0:2", "2:2:2:0"], fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study_5_plot2(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    tmap = {
+        "mix1": "tab:blue",
+        "mix2": "tab:orange",
+        "mix3": "tab:green",
+        "mix4": "tab:red",
+        "mix5": "tab:purple",
+    }
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        if (
+            entry.properties["sidx"] == 0
+            and entry.properties["topology_idx"] == 0
+            and entry.properties["bb_config_idx"] == 2  # noqa: PLR2004
+        ):
+            x = int(entry.properties["mix"][-1]) - 1
+            y = entry.properties["energy_per_bb"]
+
+            ax.bar(
+                x,
+                y,
+                alpha=1.0,
+                width=0.8,
+                fc=tmap[entry.properties["mix"]],
+                ec="k",
+            )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(f"{eb_str()}", fontsize=16)
+    ax.set_ylim(0, 1)
+    ax.set_xticks(range(len(tmap)))
+    ax.set_xticklabels(list(tmap), fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -960,6 +1017,7 @@ def study_6_plot(
         bbox_inches="tight",
     )
     plt.close()
+    raise SystemExit("show line between the same structures across x axis")
 
 
 def make_summary_plot2(
@@ -1207,11 +1265,6 @@ def _parse_args() -> argparse.Namespace:
         "--study6",
         action="store_true",
         help="set to run and or visualise case study 6 (w/o --run, only viz)",
-    )
-    parser.add_argument(
-        "--study7",
-        action="store_true",
-        help="set to run and or visualise case study 7 (w/o --run, only viz)",
     )
 
     return parser.parse_args()
@@ -2531,7 +2584,7 @@ def case_study_3(run: bool) -> None:
     )
 
 
-def case_study_4(run: bool) -> None:
+def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 4 studying PW heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs4_calculations"
@@ -2945,7 +2998,7 @@ def case_study_4(run: bool) -> None:
     )
 
 
-def case_study_5(run: bool) -> None:
+def case_study_5(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 5 studying Pd(II) heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs5_calculations"
@@ -2962,6 +3015,8 @@ def case_study_5(run: bool) -> None:
     figure_dir.mkdir(exist_ok=True)
     database_path = data_dir / "mgencs5.db"
 
+    stoichiometries = ((2, 2, 1, 1), (2, 2, 0, 2), (2, 2, 2, 0))
+    vdw_cutoff = 2
     present_beads = (
         cbead_d,
         abead_d,
@@ -2978,13 +3033,14 @@ def case_study_5(run: bool) -> None:
 
     ligand_measures = {
         "lin": {"ba": 2.8, "aa": 1.5, "bac": 180},
+        "lin2": {"ba": 2.8, "aa": 1.5, "bac": 175},
         "mxy": {"be": 7.6, "ee": 5.0, "bed": 90},
         "pxy": {"be": 7.7, "ee": 5.8, "bed": 110},
         "fxy": {"be": 7.7, "ee": 5.8, "bed": 120},
         "tetra": {"mb": 2.0, "bmb": 90},
         "sqp": {"bf": 2.0, "bfb": 90, "fbm": 90},
     }
-    stoichs_mcll = ((2, 2, 1, 1), (2, 2, 0, 2), (2, 2, 2, 0))
+
     mixtures = {
         "mix1": {
             "linear": (
@@ -3000,8 +3056,6 @@ def case_study_5(run: bool) -> None:
                 "mxy",
                 cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
             ),
-            "stoichiometries": stoichs_mcll,
-            "vdw_cutoff": 2,
         },
         "mix2": {
             "linear": (
@@ -3017,8 +3071,6 @@ def case_study_5(run: bool) -> None:
                 "pxy",
                 cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
             ),
-            "stoichiometries": stoichs_mcll,
-            "vdw_cutoff": 2,
         },
         "mix3": {
             "linear": (
@@ -3034,8 +3086,36 @@ def case_study_5(run: bool) -> None:
                 "fxy",
                 cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
             ),
-            "stoichiometries": stoichs_mcll,
-            "vdw_cutoff": 2,
+        },
+        "mix4": {
+            "linear": (
+                "lin2",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "tetra": (
+                "tetra",
+                cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            ),
+            "corner": ("sqp", cgx.molecular.TwoC0Arm(bead=e2bead_d)),
+            "bent": (
+                "mxy",
+                cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
+            ),
+        },
+        "mix5": {
+            "linear": (
+                "lin2",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "tetra": (
+                "tetra",
+                cgx.molecular.FourC1Arm(bead=tetra_bead, abead1=binder_bead),
+            ),
+            "corner": ("sqp", cgx.molecular.TwoC0Arm(bead=e2bead_d)),
+            "bent": (
+                "pxy",
+                cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c),
+            ),
         },
     }
 
@@ -3113,7 +3193,7 @@ def case_study_5(run: bool) -> None:
             forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
                 identifier=f"{mix}ff",
                 prefix=f"{mix}ff",
-                vdw_bond_cutoff=mixtures[mix]["vdw_cutoff"],
+                vdw_bond_cutoff=vdw_cutoff,
                 present_beads=present_beads,
                 definer_dict=cs5_definer_dict,
             )
@@ -3156,7 +3236,7 @@ def case_study_5(run: bool) -> None:
                 str(ligand_dir / f"{mix}_{corner.get_name()}_optl.mol")
             )
 
-            for sidx, stoichiometry in enumerate(mdict["stoichiometries"]):
+            for sidx, stoichiometry in enumerate(stoichiometries):
                 logging.info("doing: %s, stoich %s", mix, stoichiometry)
                 gtype = f"{stoichiometry[0]}P{stoichiometry[0] * 2}"
 
@@ -3379,99 +3459,19 @@ def case_study_5(run: bool) -> None:
                         name=min_energy_name,
                     )
 
-                collated_entries = [
-                    i
-                    for i in cgx.utilities.AtomliteDatabase(
-                        database_path
-                    ).get_entries()
-                    if "_f-" not in i.key
-                    and i.properties["mix"] == mix
-                    and i.properties["sidx"] == sidx
-                    and "lowest_e_of_mash" in i.properties
-                ]
-
-                # Generate a series of new ffs.
-                forcefield_lib = tuple(
-                    generate_nearby_forcefields(
-                        forcefield=forcefield,
-                        actual_present_bead_elements={
-                            i.__class__.__name__
-                            for i in stk.BuildingBlock.init_from_rdkit_mol(
-                                atomlite.json_to_rdkit(
-                                    collated_entries[0].molecule
-                                )
-                            ).get_atoms()
-                        },
-                    ).yield_forcefields(),
-                )
-                logging.info(
-                    "exploring %s molecules with %s ffs",
-                    len(collated_entries),
-                    len(forcefield_lib),
-                )
-
-                for (ffidx, temp_forcefield), entry in it.product(
-                    enumerate(forcefield_lib), collated_entries
-                ):
-                    name = entry.key + f"_f-{ffidx}"
-
-                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
-                    if not fina_mol_file.exists():
-                        logging.info("optimising %s with ff %s", name, ffidx)
-                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
-                            atomlite.json_to_rdkit(entry.molecule)
-                        )
-                        conformer = cgx.utilities.run_optimisation(
-                            assigned_system=temp_forcefield.assign_terms(
-                                current_cage, name, ffcalculation_dir
-                            ),
-                            name=name,
-                            file_suffix=f"ff{ffidx}",
-                            output_dir=ffcalculation_dir,
-                            platform=None,
-                        )
-                        conformer.molecule.with_centroid((0, 0, 0)).write(
-                            fina_mol_file
-                        )
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_molecule(molecule=conformer.molecule, key=name)
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_properties(
-                            key=name,
-                            property_dict={
-                                "energy_decomposition": (
-                                    conformer.energy_decomposition,  # type:ignore[dict-item]
-                                ),
-                                "source": conformer.source,
-                                "optimised": True,
-                                "energy_per_bb": (
-                                    cgx.utilities.get_energy_per_bb(
-                                        energy_decomposition=(
-                                            conformer.energy_decomposition
-                                        ),
-                                        number_building_blocks=(
-                                            iterator.get_num_building_blocks()
-                                        ),
-                                    )
-                                ),
-                                "min_distance": (
-                                    cgx.analysis.GeomMeasure().calculate_min_distance(
-                                        conformer.molecule
-                                    )["min_distance"]
-                                ),
-                            },
-                        )
-
     study_5_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_1.png",
     )
+    study_5_plot2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_2.png",
+    )
 
 
-def case_study_6(run: bool) -> None:
+def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 6 studying Tri + Di homoleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs6_calculations"
@@ -3955,10 +3955,6 @@ def case_study_6(run: bool) -> None:
     )
 
 
-def case_study_7(run: bool) -> None:
-    """Run case study 7 studying Pd(II) heteroleptic systems."""
-
-
 def main() -> None:
     """Run script."""
     args = _parse_args()
@@ -3973,8 +3969,6 @@ def main() -> None:
         case_study_5(args.run)
     if args.study6:
         case_study_6(args.run)
-    if args.study7:
-        case_study_7(args.run)
 
 
 if __name__ == "__main__":
