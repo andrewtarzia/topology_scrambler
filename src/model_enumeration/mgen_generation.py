@@ -6,6 +6,7 @@ import logging
 import pathlib
 import shutil
 from collections import abc, defaultdict
+from copy import deepcopy
 
 import atomlite
 import cgexplore as cgx
@@ -19,6 +20,7 @@ import stk
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
+from scipy import optimize
 
 from model_enumeration.mgen_utilities import (
     StericTwoC1Arm,
@@ -60,6 +62,165 @@ attempts = (
     "set-spring-10",
     "set-spectral-10",
 )
+
+
+def target_optimisation(  # noqa: C901, PLR0913
+    database_path: pathlib.Path,
+    calculation_dir: pathlib.Path,
+    target_key: str,
+    definer_dict: dict,
+    modifiable_terms: list[str],
+    forcefield: cgx.forcefields.ForceField,
+) -> None:
+    """Optimise the FF terms based on a target."""
+    target_entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(
+        target_key
+    )
+    num_building_blocks = target_entry.properties["num_bbs"]
+    input_cage = stk.BuildingBlock.init_from_rdkit_mol(
+        atomlite.json_to_rdkit(target_entry.molecule)
+    )
+    name = target_key + "_ffopt"
+    optimised_file = calculation_dir / f"{name}_ffopt.mol"
+
+    if optimised_file.exists():
+        return
+
+    ff_map = dict(enumerate(modifiable_terms))
+
+    initial_ff_params = []
+    bounds = []
+    for i in modifiable_terms:
+        if definer_dict[i][0] in ("bond", "nb"):
+            angle = False
+        elif definer_dict[i][0] in ("angle", "pyramid", "tors"):
+            angle = True
+        else:
+            raise RuntimeError
+
+        if (
+            definer_dict[i][0] == "bond"
+            or definer_dict[i][0] == "angle"
+            or definer_dict[i][0] == "pyramid"
+        ):
+            initial_ff_params.append(definer_dict[i][1])
+            value = definer_dict[i][1]
+        elif definer_dict[i][0] == "tors" or definer_dict[i][0] == "nb":
+            initial_ff_params.append(definer_dict[i][2])
+            value = definer_dict[i][2]
+        else:
+            raise RuntimeError
+
+        bounds.append(
+            (
+                max((value - percent_change(value, 20), 0)),
+                value + percent_change(value, 20)
+                if not angle
+                else (min((value + percent_change(value, 20), 180))),
+            )
+        )
+
+    def structure_f(params: abc.Sequence[float]) -> cgx.molecular.Conformer:
+        # Get FF.
+        temp_definer_dict = deepcopy(definer_dict)
+        for i, value in enumerate(params):
+            term = ff_map[i]
+            if (
+                temp_definer_dict[term][0] == "bond"
+                or temp_definer_dict[term][0] == "angle"
+                or temp_definer_dict[term][0] == "pyramid"
+            ):
+                temp_definer_dict[term] = (
+                    temp_definer_dict[term][0],
+                    value,
+                    temp_definer_dict[term][2],
+                )
+            elif temp_definer_dict[term][0] == "tors":
+                temp_definer_dict[term] = (
+                    temp_definer_dict[term][0],
+                    temp_definer_dict[term][1],
+                    value,
+                    temp_definer_dict[term][3],
+                    temp_definer_dict[term][4],
+                )
+            elif temp_definer_dict[term][0] == "nb":
+                temp_definer_dict[term] = (
+                    temp_definer_dict[term][0],
+                    temp_definer_dict[term][1],
+                    value,
+                )
+            else:
+                raise RuntimeError
+
+        temp_forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
+            identifier="ffopt",
+            prefix="ffopt",
+            vdw_bond_cutoff=forcefield.get_vdw_bond_cutoff(),
+            present_beads=forcefield.get_present_beads(),
+            definer_dict=temp_definer_dict,
+        )
+
+        # Run optimisation.
+        return cgx.utilities.run_optimisation(
+            assigned_system=temp_forcefield.assign_terms(
+                input_cage,
+                name,
+                calculation_dir,
+            ),
+            name=name,
+            file_suffix="ffopt",
+            output_dir=calculation_dir,
+            platform=None,
+        )
+
+    def f(params: abc.Sequence[float]) -> float:
+        if any(i < 0 for i in params):
+            return 100
+        conformer = structure_f(params)
+
+        # Return Energy.
+        return cgx.utilities.get_energy_per_bb(
+            energy_decomposition=conformer.energy_decomposition,
+            number_building_blocks=num_building_blocks,
+        )
+
+    result = optimize.dual_annealing(
+        f,
+        bounds,
+        x0=initial_ff_params,
+        minimizer_kwargs={"method": "BFGS", "tol": 0.01},
+        maxiter=10,
+        maxfun=400,
+        rng=np.random.default_rng(2785),
+    )
+
+    min_conformer = structure_f(result.x)
+    if (
+        cgx.utilities.get_energy_per_bb(
+            energy_decomposition=min_conformer.energy_decomposition,
+            number_building_blocks=num_building_blocks,
+        )
+        > result.fun * 1.1
+    ):
+        raise RuntimeError
+
+    min_conformer.molecule.write(optimised_file)
+
+    properties = {
+        "optimisation_success": result.success,
+        "optimisation_energy_per_bb": float(result.fun),
+        "optimisation_x": [float(i) for i in result.x],
+        "optimisation_map": ff_map,
+        "optimisation_rmsd": stko.KabschRmsdCalculator(input_cage).calculate(
+            min_conformer.molecule
+        ),
+    }
+
+    # Add properties to the entry.
+    cgx.utilities.AtomliteDatabase(database_path).add_properties(
+        key=target_key,
+        property_dict=properties,
+    )
 
 
 def generate_nearby_forcefields(  # noqa: C901, PLR0912
@@ -416,6 +577,83 @@ def ff_vary_plot(
     ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_xlabel(f"prop. rank 1 (of {len(ffidxs) + 1})", fontsize=16)
     ax.legend(fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def ff_opt_plot(
+    target: str,
+    key_target: str,
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
+
+    entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(key_target)
+
+    xticks = [0]
+    xlbls = [eb_str()]
+
+    if "optimisation_success" not in entry.properties:
+        raise RuntimeError
+
+    if target not in entry.key:
+        raise RuntimeError
+
+    rmsd = entry.properties["optimisation_rmsd"]
+    term_dict = {
+        term: entry.properties["optimisation_x"][int(i)]
+        for i, term in entry.properties["optimisation_map"].items()
+    }
+
+    ffdict = entry.properties["forcefield_dict"]["v_dict"]
+    init_term_dict = {term: ffdict["_".join(list(term))] for term in term_dict}
+
+    xticks.extend([i + len(xticks) for i in range(len(term_dict))])
+    xlbls.extend(list(term_dict))
+    orig = [entry.properties["energy_per_bb"]] + [
+        val for i, val in init_term_dict.items()
+    ]
+    new = [
+        entry.properties["optimisation_energy_per_bb"],
+    ] + [val for i, val in term_dict.items()]
+    p = ax.bar(
+        range(len(orig)),
+        [((j - i) / i) * 100 for i, j in zip(orig, new, strict=True)],
+        color="tab:blue",
+        alpha=1,
+        width=0.8,
+        zorder=-1,
+        ec="k",
+    )
+    ax.bar_label(
+        p,
+        labels=[round(j, 1) for i, j in zip(orig, new, strict=True)],
+        rotation=0,
+        label_type="center",
+        padding=0,
+        fontsize=12,
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xlbls, fontsize=16, rotation=90)
+    ax.axhline(y=0, c="k")
+    ax.set_title(f"{key_target}: rmsd= {round(rmsd, 2)}", fontsize=16)
+    ax.set_ylim(-100, 100)
 
     fig.tight_layout()
     fig.savefig(
@@ -1541,6 +1779,11 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--run",
+        action="store_true",
+        help="set to iterate through structure functions",
+    )
+    parser.add_argument(
+        "--opt_ff",
         action="store_true",
         help="set to iterate through structure functions",
     )
@@ -3777,7 +4020,7 @@ def case_study_5(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     )
 
 
-def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 6 studying Tri + Di homoleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs6_calculations"
@@ -3804,7 +4047,6 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "cs6l1b": {"ba": 3.8 / 3, "aa": 3.8 / 3, "bac": 160},
         "cs6l2": {"ba": 5.7 / 3, "aa": 5.7 / 3, "bac": 180},
         "cs6l2b": {"ba": 5.7 / 3, "aa": 5.7 / 3, "bac": 160},
-        "cs6l2c": {"ba": 0.8, "aa": 5.7, "bac": 150},
         "cs6l5": {"ba": 8.0 / 3, "aa": 8.0 / 3, "bac": 180},
         "cs6l5b": {"ba": 8.0 / 3, "aa": 8.0 / 3, "bac": 160},
         "cs6l6": {"ba": 9.9 / 3, "aa": 9.9 / 3, "bac": 180},
@@ -3813,24 +4055,11 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "cs6l9b": {"ba": 14.2 / 3, "aa": 14.2 / 3, "bac": 160},
         "cs6zr1": {"bnb": 60, "nb": 3.5},
         "cs6zr2": {"bnb": 70, "nb": 3.5},
-        "cs6zr3": {"bnb": 60, "nb": 2.0},
         "cs6cc31": {"bnb": 120, "nb": 2.9},
-        "cs6cc32": {"ba": 1.5, "aa": 1.5, "bac": 105},
+        "cs6cc32": {"ba": 1.5, "aa": 1.5, "bac": 115},
     }
 
     mixtures = {
-        "l2czr3": {
-            "linear": (
-                "cs6l2c",
-                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
-            ),
-            "trigonal": (
-                "cs6zr3",
-                cgx.molecular.ThreeC1Arm(
-                    bead=trigonal_bead, abead1=binder_bead
-                ),
-            ),
-        },
         "l1zr1": {
             "linear": (
                 "cs6l1",
@@ -3842,6 +4071,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l1zr1_1_0_2",
         },
         "l1zr2": {
             "linear": (
@@ -3854,6 +4084,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l1zr2_1_0_3",
         },
         "l1bzr1": {
             "linear": (
@@ -3866,6 +4097,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l1bzr1_1_0_0",
         },
         "l1bzr2": {
             "linear": (
@@ -3878,6 +4110,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l1bzr2_1_0_3",
         },
         "l2zr1": {
             "linear": (
@@ -3926,6 +4159,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l2bzr2_2_4_3",
         },
         "l5zr1": {
             "linear": (
@@ -3938,6 +4172,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l5zr1_1_0_1",
         },
         "l5zr2": {
             "linear": (
@@ -4034,6 +4269,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l9zr1_1_0_4",
         },
         "l9zr2": {
             "linear": (
@@ -4082,59 +4318,60 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "cc3_2_4_5",
         },
     }
 
     cg_scale = 2
-    if run:
-        for mix, mdict in mixtures.items():
-            cgx.molecular.BeadLibrary(present_beads)
-            linear_name, linear = mdict["linear"]
-            trigonal_name, trigonal = mdict["trigonal"]
+    for mix, mdict in mixtures.items():
+        cgx.molecular.BeadLibrary(present_beads)
+        linear_name, linear = mdict["linear"]
+        trigonal_name, trigonal = mdict["trigonal"]
 
-            cs6_definer_dict = {
-                # Trigonal.
-                "nb": (
-                    "bond",
-                    ligand_measures[trigonal_name]["nb"] / cg_scale,
-                    1e5,
-                ),
-                "bnb": ("angle", ligand_measures[trigonal_name]["bnb"], 1e2),
-                # Linear.
-                "ba": (
-                    "bond",
-                    ligand_measures[linear_name]["ba"] / cg_scale,
-                    1e5,
-                ),
-                "ac": (
-                    "bond",
-                    ligand_measures[linear_name]["aa"] / 2 / cg_scale,
-                    1e5,
-                ),
-                "bac": (
-                    "angle",
-                    ligand_measures[linear_name]["bac"],
-                    1e2,
-                ),
-                "aca": ("angle", 180, 1e2),
-                # Constant.
-                "nba": ("angle", 180, 1e2),
-                # Nonbondeds.
-                "n": ("nb", 10.0, 1.0),
-                "a": ("nb", 10.0, 1.0),
-                "b": ("nb", 10.0, 1.0),
-                "c": ("nb", 10.0, 1.0),
-            }
-            if "b" in linear_name:
-                cs6_definer_dict["bacab"] = ("tors", "0134", 180, 50, 1)
+        cs6_definer_dict = {
+            # Trigonal.
+            "nb": (
+                "bond",
+                ligand_measures[trigonal_name]["nb"] / cg_scale,
+                1e5,
+            ),
+            "bnb": ("angle", ligand_measures[trigonal_name]["bnb"], 1e2),
+            # Linear.
+            "ba": (
+                "bond",
+                ligand_measures[linear_name]["ba"] / cg_scale,
+                1e5,
+            ),
+            "ac": (
+                "bond",
+                ligand_measures[linear_name]["aa"] / 2 / cg_scale,
+                1e5,
+            ),
+            "bac": (
+                "angle",
+                ligand_measures[linear_name]["bac"],
+                1e2,
+            ),
+            "aca": ("angle", 180, 1e2),
+            # Constant.
+            "nba": ("angle", 180, 1e2),
+            # Nonbondeds.
+            "n": ("nb", 10.0, 1.0),
+            "a": ("nb", 10.0, 1.0),
+            "b": ("nb", 10.0, 1.0),
+            "c": ("nb", 10.0, 1.0),
+        }
+        if "b" in linear_name:
+            cs6_definer_dict["bacab"] = ("tors", "0134", 180, 50, 1)
 
-            forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
-                identifier=f"{mix}ff",
-                prefix=f"{mix}ff",
-                vdw_bond_cutoff=vdw_cutoff,
-                present_beads=present_beads,
-                definer_dict=cs6_definer_dict,
-            )
+        forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
+            identifier=f"{mix}ff",
+            prefix=f"{mix}ff",
+            vdw_bond_cutoff=vdw_cutoff,
+            present_beads=present_beads,
+            definer_dict=cs6_definer_dict,
+        )
+        if run:
             linear_bb = cgx.utilities.optimise_ligand(
                 molecule=linear.get_building_block(),
                 name=f"{mix}_{linear.get_name()}",
@@ -4310,90 +4547,27 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         name=min_energy_name,
                     )
 
-                collated_entries = [
-                    i
-                    for i in cgx.utilities.AtomliteDatabase(
-                        database_path
-                    ).get_entries()
-                    if "_f-" not in i.key
-                    and i.properties["mix"] == mix
-                    and i.properties["multiplier"] == multiplier
-                    and "lowest_e_of_mash" in i.properties
-                ]
+        if opt_ff:
+            ffoptcalculation_dir = calculation_dir / "ff_opt"
+            ffoptcalculation_dir.mkdir(exist_ok=True)
+            try:
+                mix_target = mdict["target"]
+            except KeyError:
+                continue
 
-                # Generate a series of new ffs.
-                forcefield_lib = tuple(
-                    generate_nearby_forcefields(
-                        forcefield=forcefield,
-                        actual_present_bead_elements={
-                            i.__class__.__name__
-                            for i in stk.BuildingBlock.init_from_rdkit_mol(
-                                atomlite.json_to_rdkit(
-                                    collated_entries[0].molecule
-                                )
-                            ).get_atoms()
-                        },
-                    ).yield_forcefields(),
-                )
-                logging.info(
-                    "exploring %s molecules with %s ffs",
-                    len(collated_entries),
-                    len(forcefield_lib),
-                )
-
-                for (ffidx, temp_forcefield), entry in it.product(
-                    enumerate(forcefield_lib), collated_entries
-                ):
-                    name = entry.key + f"_f-{ffidx}"
-
-                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
-                    if not fina_mol_file.exists():
-                        logging.info("optimising %s with ff %s", name, ffidx)
-                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
-                            atomlite.json_to_rdkit(entry.molecule)
-                        )
-                        conformer = cgx.utilities.run_optimisation(
-                            assigned_system=temp_forcefield.assign_terms(
-                                current_cage, name, ffcalculation_dir
-                            ),
-                            name=name,
-                            file_suffix=f"ff{ffidx}",
-                            output_dir=ffcalculation_dir,
-                            platform=None,
-                        )
-                        conformer.molecule.with_centroid((0, 0, 0)).write(
-                            fina_mol_file
-                        )
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_molecule(molecule=conformer.molecule, key=name)
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_properties(
-                            key=name,
-                            property_dict={
-                                "energy_decomposition": (
-                                    conformer.energy_decomposition,  # type:ignore[dict-item]
-                                ),
-                                "source": conformer.source,
-                                "optimised": True,
-                                "energy_per_bb": (
-                                    cgx.utilities.get_energy_per_bb(
-                                        energy_decomposition=(
-                                            conformer.energy_decomposition
-                                        ),
-                                        number_building_blocks=(
-                                            iterator.get_num_building_blocks()
-                                        ),
-                                    )
-                                ),
-                                "min_distance": (
-                                    cgx.analysis.GeomMeasure().calculate_min_distance(
-                                        conformer.molecule
-                                    )["min_distance"]
-                                ),
-                            },
-                        )
+            logging.info(
+                "running optimisation of %s molecules over %s",
+                f"{mix_target}",
+                ["nb", "bnb", "bac", "ba", "ac"],
+            )
+            target_optimisation(
+                database_path=database_path,
+                target_key=mix_target,
+                calculation_dir=ffoptcalculation_dir,
+                definer_dict=cs6_definer_dict,
+                modifiable_terms=["nb", "bnb", "bac", "ba", "ac"],
+                forcefield=forcefield,
+            )
 
     study_6_plot(
         database_path=database_path,
@@ -4410,13 +4584,24 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_3.png",
     )
-    for mix in mixtures:
+    for mix, mdict in mixtures.items():
         ff_vary_plot(
             database_path=database_path,
             target=mix,
             figure_dir=figure_dir,
             filename=f"mgen_4_{mix}.png",
         )
+        try:
+            mix_target = mdict["target"]
+            ff_opt_plot(
+                database_path=database_path,
+                target=mix,
+                figure_dir=figure_dir,
+                filename=f"mgen_5_{mix}.png",
+                key_target=mix_target,
+            )
+        except KeyError:
+            continue
 
 
 def main() -> None:
@@ -4432,7 +4617,7 @@ def main() -> None:
     if args.study5:
         case_study_5(args.run)
     if args.study6:
-        case_study_6(args.run)
+        case_study_6(args.run, args.opt_ff)
 
 
 if __name__ == "__main__":
