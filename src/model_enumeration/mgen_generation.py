@@ -14,7 +14,6 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import openmm
 import rustworkx as rx
 import stk
 import stko
@@ -34,6 +33,7 @@ from model_enumeration.mgen_utilities import (
     constant_definer_dict,
     e2bead_d,
     ebead_c,
+    precursors_to_definer_dict,
     precursors_to_forcefield,
     steric_bead,
     tetra_bead,
@@ -44,7 +44,6 @@ from model_enumeration.utilities import (
     eb_str,
     isomer_energy,
     multi_cmap,
-    percent_change,
 )
 
 logging.basicConfig(
@@ -64,7 +63,7 @@ attempts = (
 )
 
 
-def target_optimisation(  # noqa: C901, PLR0913
+def target_optimisation(  # noqa: C901, PLR0913, PLR0915
     database_path: pathlib.Path,
     calculation_dir: pathlib.Path,
     target_key: str,
@@ -76,291 +75,178 @@ def target_optimisation(  # noqa: C901, PLR0913
     target_entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(
         target_key
     )
+    if "lowest_e_of_mash" not in target_entry.properties:
+        msg = (
+            f"{target_entry.key} is not the lowest E of mash. Are you sure"
+            " about it?"
+        )
+        raise RuntimeError(msg)
+
     num_building_blocks = target_entry.properties["num_bbs"]
     input_cage = stk.BuildingBlock.init_from_rdkit_mol(
         atomlite.json_to_rdkit(target_entry.molecule)
     )
     name = target_key + "_ffopt"
+    ff_database_path = calculation_dir / f"{name}_ffopt.db"
     optimised_file = calculation_dir / f"{name}_ffopt.mol"
 
-    if optimised_file.exists():
-        return
-
-    ff_map = dict(enumerate(modifiable_terms))
-
-    initial_ff_params = []
-    bounds = []
-    for i in modifiable_terms:
-        if definer_dict[i][0] in ("bond", "nb"):
-            angle = False
-        elif definer_dict[i][0] in ("angle", "pyramid", "tors"):
-            angle = True
-        else:
-            raise RuntimeError
-
-        if (
-            definer_dict[i][0] == "bond"
-            or definer_dict[i][0] == "angle"
-            or definer_dict[i][0] == "pyramid"
-        ):
-            initial_ff_params.append(definer_dict[i][1])
-            value = definer_dict[i][1]
-        elif definer_dict[i][0] == "tors" or definer_dict[i][0] == "nb":
-            initial_ff_params.append(definer_dict[i][2])
-            value = definer_dict[i][2]
-        else:
-            raise RuntimeError
-
-        bounds.append(
-            (
-                max((value - percent_change(value, 20), 0)),
-                value + percent_change(value, 20)
-                if not angle
-                else (min((value + percent_change(value, 20), 180))),
-            )
+    if ff_database_path.exists():
+        properties = (
+            cgx.utilities.AtomliteDatabase(ff_database_path)
+            .get_entry(target_key)
+            .properties
         )
 
-    def structure_f(params: abc.Sequence[float]) -> cgx.molecular.Conformer:
-        # Get FF.
-        temp_definer_dict = deepcopy(definer_dict)
-        for i, value in enumerate(params):
-            term = ff_map[i]
-            if (
-                temp_definer_dict[term][0] == "bond"
-                or temp_definer_dict[term][0] == "angle"
-                or temp_definer_dict[term][0] == "pyramid"
-            ):
-                temp_definer_dict[term] = (
-                    temp_definer_dict[term][0],
-                    value,
-                    temp_definer_dict[term][2],
-                )
-            elif temp_definer_dict[term][0] == "tors":
-                temp_definer_dict[term] = (
-                    temp_definer_dict[term][0],
-                    temp_definer_dict[term][1],
-                    value,
-                    temp_definer_dict[term][3],
-                    temp_definer_dict[term][4],
-                )
-            elif temp_definer_dict[term][0] == "nb":
-                temp_definer_dict[term] = (
-                    temp_definer_dict[term][0],
-                    temp_definer_dict[term][1],
-                    value,
-                )
+    else:
+        ff_map = dict(enumerate(modifiable_terms))
+
+        initial_ff_params = []
+        bounds = []
+        for i in modifiable_terms:
+            if definer_dict[i][0] in ("bond", "nb"):
+                angle = False
+                max_change = 0.5
+            elif definer_dict[i][0] in ("angle", "pyramid", "tors"):
+                angle = True
+                max_change = 20
             else:
                 raise RuntimeError
 
-        temp_forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
-            identifier="ffopt",
-            prefix="ffopt",
-            vdw_bond_cutoff=forcefield.get_vdw_bond_cutoff(),
-            present_beads=forcefield.get_present_beads(),
-            definer_dict=temp_definer_dict,
+            if (
+                definer_dict[i][0] == "bond"
+                or definer_dict[i][0] == "angle"
+                or definer_dict[i][0] == "pyramid"
+            ):
+                initial_ff_params.append(definer_dict[i][1])
+                value = definer_dict[i][1]
+            elif definer_dict[i][0] == "tors" or definer_dict[i][0] == "nb":
+                initial_ff_params.append(definer_dict[i][2])
+                value = definer_dict[i][2]
+            else:
+                raise RuntimeError
+
+            bounds.append(
+                (
+                    max((value - max_change, 0)),
+                    value + max_change
+                    if not angle
+                    else (min((value + max_change, 180))),
+                )
+            )
+
+        def structure_f(
+            params: abc.Sequence[float],
+        ) -> cgx.molecular.Conformer:
+            # Get FF.
+            temp_definer_dict = deepcopy(definer_dict)
+            for i, value in enumerate(params):
+                term = ff_map[i]
+                if (
+                    temp_definer_dict[term][0] == "bond"
+                    or temp_definer_dict[term][0] == "angle"
+                    or temp_definer_dict[term][0] == "pyramid"
+                ):
+                    temp_definer_dict[term] = (
+                        temp_definer_dict[term][0],
+                        value,
+                        temp_definer_dict[term][2],
+                    )
+                elif temp_definer_dict[term][0] == "tors":
+                    temp_definer_dict[term] = (
+                        temp_definer_dict[term][0],
+                        temp_definer_dict[term][1],
+                        value,
+                        temp_definer_dict[term][3],
+                        temp_definer_dict[term][4],
+                    )
+                elif temp_definer_dict[term][0] == "nb":
+                    temp_definer_dict[term] = (
+                        temp_definer_dict[term][0],
+                        temp_definer_dict[term][1],
+                        value,
+                    )
+                else:
+                    raise RuntimeError
+
+            temp_forcefield = (
+                cgx.systems_optimisation.get_forcefield_from_dict(
+                    identifier="ffopt",
+                    prefix="ffopt",
+                    vdw_bond_cutoff=forcefield.get_vdw_bond_cutoff(),
+                    present_beads=forcefield.get_present_beads(),
+                    definer_dict=temp_definer_dict,
+                )
+            )
+
+            # Run optimisation.
+            return cgx.utilities.run_optimisation(
+                assigned_system=temp_forcefield.assign_terms(
+                    input_cage,
+                    name,
+                    calculation_dir,
+                ),
+                name=name,
+                file_suffix="ffopt",
+                output_dir=calculation_dir,
+                platform=None,
+            )
+
+        def f(params: abc.Sequence[float]) -> float:
+            if any(i < 0 for i in params):
+                return 100
+            conformer = structure_f(params)
+
+            # Return Energy.
+            return cgx.utilities.get_energy_per_bb(
+                energy_decomposition=conformer.energy_decomposition,
+                number_building_blocks=num_building_blocks,
+            )
+
+        result = optimize.dual_annealing(
+            f,
+            bounds,
+            x0=initial_ff_params,
+            minimizer_kwargs={"method": "BFGS", "tol": 0.01},
+            maxiter=10,
+            maxfun=400,
+            rng=np.random.default_rng(2785),
         )
+        logging.info("optimisation %s with E: %s", result.success, result.fun)
 
-        # Run optimisation.
-        return cgx.utilities.run_optimisation(
-            assigned_system=temp_forcefield.assign_terms(
-                input_cage,
-                name,
-                calculation_dir,
-            ),
-            name=name,
-            file_suffix="ffopt",
-            output_dir=calculation_dir,
-            platform=None,
+        min_conformer = structure_f(result.x)
+        if (
+            cgx.utilities.get_energy_per_bb(
+                energy_decomposition=min_conformer.energy_decomposition,
+                number_building_blocks=num_building_blocks,
+            )
+            > result.fun * 1.1
+        ):
+            raise RuntimeError
+
+        min_conformer.molecule.write(optimised_file)
+
+        properties = {
+            "optimisation_success": result.success,
+            "optimisation_energy_per_bb": float(result.fun),
+            "optimisation_x": [float(i) for i in result.x],
+            "optimisation_map": ff_map,
+            "optimisation_rmsd": stko.KabschRmsdCalculator(
+                input_cage
+            ).calculate(min_conformer.molecule),
+        }
+        cgx.utilities.AtomliteDatabase(ff_database_path).add_molecule(
+            molecule=min_conformer.molecule, key=target_key
         )
-
-    def f(params: abc.Sequence[float]) -> float:
-        if any(i < 0 for i in params):
-            return 100
-        conformer = structure_f(params)
-
-        # Return Energy.
-        return cgx.utilities.get_energy_per_bb(
-            energy_decomposition=conformer.energy_decomposition,
-            number_building_blocks=num_building_blocks,
-        )
-
-    result = optimize.dual_annealing(
-        f,
-        bounds,
-        x0=initial_ff_params,
-        minimizer_kwargs={"method": "BFGS", "tol": 0.01},
-        maxiter=10,
-        maxfun=400,
-        rng=np.random.default_rng(2785),
-    )
-
-    min_conformer = structure_f(result.x)
-    if (
-        cgx.utilities.get_energy_per_bb(
-            energy_decomposition=min_conformer.energy_decomposition,
-            number_building_blocks=num_building_blocks,
-        )
-        > result.fun * 1.1
-    ):
-        raise RuntimeError
-
-    min_conformer.molecule.write(optimised_file)
-
-    properties = {
-        "optimisation_success": result.success,
-        "optimisation_energy_per_bb": float(result.fun),
-        "optimisation_x": [float(i) for i in result.x],
-        "optimisation_map": ff_map,
-        "optimisation_rmsd": stko.KabschRmsdCalculator(input_cage).calculate(
-            min_conformer.molecule
-        ),
-    }
 
     # Add properties to the entry.
     cgx.utilities.AtomliteDatabase(database_path).add_properties(
         key=target_key,
         property_dict=properties,
     )
-
-
-def generate_nearby_forcefields(  # noqa: C901, PLR0912
-    forcefield: cgx.forcefields.ForceField,
-    actual_present_bead_elements: abc.Sequence[str],
-) -> cgx.forcefields.ForceFieldLibrary:
-    """Generate nearby forcefields."""
-    modifiable = (
-        # "dd",
-        # "de",
-        "deg",
-        "egb",
-        "dde",
-        # "ac",
-        "bac",
-        "bed",
-        # "zz",
-        # "zr",
-        "zzr",
-        "zrf",
-        "rfb",
+    cgx.utilities.AtomliteDatabase(ff_database_path).add_properties(
+        key=target_key,
+        property_dict=properties,
     )
-
-    ff_targets = forcefield.get_targets()
-
-    fflib = cgx.forcefields.ForceFieldLibrary(
-        present_beads=forcefield.get_present_beads(),
-        vdw_bond_cutoff=forcefield.get_vdw_bond_cutoff(),
-        prefix=f"{forcefield.get_prefix()}_lib",
-    )
-    for fftype, currtargets in ff_targets.items():
-        for target in currtargets:
-            if fftype == "bonds":
-                cp = f"{target.type1}{target.type2}"
-
-                bond_r = target.bond_r.value_in_unit(openmm.unit.angstrom)
-                # Do not change bonds not in molecule!
-                if cp in modifiable and (
-                    target.element1
-                    and target.element2 in actual_present_bead_elements
-                ):
-                    bond_rs = [
-                        openmm.unit.Quantity(
-                            value=i,
-                            unit=openmm.unit.angstrom,
-                        )
-                        for i in (
-                            bond_r,
-                            bond_r - percent_change(bond_r, 2),
-                            bond_r + percent_change(bond_r, 2),
-                        )
-                    ]
-                else:
-                    bond_rs = [target.bond_r]
-
-                target_range = cgx.terms.TargetBondRange(
-                    type1=target.type1,
-                    type2=target.type2,
-                    element1=target.element1,
-                    element2=target.element2,
-                    bond_rs=bond_rs,
-                    bond_ks=[target.bond_k],
-                )
-                fflib.add_bond_range(target_range)
-
-            elif fftype == "angles":
-                if isinstance(
-                    target,
-                    cgx.terms.TargetPyramidAngle | cgx.terms.TargetAngle,
-                ):
-                    cp = f"{target.type1}{target.type2}{target.type3}"
-
-                    angle_v = target.angle.value_in_unit(openmm.unit.degrees)
-                    # Do not change bonds not in molecule!
-                    if cp in modifiable and (
-                        target.element1
-                        and target.element2
-                        and target.element3 in actual_present_bead_elements
-                    ):
-                        angles = [
-                            openmm.unit.Quantity(
-                                value=i, unit=openmm.unit.degrees
-                            )
-                            for i in [
-                                angle_v,
-                                angle_v - percent_change(angle_v, 2),
-                                angle_v + percent_change(angle_v, 2),
-                            ]
-                            if i <= 180  # noqa: PLR2004
-                        ]
-
-                    else:
-                        angles = [target.angle]
-
-                    if isinstance(target, cgx.terms.TargetPyramidAngle):
-                        func = cgx.terms.PyramidAngleRange
-                    elif isinstance(target, cgx.terms.TargetAngle):
-                        func = cgx.terms.TargetAngleRange
-
-                    target_range = func(
-                        type1=target.type1,
-                        type2=target.type2,
-                        type3=target.type3,
-                        element1=target.element1,
-                        element2=target.element2,
-                        element3=target.element3,
-                        angles=angles,
-                        angle_ks=[target.angle_k],
-                    )
-
-                if isinstance(target, cgx.terms.TargetCosineAngle):
-                    raise NotImplementedError
-
-                fflib.add_angle_range(target_range)
-
-            elif fftype == "torsions":
-                target_range = cgx.terms.TargetTorsionRange(
-                    search_string=target.search_string,
-                    search_estring=target.search_estring,
-                    measured_atom_ids=target.measured_atom_ids,
-                    phi0s=[target.phi0],
-                    torsion_ks=[target.torsion_k],
-                    torsion_ns=[target.torsion_n],
-                )
-                fflib.add_torsion_range(target_range)
-
-            elif fftype == "nonbondeds":
-                target_range = cgx.terms.TargetNonbondedRange(
-                    bead_class=target.bead_class,
-                    bead_element=target.bead_element,
-                    sigmas=[target.sigma],
-                    epsilons=[target.epsilon],
-                    force=target.force,
-                )
-                fflib.add_nonbonded_range(target_range)
-
-            else:
-                raise NotImplementedError
-
-    return fflib
 
 
 def get_bb_topology_code_graph(
@@ -484,114 +370,6 @@ def analyse_cage(database_path: pathlib.Path, name: str) -> None:
         )
 
 
-def ff_vary_plot(
-    target: str,
-    database_path: pathlib.Path,
-    figure_dir: pathlib.Path,
-    filename: str,
-) -> dict:
-    """Visualise energies."""
-    fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
-
-    entries = list(cgx.utilities.AtomliteDatabase(database_path).get_entries())
-    ff_entries = [i for i in entries if "_f-" in i.key]
-
-    systems = {}
-    for entry in entries:
-        if "lowest_e_of_mash" not in entry.properties:
-            continue
-
-        if target not in entry.key:
-            continue
-
-        energy = entry.properties["energy_per_bb"]
-
-        ff_options = [i for i in ff_entries if i.key.startswith(entry.key)]
-        ff_energies = [
-            ff_entry.properties["energy_per_bb"] for ff_entry in ff_options
-        ]
-        ffidxs = [int(i.key.split("-")[-1]) for i in ff_options]
-
-        systems[entry.key] = (
-            energy,
-            ff_energies,
-            str(entry.properties["multiplier"]),
-        )
-
-    if len(systems.values()) == 0:
-        return
-    rankings = {}
-    energies = [energy for energy, _, _ in systems.values()]
-    rankings[-1] = [energies.index(i) for i in sorted(energies)]
-
-    systems_counts_as_best = {i: [] for i in systems}
-    systems_counts_as_best[list(systems.keys())[rankings[-1][0]]].append(-1)
-
-    for idx in ffidxs:
-        try:
-            energies = [
-                ffenergies[idx] for _, ffenergies, _ in systems.values()
-            ]
-        except IndexError:
-            continue
-
-        rankings[idx] = [energies.index(i) for i in sorted(energies)]
-        lowest_energy = rankings[idx][0]
-
-        systems_counts_as_best[list(systems.keys())[lowest_energy]].append(idx)
-
-    labels = set()
-    for ix, (system, when_ranked) in enumerate(systems_counts_as_best.items()):
-        energies = [systems[system][0], *list(systems[system][1])]
-
-        count = len(when_ranked)
-
-        p = ax.barh(
-            ix,
-            count / (len(ffidxs) + 1),
-            color=multi_cmap[systems[system][2]],
-            alpha=1,
-            height=0.8,
-            label=f"M={systems[system][2]}"
-            if systems[system][2] not in labels
-            else None,
-        )
-        labels.add(systems[system][2])
-
-        if count == 0:
-            continue
-        string = system.split("_")
-        string = string[0] + ": " + string[2]
-        ax.bar_label(
-            p,
-            labels=[string],
-            rotation=0,
-            label_type="center",
-            padding=0,
-            fontsize=12,
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_yticks([])
-    ax.set_xlim(0, 1.2)
-    ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    ax.set_xlabel(f"prop. rank 1 (of {len(ffidxs) + 1})", fontsize=16)
-    ax.legend(fontsize=16)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    fig.savefig(
-        figure_dir / filename.replace(".png", ".pdf"),
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
 def ff_opt_plot(
     target: str,
     key_target: str,
@@ -602,17 +380,25 @@ def ff_opt_plot(
     """Visualise energies."""
     fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
 
-    entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(key_target)
+    try:
+        entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(
+            key_target
+        )
+    except RuntimeError:
+        return
+
+    if (
+        "optimisation_success" not in entry.properties
+        or target not in entry.key
+    ):
+        msg = (
+            f"optimisation_success not in entry properties, "
+            f"or {target} not in {entry.key}"
+        )
+        raise RuntimeError(msg)
 
     xticks = [0]
     xlbls = [eb_str()]
-
-    if "optimisation_success" not in entry.properties:
-        raise RuntimeError
-
-    if target not in entry.key:
-        raise RuntimeError
-
     rmsd = entry.properties["optimisation_rmsd"]
     term_dict = {
         term: entry.properties["optimisation_x"][int(i)]
@@ -654,170 +440,6 @@ def ff_opt_plot(
     ax.axhline(y=0, c="k")
     ax.set_title(f"{key_target}: rmsd= {round(rmsd, 2)}", fontsize=16)
     ax.set_ylim(-100, 100)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    fig.savefig(
-        figure_dir / filename.replace(".png", ".pdf"),
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
-def make_plot(  # noqa: PLR0915
-    target_pair: str,
-    database_path: pathlib.Path,
-    figure_dir: pathlib.Path,
-    filename: str,
-) -> dict:
-    """Visualise energies."""
-    fig, (ax0, ax, ax1) = plt.subplots(
-        ncols=3,
-        figsize=(16, 5),
-        width_ratios=[1, 1, 1],
-    )
-
-    entries = list(cgx.utilities.AtomliteDatabase(database_path).get_entries())
-    ff_entries = [i for i in entries if "_f-" in i.key]
-
-    systems = {}
-    for entry in entries:
-        if "lowest_e_of_mash" not in entry.properties:
-            continue
-        multi = str(entry.properties["multiplier"])
-        tidx = entry.properties["topology_idx"]
-        bidx = entry.properties["bb_config_idx"]
-
-        if entry.properties["pair"] != target_pair:
-            continue
-        energy = entry.properties["energy_per_bb"]
-
-        ff_options = [i for i in ff_entries if i.key.startswith(entry.key)]
-        ff_energies = [
-            ff_entry.properties["energy_per_bb"] for ff_entry in ff_options
-        ]
-        ffidxs = [int(i.key.split("-")[-1]) for i in ff_options]
-
-        systems[entry.key] = (energy, ff_energies, multi, tidx, bidx)
-
-    rankings = {}
-    energies = [energy for energy, _, _, _, _ in systems.values()]
-    rankings[-1] = [energies.index(i) for i in sorted(energies)]
-
-    systems_counts_lt_1 = {
-        i: [-1] if values[0] < 1 else [] for i, values in systems.items()
-    }
-
-    systems_counts_as_best = {i: [] for i in systems}
-    systems_counts_as_best[list(systems.keys())[rankings[-1][0]]].append(-1)
-
-    for idx in ffidxs:
-        energies = [
-            ffenergies[idx] for _, ffenergies, _, _, _ in systems.values()
-        ]
-        for system, values in systems.items():
-            if values[1][idx] < 1.0:
-                systems_counts_lt_1[system].append(idx)
-
-        rankings[idx] = [energies.index(i) for i in sorted(energies)]
-        lowest_energy = rankings[idx][0]
-
-        systems_counts_as_best[list(systems.keys())[lowest_energy]].append(idx)
-
-    labels = set()
-    for ix, (system, when_ranked) in enumerate(systems_counts_as_best.items()):
-        energies = [systems[system][0], *list(systems[system][1])]
-
-        count = len(when_ranked)
-        count_lt_1 = len(systems_counts_lt_1[system])
-        ax0.barh(
-            ix,
-            count_lt_1 / (len(ffidxs) + 1),
-            color=multi_cmap[systems[system][2]],
-            alpha=1,
-            height=0.8,
-            label=f"M={systems[system][2]}"
-            if systems[system][2] not in labels
-            else None,
-        )
-        ax.barh(
-            ix,
-            count / (len(ffidxs) + 1),
-            color=multi_cmap[systems[system][2]],
-            alpha=1,
-            height=0.8,
-            label=f"M={systems[system][2]}"
-            if systems[system][2] not in labels
-            else None,
-        )
-        labels.add(systems[system][2])
-
-        l1, l2, multi, tidx, midx, bidx = system.split("_")
-
-        if (multi, tidx, bidx) in (("3", "2", "b1"), ("4", "9", "b3")):
-            ax1.scatter(
-                [energies[0] for i, energy in enumerate(energies) if i != 0],
-                [energy for i, energy in enumerate(energies) if i != 0],
-                alpha=1,
-                ec="k",
-                s=120,
-                label=f"T: $m$: {systems[system][2]}, "
-                f"$t$: {systems[system][3]}"
-                f", $b$: {systems[system][4]}",
-            )
-
-        if count / (len(ffidxs) + 1) > 0:
-            ax1.scatter(
-                [
-                    energies[0]
-                    for i, energy in enumerate(energies)
-                    if i - 1 in when_ranked and i != 0
-                ],
-                [
-                    energy
-                    for i, energy in enumerate(energies)
-                    if i - 1 in when_ranked and i != 0
-                ],
-                alpha=1,
-                ec="k",
-                s=120,
-                label=f"$m$: {systems[system][2]}, $t$: {systems[system][3]}"
-                f", $b$: {systems[system][4]}",
-            )
-            ax.text(
-                count / (len(ffidxs) + 1) + 0.01,
-                ix,
-                f"$t$: {systems[system][3]}, $b$: {systems[system][4]}",
-                ha="left",
-                va="center",
-                fontsize=16,
-            )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_yticks([])
-    ax.set_xlim(0, 1.2)
-    ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    ax.set_xlabel(f"prop. rank 1 (of {len(ffidxs) + 1})", fontsize=16)
-    ax.legend(fontsize=16)
-
-    ax0.tick_params(axis="both", which="major", labelsize=16)
-    ax0.set_yticks([])
-    ax0.set_xlim(0, 1.2)
-    ax0.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    ax0.set_xlabel(f"prop. {eb_str()} < 1.0", fontsize=16)
-
-    ax1.tick_params(axis="both", which="major", labelsize=16)
-    ax1.set_xlabel(f"original {eb_str()}", fontsize=16)
-    ax1.set_ylabel(f"top ranked ffx {eb_str()}", fontsize=16)
-    ax1.plot((0, 10), (0, 10), c="k", zorder=-1)
-    ax1.set_xlim(0, 5)
-    ax1.set_ylim(0, 10)
-    ax1.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -2123,7 +1745,7 @@ def define_pairs(
     return pairs
 
 
-def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def case_study_1_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 1/2 studying Pd(II) heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgen_calculations"
@@ -2310,19 +1932,44 @@ def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         (("lf", "ls10"), (2, 3, 4)),
     ]
     pairs = define_pairs(pairs_to_predict, ligand_types)
+    ffopt_targets = {
+        "e10_e16": {
+            "target": "e10_e16_2_1_2_b0",
+            "modifiable": ["deg", "dd", "de", "dde", "ba", "ac", "bac"],
+        },
+        "e13_e12": {
+            "target": "e13_e12_2_1_3_b0",
+            "modifiable": ["deg", "dd", "de", "dde", "zrf", "zz", "zr", "zzr"],
+        },
+        "lf_l2": {
+            "target": "lf_l2_3_2_0_b1",
+            "modifiable": ["deg", "dd", "de", "dde", "ba", "ac", "bac"],
+        },
+        "lf_ls2": {
+            "target": "lf_ls2_3_2_1_b1",
+            "modifiable": ["deg", "dd", "de", "dde", "ba", "ac", "bac"],
+        },
+        "lf_l3": {
+            "target": "lf_l3_4_9_0_b3",
+            "modifiable": ["deg", "dd", "de", "dde", "ba", "ac", "bac"],
+        },
+        "lf_ls10": {
+            "target": "lf_ls10_4_9_4_b3",
+            "modifiable": ["deg", "dd", "de", "dde", "ba", "ac", "bac"],
+        },
+    }
 
-    if run:
-        for pair in pairs:
-            forcefield = precursors_to_forcefield(
-                pair=pair,
-                large=pairs[pair]["large"],
-                small=pairs[pair]["small"],
-                large_meas=ligand_measures[pairs[pair]["large_name"]],
-                small_meas=ligand_measures[pairs[pair]["small_name"]],
-                vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
-                constant_definer_dict=constant_definer_dict,
-            )
-
+    for pair in pairs:
+        forcefield = precursors_to_forcefield(
+            pair=pair,
+            large=pairs[pair]["large"],
+            small=pairs[pair]["small"],
+            large_meas=ligand_measures[pairs[pair]["large_name"]],
+            small_meas=ligand_measures[pairs[pair]["small_name"]],
+            vdw_bond_cutoff=pairs[pair]["vdw_cutoff"],
+            constant_definer_dict=constant_definer_dict,
+        )
+        if run:
             small_bb = cgx.utilities.optimise_ligand(
                 molecule=pairs[pair]["small"].get_building_block(),
                 name=f"{pair}_{pairs[pair]['small'].get_name()}",
@@ -2564,90 +2211,38 @@ def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         name=min_energy_name,
                     )
 
-                collated_entries = [
-                    i
-                    for i in cgx.utilities.AtomliteDatabase(
-                        database_path
-                    ).get_entries()
-                    if "_f-" not in i.key
-                    and i.properties["pair"] == pair
-                    and i.properties["multiplier"] == multiplier
-                    and "lowest_e_of_mash" in i.properties
-                ]
+        if opt_ff:
+            if pair not in ffopt_targets:
+                continue
+            ffoptcalculation_dir = calculation_dir / "ff_opt"
+            ffoptcalculation_dir.mkdir(exist_ok=True)
+            try:
+                mix_target = ffopt_targets[pair]["target"]
+            except KeyError:
+                continue
+            definer_dict = precursors_to_definer_dict(
+                large=pairs[pair]["large"],
+                small=pairs[pair]["small"],
+                large_meas=ligand_measures[pairs[pair]["large_name"]],
+                small_meas=ligand_measures[pairs[pair]["small_name"]],
+                constant_definer_dict=constant_definer_dict,
+            )
 
-                # Generate a series of new ffs.
-                forcefield_lib = tuple(
-                    generate_nearby_forcefields(
-                        forcefield=forcefield,
-                        actual_present_bead_elements={
-                            i.__class__.__name__
-                            for i in stk.BuildingBlock.init_from_rdkit_mol(
-                                atomlite.json_to_rdkit(
-                                    collated_entries[0].molecule
-                                )
-                            ).get_atoms()
-                        },
-                    ).yield_forcefields(),
-                )
-                logging.info(
-                    "exploring %s molecules with %s ffs",
-                    len(collated_entries),
-                    len(forcefield_lib),
-                )
+            modifiable = ffopt_targets[pair]["modifiable"]
+            logging.info(
+                "running optimisation of %s molecules over %s",
+                mix_target,
+                modifiable,
+            )
 
-                for (ffidx, temp_forcefield), entry in it.product(
-                    enumerate(forcefield_lib), collated_entries
-                ):
-                    name = entry.key + f"_f-{ffidx}"
-
-                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
-                    if not fina_mol_file.exists():
-                        logging.info("optimising %s with ff %s", name, ffidx)
-                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
-                            atomlite.json_to_rdkit(entry.molecule)
-                        )
-                        conformer = cgx.utilities.run_optimisation(
-                            assigned_system=temp_forcefield.assign_terms(
-                                current_cage, name, ffcalculation_dir
-                            ),
-                            name=name,
-                            file_suffix=f"ff{ffidx}",
-                            output_dir=ffcalculation_dir,
-                            platform=None,
-                        )
-                        conformer.molecule.with_centroid((0, 0, 0)).write(
-                            fina_mol_file
-                        )
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_molecule(molecule=conformer.molecule, key=name)
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_properties(
-                            key=name,
-                            property_dict={
-                                "energy_decomposition": (
-                                    conformer.energy_decomposition,  # type:ignore[dict-item]
-                                ),
-                                "source": conformer.source,
-                                "optimised": True,
-                                "energy_per_bb": (
-                                    cgx.utilities.get_energy_per_bb(
-                                        energy_decomposition=(
-                                            conformer.energy_decomposition
-                                        ),
-                                        number_building_blocks=(
-                                            iterator.get_num_building_blocks()
-                                        ),
-                                    )
-                                ),
-                                "min_distance": (
-                                    cgx.analysis.GeomMeasure().calculate_min_distance(
-                                        conformer.molecule
-                                    )["min_distance"]
-                                ),
-                            },
-                        )
+            target_optimisation(
+                database_path=database_path,
+                target_key=mix_target,
+                calculation_dir=ffoptcalculation_dir,
+                definer_dict=definer_dict,
+                modifiable_terms=modifiable,
+                forcefield=forcefield,
+            )
 
     make_summary_plot(
         database_path=database_path,
@@ -2678,13 +2273,18 @@ def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_5.png",
     )
-    for pair in pairs:
-        make_plot(
-            database_path=database_path,
-            target_pair=pair,
-            figure_dir=figure_dir,
-            filename=f"mgen_1_{pair}.png",
-        )
+    for pair, pdict in ffopt_targets.items():
+        try:
+            mix_target = pdict["target"]
+            ff_opt_plot(
+                database_path=database_path,
+                target=pair,
+                figure_dir=figure_dir,
+                filename=f"mgen_10_{pair}.png",
+                key_target=mix_target,
+            )
+        except KeyError:
+            continue
 
     sterics_plot(
         database_path=database_path,
@@ -3032,91 +2632,6 @@ def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         name=min_energy_name,
                     )
 
-                collated_entries = [
-                    i
-                    for i in cgx.utilities.AtomliteDatabase(
-                        database_path
-                    ).get_entries()
-                    if "_f-" not in i.key
-                    and i.properties["pair"] == pair
-                    and i.properties["multiplier"] == multiplier
-                    and "lowest_e_of_mash" in i.properties
-                ]
-
-                # Generate a series of new ffs.
-                forcefield_lib = tuple(
-                    generate_nearby_forcefields(
-                        forcefield=forcefield,
-                        actual_present_bead_elements={
-                            i.__class__.__name__
-                            for i in stk.BuildingBlock.init_from_rdkit_mol(
-                                atomlite.json_to_rdkit(
-                                    collated_entries[0].molecule
-                                )
-                            ).get_atoms()
-                        },
-                    ).yield_forcefields(),
-                )
-                logging.info(
-                    "exploring %s molecules with %s ffs",
-                    len(collated_entries),
-                    len(forcefield_lib),
-                )
-
-                for (ffidx, temp_forcefield), entry in it.product(
-                    enumerate(forcefield_lib), collated_entries
-                ):
-                    name = entry.key + f"_f-{ffidx}"
-
-                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
-                    if not fina_mol_file.exists():
-                        logging.info("optimising %s with ff %s", name, ffidx)
-                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
-                            atomlite.json_to_rdkit(entry.molecule)
-                        )
-                        conformer = cgx.utilities.run_optimisation(
-                            assigned_system=temp_forcefield.assign_terms(
-                                current_cage, name, ffcalculation_dir
-                            ),
-                            name=name,
-                            file_suffix=f"ff{ffidx}",
-                            output_dir=ffcalculation_dir,
-                            platform=None,
-                        )
-                        conformer.molecule.with_centroid((0, 0, 0)).write(
-                            fina_mol_file
-                        )
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_molecule(molecule=conformer.molecule, key=name)
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_properties(
-                            key=name,
-                            property_dict={
-                                "energy_decomposition": (
-                                    conformer.energy_decomposition,  # type:ignore[dict-item]
-                                ),
-                                "source": conformer.source,
-                                "optimised": True,
-                                "energy_per_bb": (
-                                    cgx.utilities.get_energy_per_bb(
-                                        energy_decomposition=(
-                                            conformer.energy_decomposition
-                                        ),
-                                        number_building_blocks=(
-                                            iterator.get_num_building_blocks()
-                                        ),
-                                    )
-                                ),
-                                "min_distance": (
-                                    cgx.analysis.GeomMeasure().calculate_min_distance(
-                                        conformer.molecule
-                                    )["min_distance"]
-                                ),
-                            },
-                        )
-
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -3446,91 +2961,6 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         database_path=database_path,
                         name=min_energy_name,
                     )
-
-                collated_entries = [
-                    i
-                    for i in cgx.utilities.AtomliteDatabase(
-                        database_path
-                    ).get_entries()
-                    if "_f-" not in i.key
-                    and i.properties["pair"] == pair
-                    and i.properties["multiplier"] == multiplier
-                    and "lowest_e_of_mash" in i.properties
-                ]
-
-                # Generate a series of new ffs.
-                forcefield_lib = tuple(
-                    generate_nearby_forcefields(
-                        forcefield=forcefield,
-                        actual_present_bead_elements={
-                            i.__class__.__name__
-                            for i in stk.BuildingBlock.init_from_rdkit_mol(
-                                atomlite.json_to_rdkit(
-                                    collated_entries[0].molecule
-                                )
-                            ).get_atoms()
-                        },
-                    ).yield_forcefields(),
-                )
-                logging.info(
-                    "exploring %s molecules with %s ffs",
-                    len(collated_entries),
-                    len(forcefield_lib),
-                )
-
-                for (ffidx, temp_forcefield), entry in it.product(
-                    enumerate(forcefield_lib), collated_entries
-                ):
-                    name = entry.key + f"_f-{ffidx}"
-
-                    fina_mol_file = ffcalculation_dir / f"{name}_ff.mol"
-                    if not fina_mol_file.exists():
-                        logging.info("optimising %s with ff %s", name, ffidx)
-                        current_cage = stk.BuildingBlock.init_from_rdkit_mol(
-                            atomlite.json_to_rdkit(entry.molecule)
-                        )
-                        conformer = cgx.utilities.run_optimisation(
-                            assigned_system=temp_forcefield.assign_terms(
-                                current_cage, name, ffcalculation_dir
-                            ),
-                            name=name,
-                            file_suffix=f"ff{ffidx}",
-                            output_dir=ffcalculation_dir,
-                            platform=None,
-                        )
-                        conformer.molecule.with_centroid((0, 0, 0)).write(
-                            fina_mol_file
-                        )
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_molecule(molecule=conformer.molecule, key=name)
-                        cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).add_properties(
-                            key=name,
-                            property_dict={
-                                "energy_decomposition": (
-                                    conformer.energy_decomposition,  # type:ignore[dict-item]
-                                ),
-                                "source": conformer.source,
-                                "optimised": True,
-                                "energy_per_bb": (
-                                    cgx.utilities.get_energy_per_bb(
-                                        energy_decomposition=(
-                                            conformer.energy_decomposition
-                                        ),
-                                        number_building_blocks=(
-                                            iterator.get_num_building_blocks()
-                                        ),
-                                    )
-                                ),
-                                "min_distance": (
-                                    cgx.analysis.GeomMeasure().calculate_min_distance(
-                                        conformer.molecule
-                                    )["min_distance"]
-                                ),
-                            },
-                        )
 
     make_summary_plot(
         database_path=database_path,
@@ -4318,7 +3748,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "cc3_2_4_5",
+            "target": "cc3_2_4_4",
         },
     }
 
@@ -4555,17 +3985,21 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
             except KeyError:
                 continue
 
+            if "cc3" in mix:
+                modifiable = ["bac", "ba", "ac"]
+            else:
+                modifiable = ["nb", "bnb", "bac", "ba", "ac"]
             logging.info(
                 "running optimisation of %s molecules over %s",
-                f"{mix_target}",
-                ["nb", "bnb", "bac", "ba", "ac"],
+                mix_target,
+                modifiable,
             )
             target_optimisation(
                 database_path=database_path,
                 target_key=mix_target,
                 calculation_dir=ffoptcalculation_dir,
                 definer_dict=cs6_definer_dict,
-                modifiable_terms=["nb", "bnb", "bac", "ba", "ac"],
+                modifiable_terms=modifiable,
                 forcefield=forcefield,
             )
 
@@ -4585,12 +4019,6 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
         filename="mgen_3.png",
     )
     for mix, mdict in mixtures.items():
-        ff_vary_plot(
-            database_path=database_path,
-            target=mix,
-            figure_dir=figure_dir,
-            filename=f"mgen_4_{mix}.png",
-        )
         try:
             mix_target = mdict["target"]
             ff_opt_plot(
@@ -4609,13 +4037,13 @@ def main() -> None:
     args = _parse_args()
 
     if args.study1:
-        case_study_1_2(args.run)
+        case_study_1_2(args.run, args.opt_ff)
     if args.study3:
-        case_study_3(args.run)
+        case_study_3(args.run, args.opt_ff)
     if args.study4:
-        case_study_4(args.run)
+        case_study_4(args.run, args.opt_ff)
     if args.study5:
-        case_study_5(args.run)
+        case_study_5(args.run, args.opt_ff)
     if args.study6:
         case_study_6(args.run, args.opt_ff)
 

@@ -278,5 +278,99 @@ def precursors_to_forcefield(  # noqa: C901, PLR0913, PLR0915
         prefix=f"{pair}ff",
         vdw_bond_cutoff=vdw_bond_cutoff,
         present_beads=present_beads,
-        definer_dict=definer_dict,
+        definer_dict=precursors_to_definer_dict(
+            large=large,
+            small=small,
+            large_meas=large_meas,
+            small_meas=small_meas,
+            constant_definer_dict=constant_definer_dict,
+        ),
     )
+
+
+def precursors_to_definer_dict(  # noqa: C901, PLR0915
+    large: cgx.molecular.Precursor,
+    small: cgx.molecular.Precursor,
+    large_meas: dict[str, float],
+    small_meas: dict[str, float],
+    constant_definer_dict: dict[str, tuple],
+) -> dict[str, tuple]:
+    """Get a forcefield from precursor definitions."""
+    # Define bead libraries.
+    present_beads = (
+        cbead_d,
+        abead_d,
+        cbead_c,
+        abead_c,
+        ebead_c,
+        c2bead_d,
+        a2bead_d,
+        e2bead_d,
+        binder_bead,
+        tetra_bead,
+        steric_bead,
+    )
+    cgx.molecular.BeadLibrary(present_beads)
+
+    definer_dict = deepcopy(constant_definer_dict)
+
+    cg_scale = 2
+
+    if isinstance(large, cgx.molecular.SixBead):
+        beads = large.get_bead_set()
+        if "d" not in beads or "e" not in beads or "g" not in beads:
+            raise RuntimeError
+        definer_dict["dd"] = ("bond", large_meas["dd"] / cg_scale, 1e5)
+        definer_dict["de"] = ("bond", large_meas["de"] / cg_scale, 1e5)
+        definer_dict["eg"] = ("bond", large_meas["eg"] / cg_scale, 1e5)
+        definer_dict["gb"] = ("bond", large_meas["gb"] / cg_scale, 1e5)
+        definer_dict["dde"] = ("angle", large_meas["dde"], 1e2)
+        definer_dict["egb"] = ("angle", large_meas["egb"], 1e2)
+        definer_dict["deg"] = ("angle", large_meas["deg"], 1e2)
+    elif isinstance(large, cgx.molecular.TwoC1Arm):
+        beads = large.get_bead_set()
+        if "e" not in beads or "d" not in beads:
+            raise RuntimeError
+        definer_dict["be"] = ("bond", large_meas["ba"] / cg_scale, 1e5)
+        ac = large_meas["aa"] / 2
+        definer_dict["ed"] = ("bond", ac / cg_scale, 1e5)
+        definer_dict["bed"] = ("angle", large_meas["bac"], 1e2)
+    else:
+        raise NotImplementedError
+
+    if isinstance(small, cgx.molecular.TwoC1Arm):
+        beads = small.get_bead_set()
+        if "a" not in beads or "c" not in beads:
+            raise RuntimeError
+        definer_dict["ba"] = ("bond", small_meas["ba"] / cg_scale, 1e5)
+        ac = small_meas["aa"] / 2
+        definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
+        definer_dict["bac"] = ("angle", small_meas["bac"], 1e2)
+
+    elif isinstance(small, StericTwoC1Arm):
+        beads = small.get_bead_set()
+        if "a" not in beads or "c" not in beads or "s" not in beads:
+            raise RuntimeError
+
+        definer_dict["ba"] = ("bond", small_meas["ba"] / cg_scale, 1e5)
+        ac = small_meas["aa"] / 2
+        definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
+        definer_dict["bac"] = ("angle", small_meas["bac"], 1e2)
+        definer_dict["s"] = ("nb", 10.0, small_meas["s"])
+
+    elif isinstance(small, cgx.molecular.SixBead):
+        beads = small.get_bead_set()
+        if "z" not in beads or "r" not in beads or "f" not in beads:
+            raise RuntimeError
+        definer_dict["zz"] = ("bond", small_meas["dd"] / cg_scale, 1e5)
+        definer_dict["zr"] = ("bond", small_meas["de"] / cg_scale, 1e5)
+        definer_dict["rf"] = ("bond", small_meas["eg"] / cg_scale, 1e5)
+        definer_dict["fb"] = ("bond", small_meas["gb"] / cg_scale, 1e5)
+        definer_dict["zzr"] = ("angle", small_meas["dde"], 1e2)
+        definer_dict["rfb"] = ("angle", small_meas["egb"], 1e2)
+        definer_dict["zrf"] = ("angle", small_meas["deg"], 1e2)
+
+    else:
+        raise NotImplementedError
+
+    return definer_dict
