@@ -323,6 +323,114 @@ def analyse_cage(database_path: pathlib.Path, name: str) -> None:
         )
 
 
+def ff_vary_plot(
+    target: str,
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
+
+    entries = list(cgx.utilities.AtomliteDatabase(database_path).get_entries())
+    ff_entries = [i for i in entries if "_f-" in i.key]
+
+    systems = {}
+    for entry in entries:
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        if target not in entry.key:
+            continue
+
+        energy = entry.properties["energy_per_bb"]
+
+        ff_options = [i for i in ff_entries if i.key.startswith(entry.key)]
+        ff_energies = [
+            ff_entry.properties["energy_per_bb"] for ff_entry in ff_options
+        ]
+        ffidxs = [int(i.key.split("-")[-1]) for i in ff_options]
+
+        systems[entry.key] = (
+            energy,
+            ff_energies,
+            str(entry.properties["multiplier"]),
+        )
+
+    if len(systems.values()) == 0:
+        return
+    rankings = {}
+    energies = [energy for energy, _, _ in systems.values()]
+    rankings[-1] = [energies.index(i) for i in sorted(energies)]
+
+    systems_counts_as_best = {i: [] for i in systems}
+    systems_counts_as_best[list(systems.keys())[rankings[-1][0]]].append(-1)
+
+    for idx in ffidxs:
+        try:
+            energies = [
+                ffenergies[idx] for _, ffenergies, _ in systems.values()
+            ]
+        except IndexError:
+            continue
+
+        rankings[idx] = [energies.index(i) for i in sorted(energies)]
+        lowest_energy = rankings[idx][0]
+
+        systems_counts_as_best[list(systems.keys())[lowest_energy]].append(idx)
+
+    labels = set()
+    for ix, (system, when_ranked) in enumerate(systems_counts_as_best.items()):
+        energies = [systems[system][0], *list(systems[system][1])]
+
+        count = len(when_ranked)
+
+        p = ax.barh(
+            ix,
+            count / (len(ffidxs) + 1),
+            color=multi_cmap[systems[system][2]],
+            alpha=1,
+            height=0.8,
+            label=f"M={systems[system][2]}"
+            if systems[system][2] not in labels
+            else None,
+        )
+        labels.add(systems[system][2])
+
+        if count == 0:
+            continue
+        string = system.split("_")
+        string = string[0] + ": " + string[2]
+        ax.bar_label(
+            p,
+            labels=[string],
+            rotation=0,
+            label_type="center",
+            padding=0,
+            fontsize=12,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_yticks([])
+    ax.set_xlim(0, 1.2)
+    ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_xlabel(f"prop. rank 1 (of {len(ffidxs) + 1})", fontsize=16)
+    ax.legend(fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def make_plot(  # noqa: PLR0915
     target_pair: str,
     database_path: pathlib.Path,
@@ -569,7 +677,6 @@ def make_summary_plot(
         ax.axvline(int(i) + 0.8, c="k", alpha=0.5)
 
     cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
-
     cbar = fig.colorbar(
         mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
         cax=cbar_ax,
@@ -959,12 +1066,12 @@ def study_6_plot(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, (ax) = plt.subplots(ncols=1, figsize=(8, 5))
+    fig, (ax) = plt.subplots(ncols=1, figsize=(16, 5))
 
     multis = {
-        1: ("tab:blue", -0.2),
-        2: ("tab:orange", 0.0),
-        3: ("tab:green", 0.2),
+        1: (multi_cmap["1"], -0.2),
+        2: (multi_cmap["2"], 0.0),
+        3: (multi_cmap["3"], 0.2),
     }
 
     xs = {}
@@ -1003,7 +1110,7 @@ def study_6_plot(
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
     ax.legend(fontsize=16)
     ax.set_xticks([xs[i] for i in xs])
-    ax.set_xticklabels(list(xs), fontsize=16)
+    ax.set_xticklabels(list(xs), fontsize=16, rotation=90)
 
     fig.tight_layout()
     fig.savefig(
@@ -1017,12 +1124,203 @@ def study_6_plot(
         bbox_inches="tight",
     )
     plt.close()
-    raise SystemExit("show line between the same structures across x axis")
+
+
+def study_6_plot_2(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax) = plt.subplots(ncols=1, figsize=(16, 5))
+
+    multis = {
+        1: (multi_cmap["1"], -0.2),
+        2: (multi_cmap["2"], 0.0),
+        3: (multi_cmap["3"], 0.2),
+    }
+
+    xs = {}
+    lbls = set()
+    mix_mins = {}
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        if entry.properties["mix"] not in xs:
+            xs[entry.properties["mix"]] = len(xs)
+            mix_mins[entry.properties["mix"]] = {
+                i: (float("inf"), None) for i in multis
+            }
+
+        multi = entry.properties["multiplier"]
+        y = entry.properties["energy_per_bb"]
+
+        if y < mix_mins[entry.properties["mix"]][multi][0]:
+            mix_mins[entry.properties["mix"]][multi] = (y, entry.key)
+
+    for mix, mdict in mix_mins.items():
+        for multi, (y, key) in mdict.items():
+            lbl = multi
+            if key is None:
+                continue
+            p = ax.bar(
+                xs[mix] + multis[multi][1],
+                y,
+                fc=multis[multi][0],
+                width=0.2,
+                ec="k",
+                label=lbl if lbl not in lbls else None,
+            )
+            padding = 0 if multi == 1 else 8
+            ltype = "center" if multi == 1 else "edge"
+            string = key.split("_")
+            string = "t: " + string[2]
+            ax.bar_label(
+                p,
+                labels=[string],
+                rotation=90,
+                label_type=ltype,
+                padding=padding,
+                fontsize=12,
+            )
+            lbls.add(lbl)
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+    ax.legend(fontsize=16)
+    ax.set_xticks([xs[i] for i in xs])
+    ax.set_xticklabels(list(xs), fontsize=16, rotation=90)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study_6_plot_3(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(ncols=1, figsize=(8, 2))
+
+    l_positions = {
+        "cs6l1": 3.8,
+        "cs6l1b": 3.8,
+        "cs6l2": 5.7,
+        "cs6l2b": 5.7,
+        "cs6l5": 8.0,
+        "cs6l5b": 8.0,
+        "cs6l6": 9.9,
+        "cs6l6b": 9.9,
+        "cs6l9": 14.2,
+        "cs6l9b": 14.2,
+    }
+    x_positions = {
+        "cs6l1": -0.2,
+        "cs6l1b": 0.2,
+        "cs6l2": 1.8,
+        "cs6l2b": 2.2,
+        "cs6l5": 3.8,
+        "cs6l5b": 4.2,
+        "cs6l6": 5.8,
+        "cs6l6b": 6.2,
+        "cs6l9": 7.8,
+        "cs6l9b": 8.2,
+    }
+    y_positions = {"cs6zr1": 0.1, "cs6zr2": 0.0}
+
+    # create the new map
+    cmap = plt.cm.Blues_r  # define the colormap
+    # extract all colors from the .jet map
+    cmaplist = [cmap(i) for i in range(cmap.N)]
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        "Custom cmap", cmaplist, cmap.N
+    )
+
+    # define the bins and normalize
+    bounds = [0, 1.0, 2.0, 3.0, 4.0, 5.0]
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        mix, multi, idx, midx = entry.key.split("_")
+        if multi == "1":
+            yp = 0
+            if idx != "0":
+                continue
+        elif multi == "2":
+            yp = 0.3
+            if idx != "4":
+                continue
+        if entry.properties["di"] not in x_positions:
+            continue
+        x = x_positions[entry.properties["di"]]
+        y = y_positions[entry.properties["tri"]] + yp
+        c = entry.properties["energy_per_bb"]
+
+        ax.scatter(
+            x,
+            y,
+            c=c,
+            marker="s",
+            s=200,
+            edgecolor="k",
+            cmap=cmap,
+            norm=norm,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xticks([x_positions[i] + 0.2 for i in x_positions if "b" not in i])
+    ax.set_xticklabels(
+        [l_positions[i] for i in x_positions if "b" not in i], fontsize=16
+    )
+    ax.set_yticks(
+        [y_positions[i] for i in y_positions]
+        + [y_positions[i] + 0.3 for i in y_positions]
+    )
+    ax.set_yticklabels(list(y_positions) * 2, fontsize=16)
+    ax.set_ylim(-0.1, 0.5)
+
+    cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
+    cbar = fig.colorbar(
+        mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+        cax=cbar_ax,
+        orientation="vertical",
+    )
+    cbar.ax.tick_params(labelsize=16)
+    cbar.set_label(eb_str(), fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
 
 
 def make_summary_plot2(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
+    structure_dir: pathlib.Path,
     filename: str,
     pairs: list[tuple[str, str]],
 ) -> dict:
@@ -1046,6 +1344,11 @@ def make_summary_plot2(
         x = [i[0] for i in pairs].index((l1, l2))
         x_count[multi][x] += 1
         energy = entry.properties["energy_per_bb"]
+
+        if energy < 1:
+            stk.BuildingBlock.init_from_rdkit_mol(
+                atomlite.json_to_rdkit(entry.molecule)
+            ).write(structure_dir / f"{entry.key}_optc.mol")
 
         if entry.properties["num_components"] > 1:
             continue
@@ -2114,6 +2417,7 @@ def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_4.png",
         pairs=pairs_to_predict,
+        structure_dir=structure_dir,
     )
 
     study_2_plot(
@@ -2172,7 +2476,7 @@ def case_study_1_2(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     raise SystemExit("rethink binders, because it is not handling minus")
 
 
-def case_study_3(run: bool) -> None:
+def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 3 studying Rh heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs3_calculations"
@@ -2581,6 +2885,7 @@ def case_study_3(run: bool) -> None:
         figure_dir=figure_dir,
         filename="mgen_4.png",
         pairs=pairs_to_predict,
+        structure_dir=structure_dir,
     )
 
 
@@ -2995,6 +3300,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_4.png",
         pairs=pairs_to_predict,
+        structure_dir=structure_dir,
     )
 
 
@@ -3491,21 +3797,40 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     present_beads = (cbead_d, abead_d, binder_bead, trigonal_bead)
     stoichiometry_t_d = (2, 3)
     vdw_cutoff = 2
-    multipliers = (1, 2, 3)
+    multipliers = (1, 2)  # 3)
     # Very approximate.
     ligand_measures = {
         "cs6l1": {"ba": 3.8 / 3, "aa": 3.8 / 3, "bac": 180},
+        "cs6l1b": {"ba": 3.8 / 3, "aa": 3.8 / 3, "bac": 160},
         "cs6l2": {"ba": 5.7 / 3, "aa": 5.7 / 3, "bac": 180},
+        "cs6l2b": {"ba": 5.7 / 3, "aa": 5.7 / 3, "bac": 160},
+        "cs6l2c": {"ba": 0.8, "aa": 5.7, "bac": 150},
         "cs6l5": {"ba": 8.0 / 3, "aa": 8.0 / 3, "bac": 180},
+        "cs6l5b": {"ba": 8.0 / 3, "aa": 8.0 / 3, "bac": 160},
         "cs6l6": {"ba": 9.9 / 3, "aa": 9.9 / 3, "bac": 180},
+        "cs6l6b": {"ba": 9.9 / 3, "aa": 9.9 / 3, "bac": 160},
         "cs6l9": {"ba": 14.2 / 3, "aa": 14.2 / 3, "bac": 180},
+        "cs6l9b": {"ba": 14.2 / 3, "aa": 14.2 / 3, "bac": 160},
         "cs6zr1": {"bnb": 60, "nb": 3.5},
         "cs6zr2": {"bnb": 70, "nb": 3.5},
+        "cs6zr3": {"bnb": 60, "nb": 2.0},
         "cs6cc31": {"bnb": 120, "nb": 2.9},
         "cs6cc32": {"ba": 1.5, "aa": 1.5, "bac": 105},
     }
 
     mixtures = {
+        "l2czr3": {
+            "linear": (
+                "cs6l2c",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr3",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
         "l1zr1": {
             "linear": (
                 "cs6l1",
@@ -3521,6 +3846,30 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "l1zr2": {
             "linear": (
                 "cs6l1",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr2",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l1bzr1": {
+            "linear": (
+                "cs6l1b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr1",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l1bzr2": {
+            "linear": (
+                "cs6l1b",
                 cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
             ),
             "trigonal": (
@@ -3554,6 +3903,30 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 ),
             ),
         },
+        "l2bzr1": {
+            "linear": (
+                "cs6l2b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr1",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l2bzr2": {
+            "linear": (
+                "cs6l2b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr2",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
         "l5zr1": {
             "linear": (
                 "cs6l5",
@@ -3569,6 +3942,30 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "l5zr2": {
             "linear": (
                 "cs6l5",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr2",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l5bzr1": {
+            "linear": (
+                "cs6l5b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr1",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l5bzr2": {
+            "linear": (
+                "cs6l5b",
                 cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
             ),
             "trigonal": (
@@ -3602,6 +3999,30 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 ),
             ),
         },
+        "l6bzr1": {
+            "linear": (
+                "cs6l6b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr1",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l6bzr2": {
+            "linear": (
+                "cs6l6b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr2",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
         "l9zr1": {
             "linear": (
                 "cs6l9",
@@ -3617,6 +4038,30 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "l9zr2": {
             "linear": (
                 "cs6l9",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr2",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l9bzr1": {
+            "linear": (
+                "cs6l9b",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6zr1",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+        },
+        "l9bzr2": {
+            "linear": (
+                "cs6l9b",
                 cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
             ),
             "trigonal": (
@@ -3680,6 +4125,8 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 "b": ("nb", 10.0, 1.0),
                 "c": ("nb", 10.0, 1.0),
             }
+            if "b" in linear_name:
+                cs6_definer_dict["bacab"] = ("tors", "0134", 180, 50, 1)
 
             forcefield = cgx.systems_optimisation.get_forcefield_from_dict(
                 identifier=f"{mix}ff",
@@ -3953,6 +4400,23 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_1.png",
     )
+    study_6_plot_2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_2.png",
+    )
+    study_6_plot_3(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_3.png",
+    )
+    for mix in mixtures:
+        ff_vary_plot(
+            database_path=database_path,
+            target=mix,
+            figure_dir=figure_dir,
+            filename=f"mgen_4_{mix}.png",
+        )
 
 
 def main() -> None:
