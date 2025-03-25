@@ -1163,12 +1163,20 @@ def study_3_plot(
     """Visualise energies."""
     fig, ax = plt.subplots(ncols=1, figsize=(8, 5))
 
+    cmap = {
+        "cs3l1_cs3l1p": "tab:blue",
+        "cs3l1_cs3l6p": "tab:orange",
+        "cs3l2_cs3l1p": "tab:green",
+        "cs3l2_cs3l6p": "tab:red",
+    }
+
     xs = {}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
 
         ey = entry.properties["energy_per_bb"]
+        pair = entry.properties["pair"]
         string = entry.key.split("_")
         string = (
             string[0].split("cs3")[1]
@@ -1179,13 +1187,13 @@ def study_3_plot(
             + "-"
             + string[5]
         )
-        if ey < 1:
+        if ey < isomer_energy():
             xs[string] = len(xs)
 
             p = ax.bar(
                 xs[string],
                 ey,
-                fc=multi_cmap[str(entry.properties["multiplier"])],
+                fc=cmap[pair],
                 alpha=1.0,
                 ec="k",
             )
@@ -1200,10 +1208,163 @@ def study_3_plot(
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_ylim(0, 1)
+    ax.set_ylim(0, None)
 
     ax.set_xticks([xs[i] for i in xs])
     ax.set_xticklabels(list(xs), fontsize=16, rotation=90)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study_3_plot_5(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(ncols=1, figsize=(8, 5))
+
+    cmap = {
+        "cs3l1_cs3l1p": "tab:blue",
+        "cs3l1_cs3l6p": "tab:orange",
+        "cs3l2_cs3l1p": "tab:green",
+        "cs3l2_cs3l6p": "tab:red",
+    }
+    xmap = {
+        "cs3l1_cs3l1p": -0.3,
+        "cs3l1_cs3l6p": -0.1,
+        "cs3l2_cs3l1p": 0.1,
+        "cs3l2_cs3l6p": 0.3,
+    }
+
+    xs = {"isomer A": 0, "isomer B": 1}
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        ey = entry.properties["energy_per_bb"]
+        pair = entry.properties["pair"]
+        tidx = entry.properties["topology_idx"]
+        bidx = entry.properties["bb_config_idx"]
+        if (tidx, bidx) == (2, 89):
+            x = xs["isomer A"] + xmap[pair]
+        elif (tidx, bidx) == (2, 112):
+            x = xs["isomer B"] + xmap[pair]
+        else:
+            continue
+        string = pair.split("_")
+        string = string[0].split("cs3")[1] + "-" + string[1].split("cs3")[1]
+
+        p = ax.bar(
+            x,
+            ey,
+            width=0.1,
+            fc=cmap[pair],
+            alpha=1.0,
+            ec="k",
+        )
+        ax.bar_label(
+            p,
+            labels=[f"{string}: {round(ey, 2)}"],
+            rotation=90,
+            label_type="edge",
+            padding=8,
+            fontsize=12,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_ylim(0, 1.2)
+
+    ax.set_xticks([xs[i] for i in xs])
+    ax.set_xticklabels(list(xs), fontsize=16, rotation=0)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+    raise SystemExit
+
+
+def study_3_plot_2(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax, ax2) = plt.subplots(ncols=2, figsize=(16, 5))
+
+    counts = {}
+    counts_low = {}
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        ey = entry.properties["energy_per_bb"]
+        m = entry.properties["multiplier"]
+        pair = entry.properties["pair"]
+        if pair not in counts:
+            counts[pair] = 0
+            counts_low[pair] = 0
+
+        if m == 6:  # noqa: PLR2004
+            if ey < 1:
+                counts[pair] += 1
+            if ey < isomer_energy():
+                counts_low[pair] += 1
+
+        if pair != "cs3l1_cs3l1p":
+            continue
+
+        ax.scatter(
+            m,
+            ey,
+            c="tab:blue",
+            s=120,
+            ec="k",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_xlabel("multiplier", fontsize=16)
+    ax.set_xticks([2, 3, 4, 5, 6])
+
+    bar = ax2.bar(
+        range(len(counts_low)),
+        list(counts_low.values()),
+        align="center",
+        fc="tab:orange",
+    )
+    ax2.bar_label(bar, fmt="%.f", fontsize=16)
+    ax2.bar(
+        range(len(counts)),
+        list(counts.values()),
+        align="center",
+        fc="none",
+        ec="k",
+    )
+
+    ax2.tick_params(axis="both", which="major", labelsize=16)
+    ax2.set_ylabel("count", fontsize=16)
+    ax2.set_xticks(range(len(counts)), list(counts.keys()))
+
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -2909,7 +3070,7 @@ def case_study_1_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR
     raise SystemExit("rethink binders, because it is not handling minus")
 
 
-def case_study_3(run: bool, opt_ff: bool) -> None:  # noqa: ARG001, C901, PLR0912, PLR0915
+def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 3 studying Rh heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs3_calculations"
@@ -3203,6 +3364,17 @@ def case_study_3(run: bool, opt_ff: bool) -> None:  # noqa: ARG001, C901, PLR091
                         database_path=database_path,
                         name=min_energy_name,
                     )
+
+    study_3_plot_5(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_5.png",
+    )
+    study_3_plot_2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_2.png",
+    )
 
     make_summary_plot(
         database_path=database_path,
@@ -4580,7 +4752,7 @@ def main() -> None:
     if args.study1:
         case_study_1_2(args.run, args.opt_ff)
     if args.study3:
-        case_study_3(args.run, args.opt_ff)
+        case_study_3(args.run)
     if args.study4:
         case_study_4(args.run, args.opt_ff)
     if args.study5:
