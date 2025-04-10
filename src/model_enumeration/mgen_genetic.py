@@ -940,7 +940,9 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 )
 
                 seeds = [4]
-                num_generations = 1
+                count_to_spam = 5
+                mutations = 5
+                num_generations = 100
                 selection_size = 10
                 num_processes = 1
                 timing_file = data_dir / f"np_{num_processes}.txt"
@@ -965,17 +967,60 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     _ = generation.calculate_fitness_values()
                     generations.append(generation)
 
+                    # Add generational information.
+                    for cs in generation.chromosomes:
+                        topology_idx, topology_code = (
+                            cs.get_topology_information()
+                        )
+                        building_block_config = cs.get_vertex_alignments()[0]
+                        name = (
+                            f"{cs.prefix}_{topology_idx}_"
+                            f"b{building_block_config.idx}"
+                        )
+                        entry = cgx.utilities.AtomliteDatabase(
+                            database_path
+                        ).get_entry(name)
+                        if "generation_id" not in entry.properties:
+                            cgx.utilities.AtomliteDatabase(
+                                database_path
+                            ).add_properties(
+                                key=name,
+                                property_dict={
+                                    "generation_id": 0,
+                                    "generation_seed": seed,
+                                },
+                            )
+                    best_chromosome = generation.select_best(selection_size=1)[
+                        0
+                    ]
+
+                    best_name = (
+                        f"{best_chromosome.prefix}"
+                        f"_{best_chromosome.name[0]}_"
+                        f"b{best_chromosome.name[1]}"
+                    )
+
+                    count_unchanged = 0
+                    previous_best = best_name
+
                     for generation_id in range(1, num_generations + 1):
                         logging.info(
                             "doing generation %s of seed %s",
                             generation_id,
                             seed,
                         )
+
                         logging.info(
                             "initial size is %s.",
                             generation.get_generation_size(),
                         )
-                        logging.info("doing mutations.")
+                        if count_unchanged == count_to_spam:
+                            count_unchanged = 0
+                            logging.info("doing 2x mutations.")
+                            num_mutate = mutations * 2
+                        else:
+                            logging.info("doing mutations.")
+                            num_mutate = mutations * 1
                         merged_chromosomes = []
 
                         merged_chromosomes.extend(
@@ -984,7 +1029,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                                 generator=generator,
                                 gene_range=chromo_it.get_topo_ids(),
                                 selection="random",
-                                num_to_select=5,
+                                num_to_select=num_mutate,
                                 database=cgx.utilities.AtomliteDatabase(
                                     database_path
                                 ),
@@ -996,7 +1041,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                                 generator=generator,
                                 gene_range=chromo_it.get_va_ids(),
                                 selection="random",
-                                num_to_select=5,
+                                num_to_select=num_mutate,
                                 database=cgx.utilities.AtomliteDatabase(
                                     database_path
                                 ),
@@ -1008,7 +1053,56 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                                 list_of_chromosomes=generation.chromosomes,
                                 generator=generator,
                                 selection="random",
-                                num_to_select=5,
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+
+                        merged_chromosomes.extend(
+                            roulette_mutate_population(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (f"{i.prefix}_{i.name[0]}_b{i.name[1]}"): i
+                                    for i in generation.chromosomes
+                                },
+                                generator=generator,
+                                gene_range=chromo_it.get_topo_ids(),
+                                selection="roulette",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+                        merged_chromosomes.extend(
+                            roulette_mutate_population(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (f"{i.prefix}_{i.name[0]}_b{i.name[1]}"): i
+                                    for i in generation.chromosomes
+                                },
+                                generator=generator,
+                                gene_range=chromo_it.get_va_ids(),
+                                selection="roulette",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+
+                        merged_chromosomes.extend(
+                            roulette_crossover_population(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (f"{i.prefix}_{i.name[0]}_b{i.name[1]}"): i
+                                    for i in generation.chromosomes
+                                },
+                                generator=generator,
+                                selection="roulette",
+                                num_to_select=num_mutate,
                                 database=cgx.utilities.AtomliteDatabase(
                                     database_path
                                 ),
@@ -1017,7 +1111,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
 
                         # Add the best 5 to the new generation.
                         merged_chromosomes.extend(
-                            generation.select_best(selection_size=5)
+                            generation.select_best(selection_size=num_mutate)
                         )
 
                         generation = cgx.systems_optimisation.Generation(
@@ -1042,6 +1136,32 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         with timing_file.open("a") as f:
                             f.write(f"{str_time},{fit_time}\n")
 
+                        # Add generational information.
+                        for cs in generation.chromosomes:
+                            topology_idx, topology_code = (
+                                cs.get_topology_information()
+                            )
+                            building_block_config = cs.get_vertex_alignments()[
+                                0
+                            ]
+                            name = (
+                                f"{cs.prefix}_{topology_idx}_"
+                                f"b{building_block_config.idx}"
+                            )
+                            entry = cgx.utilities.AtomliteDatabase(
+                                database_path
+                            ).get_entry(name)
+                            if "generation_id" not in entry.properties:
+                                cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ).add_properties(
+                                    key=name,
+                                    property_dict={
+                                        "generation_id": generation_id,
+                                        "generation_seed": seed,
+                                    },
+                                )
+
                         # Add final state to generations.
                         generations.append(generation)
 
@@ -1063,7 +1183,8 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
 
                         progress_plot(
                             generations=generations,
-                            output=figure_dir / f"fitness_progress_{seed}.png",
+                            output=figure_dir
+                            / f"fp_{pair}_{multiplier}_{seed}.png",
                             num_generations=num_generations,
                         )
 
@@ -1077,6 +1198,11 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             f"_{best_chromosome.name[0]}_"
                             f"b{best_chromosome.name[1]}"
                         )
+                        if best_name != previous_best:
+                            count_unchanged = 0
+                            previous_best = best_name
+                        else:
+                            count_unchanged += 1
 
                         logging.info(
                             "top scorer is %s (seed: %s)", best_name, seed
