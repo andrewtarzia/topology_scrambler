@@ -32,6 +32,158 @@ logging.basicConfig(
 RDLogger.DisableLog("rdApp.*")
 
 
+def roulette_mutate_population(  # noqa: PLR0913
+    chromo_it: cgx.systems_optimisation.ChromosomeGenerator,
+    chromosomes: dict[str, cgx.systems_optimisation.Chromosome],
+    generator: np.random.Generator,
+    gene_range: tuple[int, ...],
+    selection: str,
+    num_to_select: int,
+    database: cgx.utilities.AtomliteDatabase,
+) -> list[cgx.systems_optimisation.Chromosome]:
+    """Mutate a list of chromosomes in the gene range only.
+
+    Available selections for which chromosomes to mutate:
+
+        random:
+            uses generator.choice()
+
+        roulette:
+            adds weight to generator.choice() based on
+            fitness/sum(fitness)
+
+    """
+    # Select chromosomes to mutate.
+    if selection == "random":
+        selected = generator.choice(
+            np.asarray(list(chromosomes.values())),
+            size=num_to_select,
+        )
+    elif selection == "roulette":
+        fitness_values: list[float | int] = [
+            database.get_property_entry(key).properties["fitness"]  # type: ignore[misc]
+            for key in chromosomes
+        ]
+        # Handle if all fitness values are 0.
+        try:
+            weights = [i / sum(fitness_values) for i in fitness_values]
+        except ZeroDivisionError:
+            weights = [1 / len(fitness_values) for i in fitness_values]
+
+        selected = generator.choice(
+            np.asarray(list(chromosomes.values())),
+            size=num_to_select,
+            p=weights,
+        )
+
+    else:
+        msg = f"{selection} is not defined."
+        raise RuntimeError(msg)
+
+    mutated = []
+    known_types = set(chromo_it.chromosome_types.values())
+    for chromosome in selected:
+        gene_dict = {}
+        chromosome_name = [0 for i in range(len(chromo_it.chromosome_map))]
+        for gene_id in chromo_it.chromosome_map:
+            if gene_id not in gene_range:
+                gene = chromosome.name[gene_id]
+            else:
+                chromosome_options = tuple(
+                    range(len(chromo_it.chromosome_map[gene_id]))
+                )
+                gene = generator.choice(chromosome_options)
+
+            gene_value = chromo_it.chromosome_map[gene_id][gene]
+            gene_type = chromo_it.chromosome_types[gene_id]
+            gene_dict[gene_id] = (gene, gene_value, gene_type)
+            chromosome_name[gene_id] = gene
+
+        if "forcefield" in known_types:
+            # In this case, the definer dict changes per chromosome!
+            ff_id = next(
+                i
+                for i in chromo_it.chromosome_types
+                if chromo_it.chromosome_types[i] == "forcefield"
+            )
+            definer_dict = gene_dict[ff_id][1]
+        else:
+            definer_dict = chromo_it.definer_dict
+        mutated.append(
+            cgx.systems_optimisation.Chromosome(
+                name=tuple(chromosome_name),
+                prefix=chromo_it.prefix,
+                present_beads=chromo_it.present_beads,
+                vdw_bond_cutoff=chromo_it.vdw_bond_cutoff,
+                gene_dict=gene_dict,
+                definer_dict=definer_dict,
+                chromosomed_terms=chromo_it.chromosomed_terms,
+            )
+        )
+
+    return mutated
+
+
+def roulette_crossover_population(  # noqa: D103, PLR0913
+    chromo_it: cgx.systems_optimisation.ChromosomeGenerator,
+    chromosomes: dict[str, cgx.systems_optimisation.Chromosome],
+    generator: np.random.Generator,
+    selection: str,
+    num_to_select: int,
+    database: cgx.utilities.AtomliteDatabase,
+) -> list[cgx.systems_optimisation.Chromosome]:
+    # Select chromosomes to cross.
+    if selection == "random":
+        selected = generator.choice(
+            np.asarray(list(chromosomes.values())),
+            size=(num_to_select, 2),
+        )
+    elif selection == "roulette":
+        fitness_values: list[float | int] = [
+            database.get_property_entry(key).properties["fitness"]  # type: ignore[misc]
+            for key in chromosomes
+        ]
+        # Handle if all fitness values are 0.
+        try:
+            weights = [i / sum(fitness_values) for i in fitness_values]
+        except ZeroDivisionError:
+            weights = [1 / len(fitness_values) for i in fitness_values]
+
+        selected = generator.choice(
+            np.asarray(list(chromosomes.values())),
+            size=(num_to_select, 2),
+            p=weights,
+        )
+    else:
+        msg = f"{selection} is not defined."
+        raise RuntimeError(msg)
+
+    crossed = []
+    for chromosome1, chromosome2 in selected:
+        # Randomly select the genes to cross.
+        nums_to_select_from = range(len(chromosome1.name))
+        num_to_cross = generator.choice(nums_to_select_from, size=1)
+        genes_to_cross = set(
+            generator.choice(nums_to_select_from, size=num_to_cross[0])
+        )
+
+        # Cross them.
+        new_chromosome1 = tuple(
+            val if i not in genes_to_cross else chromosome2.name[i]
+            for i, val in enumerate(chromosome1.name)
+        )
+        new_chromosome2 = tuple(
+            val if i not in genes_to_cross else chromosome1.name[i]
+            for i, val in enumerate(chromosome2.name)
+        )
+
+        # Append the new chromosomes.
+        crossed.append(chromo_it.select_chromosome(new_chromosome1))
+        crossed.append(chromo_it.select_chromosome(new_chromosome2))
+
+    return crossed
+
+
 def fitness_function(  # noqa: PLR0913
     chromosome: cgx.systems_optimisation.Chromosome,
     chromosome_generator: cgx.systems_optimisation.ChromosomeGenerator,  # noqa: ARG001
