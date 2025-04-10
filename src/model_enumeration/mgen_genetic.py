@@ -19,6 +19,7 @@ from model_enumeration.mgen_generation import (
     define_pairs,
     get_regraphed_molecule,
     get_vertexset_molecule,
+    make_summary_plot,
     make_summary_plot2,
     passes_graph_bb_iso,
 )
@@ -405,6 +406,251 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
     )
     database.add_properties(key=base_name, property_dict={"is_base": True})
     analyse_cage(database_path=database_path, name=base_name)
+
+
+def plot_timings(figure_dir: pathlib.Path, data_dir: pathlib.Path) -> None:
+    """Plot timings."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for num_processes in (1, 2, 3, 4, 5, 6, 7, 8):
+        timing_file = data_dir / f"np_{num_processes}.txt"
+        if not timing_file.exists():
+            continue
+        with timing_file.open("r") as f:
+            lines = f.readlines()
+        str_times = [float(i.strip().split(",")[0]) for i in lines]
+        fit_times = [float(i.strip().split(",")[1]) for i in lines]
+        if num_processes == 1:
+            lbl1 = "structure"
+            lbl2 = "fitness"
+        else:
+            lbl1 = None
+            lbl2 = None
+        ax.scatter(
+            [num_processes for i in str_times],
+            str_times,
+            c="tab:blue",
+            s=40,
+            edgecolor="none",
+            alpha=0.4,
+        )
+        ax.scatter(
+            [num_processes for i in fit_times],
+            fit_times,
+            c="tab:orange",
+            s=40,
+            edgecolor="none",
+            alpha=0.4,
+        )
+        ax.scatter(
+            num_processes,
+            sum(str_times) / len(str_times),
+            c="tab:blue",
+            s=100,
+            edgecolor="k",
+            label=lbl1,
+        )
+        ax.scatter(
+            num_processes,
+            sum(fit_times) / len(fit_times),
+            c="tab:orange",
+            s=100,
+            edgecolor="k",
+            label=lbl2,
+        )
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("num processes", fontsize=16)
+    ax.set_ylabel("time [s]", fontsize=16)
+    ax.set_ylim(0, None)
+    ax.legend(fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / "timings.png",
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_counters(  # noqa: C901, PLR0912, PLR0915
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (axx, ax1, ax) = plt.subplots(ncols=3, figsize=(16, 5))
+
+    count_has_parallels = {True: 0, False: 0}
+    has_parallels = {True: [], False: []}
+    gen_entries = {}
+    done = 0
+    done_path = {}
+    min_gen_energy = {}
+    maxbbidx = 0
+    maxtidx = 0
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+        energy = entry.properties["energy_per_bb"]
+        count_has_parallels[entry.properties["contains_parallels"]] += 1
+        has_parallels[entry.properties["contains_parallels"]].append(energy)
+
+        if "generation_id" in entry.properties:
+            if entry.properties["generation_id"] not in gen_entries:
+                gen_entries[entry.properties["generation_id"]] = []
+                min_gen_energy[entry.properties["generation_id"]] = float(
+                    "inf"
+                )
+            gen_entries[entry.properties["generation_id"]].append(entry)
+            min_gen_energy[entry.properties["generation_id"]] = min(
+                (energy, min_gen_energy[entry.properties["generation_id"]])
+            )
+
+        if energy < 0.1:  # noqa: PLR2004
+            c = "tab:blue"
+            zorder = 2
+            s = 50
+        elif energy < 1:
+            c = "tab:orange"
+            zorder = 1
+            s = 20
+        else:
+            c = "tab:gray"
+            zorder = 0
+            s = 10
+        ax1.scatter(
+            entry.properties["topology_idx"],
+            entry.properties["bb_config_idx"],
+            c=c,
+            s=s,
+            alpha=1,
+            zorder=zorder,
+        )
+        done += 1
+        maxbbidx = max((maxbbidx, entry.properties["bb_config_idx"]))
+        maxtidx = max((maxtidx, entry.properties["topology_idx"]))
+        if "generation_id" in entry.properties:
+            if entry.properties["generation_id"] not in done_path:
+                done_path[entry.properties["generation_id"]] = []
+
+            if energy == min_gen_energy[entry.properties["generation_id"]]:
+                done_path[entry.properties["generation_id"]] = [
+                    entry.properties["topology_idx"],
+                    entry.properties["bb_config_idx"],
+                ]
+
+    ax1.scatter(done_path[0][0], done_path[0][1], c="r", s=50)
+    ax1.plot(
+        [i[0] for i in done_path.values()],
+        [i[1] for i in done_path.values()],
+        c="k",
+        lw=1,
+        zorder=-1,
+    )
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel("tidx", fontsize=16)
+    ax1.set_ylabel("bidx", fontsize=16)
+    ax1.set_title(f"{done} of {maxbbidx * maxtidx}", fontsize=16)
+
+    nadded = []
+    nduplicates = []
+    nparallels = []
+    cumul = []
+    for gen_id, gen_list in gen_entries.items():
+        nduplicates.append(
+            sum([1 if i.properties["is_duplicate"] else 0 for i in gen_list])
+        )
+        nparallels.append(
+            sum(
+                [
+                    1 if i.properties["contains_parallels"] else 0
+                    for i in gen_list
+                ]
+            )
+        )
+        nadded.append(len(gen_list))
+        if gen_id == 0:
+            cumul.append(len(gen_list))
+        else:
+            cumul.append(cumul[-1] + len(gen_list))
+
+    axx.plot(
+        nparallels,
+        markerfacecolor="#F9A03F",
+        lw=2,
+        label="n. parallels",
+        c="k",
+        marker="o",
+        markersize=10,
+        markeredgecolor="k",
+    )
+    axx.plot(
+        nadded,
+        markerfacecolor="#086788",
+        lw=2,
+        label="n. added",
+        c="k",
+        marker="o",
+        markersize=10,
+        markeredgecolor="k",
+    )
+    axx.plot(
+        nduplicates,
+        markerfacecolor="#7A8B99",
+        lw=2,
+        label="n. duplicates",
+        c="k",
+        marker="o",
+        markersize=10,
+        markeredgecolor="k",
+    )
+
+    axx.tick_params(axis="both", which="major", labelsize=16)
+    axx.set_xlabel("generation", fontsize=16)
+    axx.set_ylabel("num. added", fontsize=16)
+    axx.legend(fontsize=16)
+    axx.set_ylim(0, None)
+    axx.set_title(f"tot. gen: {cumul[-1]}", fontsize=16)
+
+    steps = range(len(count_has_parallels) - 1, -1, -1)
+    xmin = 0
+    xmax = max(has_parallels[True])
+
+    xwidth = 0.5
+    ystep = 1
+    xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
+    for i, value in enumerate(has_parallels):
+        ax.hist(
+            x=has_parallels[value],
+            bins=xbins,
+            density=True,
+            bottom=steps[i] * ystep,
+            histtype="stepfilled",
+            stacked=True,
+            linewidth=1.0,
+            edgecolor="k",
+            label=value,
+        )
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(eb_str(), fontsize=16)
+
+    ax.set_ylabel("frequency", fontsize=16)
+    ax.set_yticks([])
+    ax.set_ylim(0, (steps[0] + 1.5) * ystep)
+    ax.legend(fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
 
 
 def progress_plot(
@@ -836,68 +1082,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0915
                     len(found),
                     chromo_it.get_num_chromosomes(),
                 )
-                raise SystemExit
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for num_processes in (1, 2, 3, 4, 5, 6, 7, 8):
-        timing_file = data_dir / f"np_{num_processes}.txt"
-        if not timing_file.exists():
-            continue
-        with timing_file.open("r") as f:
-            lines = f.readlines()
-        str_times = [float(i.strip().split(",")[0]) for i in lines]
-        fit_times = [float(i.strip().split(",")[1]) for i in lines]
-        if num_processes == 1:
-            lbl1 = "structure"
-            lbl2 = "fitness"
-        else:
-            lbl1 = None
-            lbl2 = None
-        ax.scatter(
-            [num_processes for i in str_times],
-            str_times,
-            c="tab:blue",
-            s=40,
-            edgecolor="none",
-            alpha=0.4,
-        )
-        ax.scatter(
-            [num_processes for i in fit_times],
-            fit_times,
-            c="tab:orange",
-            s=40,
-            edgecolor="none",
-            alpha=0.4,
-        )
-        ax.scatter(
-            num_processes,
-            sum(str_times) / len(str_times),
-            c="tab:blue",
-            s=100,
-            edgecolor="k",
-            label=lbl1,
-        )
-        ax.scatter(
-            num_processes,
-            sum(fit_times) / len(fit_times),
-            c="tab:orange",
-            s=100,
-            edgecolor="k",
-            label=lbl2,
-        )
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel("num processes", fontsize=16)
-    ax.set_ylabel("time [s]", fontsize=16)
-    ax.set_ylim(0, None)
-    ax.legend(fontsize=16)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / "timings.png",
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
+            break
 
     make_summary_plot2(
         database_path=database_path,
@@ -906,6 +1091,25 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0915
         pairs=pairs_to_predict,
         structure_dir=structure_dir,
     )
+    make_summary_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_3.png",
+        pairs=pairs_to_predict,
+    )
+    plot_counters(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_1.png",
+    )
+    plot_timings(figure_dir, data_dir)
+    logging.info(
+        "first test run clearly showed parallels not worth simulating"
+    )
+    logging.info("so started again without them, keeping that data.")
+    logging.info(
+        "what I think is interesting, is having an algo that adapts to that"
+    )
 
 
 def main() -> None:
@@ -913,8 +1117,6 @@ def main() -> None:
     args = _parse_args()
 
     case_study_4(args.run)
-    raise SystemExit("interested in counting known entries, duplicates")
-    raise SystemExit("and counting num parallels ove the generations")
 
 
 if __name__ == "__main__":
