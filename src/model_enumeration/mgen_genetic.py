@@ -258,9 +258,6 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
         known_entry is not None
         and known_entry.properties["base_name"] != base_name
     ):
-        print(known_entry.key)
-        print("handle this")
-        print("add duplicate sign to known")
         database.add_properties(
             key=base_name,
             property_dict={
@@ -268,7 +265,17 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
                 "duplicate_of": known_entry.key,
             },
         )
-        raise SystemExit
+
+        try:
+            nd_ = known_entry.properties["num_duplicates"] + 1
+        except KeyError:
+            nd_ = 1
+        database.add_properties(
+            key=known_entry.key,
+            property_dict={"num_duplicates": nd_},
+        )
+
+        logging.info("%s is duplicate", base_name)
         return
 
     # Iterate over mashes.
@@ -367,6 +374,7 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
                     "contains_parallels": contains_parallels(topology_code),
                     # Add here, if it gets here, then it is not duplicate.
                     "is_duplicate": False,
+                    "num_duplicates": 0,
                 }
 
                 database.add_properties(key=name, property_dict=properties)
