@@ -24,7 +24,10 @@ from model_enumeration.mgen_generation import (
     passes_graph_bb_iso,
 )
 from model_enumeration.mgen_utilities import precursors_to_forcefield
-from model_enumeration.utilities import contains_parallels
+from model_enumeration.utilities import (
+    contains_parallels,
+    eb_str,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -744,7 +747,7 @@ def plot_fitness_curve(
     plt.close()
 
 
-def case_study_4(run: bool) -> None:  # noqa: C901, PLR0915
+def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 4 studying PW heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
 
@@ -872,10 +875,19 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0915
                     graph_type=f"{1 * multiplier}P{2 * multiplier}",
                     graph_set="rx",
                 )
-                topology_codes = tuple(enumerate(iterator.yield_graphs()))
+                all_topology_codes = tuple(enumerate(iterator.yield_graphs()))
+                topology_codes = []
+                for tidx, tc in all_topology_codes:
+                    if contains_parallels(tc):
+                        continue
+                    topology_codes.append((tidx, tc))
+
                 logging.info(
-                    "graph iteration has %s graphs", len(topology_codes)
+                    "graph iteration has %s graphs (from %s)",
+                    len(topology_codes),
+                    len(all_topology_codes),
                 )
+                logging.info("filtering for parallels!")
 
                 possible_bbdicts = cgx.scram.get_custom_bb_configurations(
                     iterator=iterator
@@ -884,7 +896,6 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0915
                     "building block iteration has %s options",
                     len(possible_bbdicts),
                 )
-                logging.info("no filtering applied!")
 
                 chromo_it = cgx.systems_optimisation.ChromosomeGenerator(
                     prefix=f"{pair}_{multiplier}",
@@ -920,7 +931,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0915
                         calculation_output=calculation_dir,
                         database_path=database_path,
                         options={
-                            "topology_codes": list(topology_codes),
+                            "topology_codes": list(all_topology_codes),
                             "bb_configs": possible_bbdicts,
                             "iterator": iterator,
                             "forcefield": forcefield,
