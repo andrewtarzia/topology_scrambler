@@ -220,7 +220,7 @@ def main() -> None:
         "cs5_pxy": (
             "C1=CC(=CC=C1CN2C=C(C=N2)C3=CC=NC=C3)CN4C=C(C=N4)C5=CC=NC=C5"
         ),
-        # Case study 6, only non sterics.#
+        # Case study 6, only non sterics.
         "cs6_l1": "C(=CC(=O)O)C(=O)O",
         "cs6_l2": "C1=CC(=CC=C1C(=O)O)C(=O)O",
         "cs6_l5": "C1=CC2=C(C=CC(=C2)C(=O)O)C=C1C(=O)O",

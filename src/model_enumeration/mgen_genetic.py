@@ -5,6 +5,7 @@ import logging
 import pathlib
 import shutil
 import time
+from collections import abc
 
 import cgexplore as cgx
 import matplotlib.pyplot as plt
@@ -16,14 +17,27 @@ from rdkit import RDLogger
 from model_enumeration.mgen_generation import (
     analyse_cage,
     attempts,
-    define_pairs,
     get_regraphed_molecule,
     get_vertexset_molecule,
     make_summary_plot,
     make_summary_plot2,
     passes_graph_bb_iso,
 )
-from model_enumeration.mgen_utilities import precursors_to_forcefield
+from model_enumeration.mgen_utilities import (
+    StericTwoC1Arm,
+    a2bead_d,
+    abead_c,
+    abead_d,
+    binder_bead,
+    c2bead_d,
+    cbead_c,
+    cbead_d,
+    e2bead_d,
+    ebead_c,
+    precursors_to_forcefield,
+    steric_bead,
+    tetra_bead,
+)
 from model_enumeration.utilities import (
     contains_parallels,
     eb_str,
@@ -203,14 +217,21 @@ def fitness_function(  # noqa: PLR0913
     building_block_config = chromosome.get_vertex_alignments()[0]
 
     name = f"{chromosome.prefix}_{topology_idx}_b{building_block_config.idx}"
-    logging.info("calculating fitness of %s", name)
+
     entry = database.get_entry(name)
-    energy = entry.properties["energy_per_bb"]
+
+    if entry.properties["is_duplicate"]:
+        energy = database.get_entry(
+            entry.properties["duplicate_of"]
+        ).properties["energy_per_bb"]
+    else:
+        energy = entry.properties["energy_per_bb"]
     fitness = np.exp(-energy * options["beta"])
     database.add_properties(
         key=name,
         property_dict={"fitness": fitness},
     )
+
     return fitness
 
 
@@ -230,7 +251,9 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
     base_name = (
         f"{chromosome.prefix}_{topology_idx}_b{building_block_config.idx}"
     )
-    logging.info("calculating structure of %s", base_name)
+    l1, l2, stoichstring = chromosome.prefix.split("_")
+    multiplier = stoichstring.split("-")[2]
+
     if database.has_molecule(base_name):
         return
 
@@ -248,7 +271,11 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
             entry_bb_config = options["bb_configs"][
                 entry.properties["bb_config_idx"]
             ]
-        except KeyError:
+        except (KeyError, IndexError):
+            continue
+
+        known_stoichstring = entry.properties["stoichstring"]
+        if stoichstring != known_stoichstring:
             continue
 
         # Testing bb-config aware graph check.
@@ -265,6 +292,10 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
         known_entry is not None
         and known_entry.properties["base_name"] != base_name
     ):
+        database.add_molecule(
+            key=base_name,
+            molecule=database.get_molecule(known_entry.key),
+        )
         database.add_properties(
             key=base_name,
             property_dict={
@@ -358,7 +389,6 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
                     ),
                 )
 
-                l1, l2, multiplier = chromosome.prefix.split("_")
                 properties = {
                     "base_name": base_name,
                     "forcefield_dict": (
@@ -370,6 +400,7 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
                     "pair": f"{l1}_{l2}",
                     "num_components": num_components,
                     "num_bbs": (options["iterator"].get_num_building_blocks()),
+                    "stoichstring": stoichstring,
                     "multiplier": multiplier,
                     "topology_idx": topology_idx,
                     "mash_idx": midx,
@@ -480,11 +511,12 @@ def plot_timings(figure_dir: pathlib.Path, data_dir: pathlib.Path) -> None:
 
 def plot_counters(  # noqa: C901, PLR0912, PLR0915
     database_path: pathlib.Path,
+    stoichstring: str,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, (axx, ax1, ax) = plt.subplots(ncols=3, figsize=(16, 5))
+    fig, (axx, ax1) = plt.subplots(ncols=2, figsize=(16, 5))
 
     count_has_parallels = {True: 0, False: 0}
     has_parallels = {True: [], False: []}
@@ -498,20 +530,13 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
         # Only do base entries.
         if "is_base" not in entry.properties:
             continue
+
+        if entry.properties["stoichstring"] != stoichstring:
+            continue
+
         energy = entry.properties["energy_per_bb"]
         count_has_parallels[entry.properties["contains_parallels"]] += 1
         has_parallels[entry.properties["contains_parallels"]].append(energy)
-
-        if "generation_id" in entry.properties:
-            if entry.properties["generation_id"] not in gen_entries:
-                gen_entries[entry.properties["generation_id"]] = []
-                min_gen_energy[entry.properties["generation_id"]] = float(
-                    "inf"
-                )
-            gen_entries[entry.properties["generation_id"]].append(entry)
-            min_gen_energy[entry.properties["generation_id"]] = min(
-                (energy, min_gen_energy[entry.properties["generation_id"]])
-            )
 
         if energy < 0.1:  # noqa: PLR2004
             c = "tab:blue"
@@ -525,6 +550,18 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
             c = "tab:gray"
             zorder = 0
             s = 10
+
+        if "generation_id" in entry.properties:
+            if entry.properties["generation_id"] not in gen_entries:
+                gen_entries[entry.properties["generation_id"]] = []
+                min_gen_energy[entry.properties["generation_id"]] = float(
+                    "inf"
+                )
+            gen_entries[entry.properties["generation_id"]].append(entry)
+            min_gen_energy[entry.properties["generation_id"]] = min(
+                (energy, min_gen_energy[entry.properties["generation_id"]])
+            )
+
         ax1.scatter(
             entry.properties["topology_idx"],
             entry.properties["bb_config_idx"],
@@ -619,10 +656,42 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
     axx.set_ylim(0, None)
     axx.set_title(f"tot. gen: {cumul[-1]}", fontsize=16)
 
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_vs_parallels(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    count_has_parallels = {True: 0, False: 0}
+    has_parallels = {True: [], False: []}
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+        energy = entry.properties["energy_per_bb"]
+        count_has_parallels[entry.properties["contains_parallels"]] += 1
+        has_parallels[entry.properties["contains_parallels"]].append(energy)
+
     steps = range(len(count_has_parallels) - 1, -1, -1)
     xmin = 0
-    xmax = max(has_parallels[True])
-
+    xmax = max(has_parallels[False] + has_parallels[True])
     xwidth = 0.5
     ystep = 1
     xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
@@ -673,45 +742,29 @@ def plot_energies(
         # Only do base entries.
         if "is_base" not in entry.properties:
             continue
+
         energy = entry.properties["energy_per_bb"]
+        stoichstring = entry.properties["stoichstring"]
         min_energy = min((min_energy, energy))
 
+        if stoichstring not in gen_entries:
+            gen_entries[stoichstring] = {}
+
         if "generation_id" in entry.properties:
-            if entry.properties["generation_id"] not in gen_entries:
-                gen_entries[entry.properties["generation_id"]] = []
+            gid = entry.properties["generation_id"]
+            if gid not in gen_entries[stoichstring]:
+                gen_entries[stoichstring][gid] = []
 
-            gen_entries[entry.properties["generation_id"]].append(energy)
+            gen_entries[stoichstring][gid].append(energy)
 
-    ax.plot(
-        [np.min(i) for i in gen_entries.values()],
-        markerfacecolor="#F9A03F",
-        lw=2,
-        label="min.",
-        c="k",
-        marker="o",
-        markersize=10,
-        markeredgecolor="k",
-    )
-    ax.plot(
-        [np.mean(i) for i in gen_entries.values()],
-        markerfacecolor="#086788",
-        lw=2,
-        label="mean",
-        c="k",
-        marker="o",
-        markersize=10,
-        markeredgecolor="k",
-    )
-    ax.plot(
-        [np.max(i) for i in gen_entries.values()],
-        markerfacecolor="#7A8B99",
-        lw=2,
-        label="max.",
-        c="k",
-        marker="o",
-        markersize=10,
-        markeredgecolor="k",
-    )
+    for stoichstring, gen_energies in gen_entries.items():
+        ax.plot(
+            [np.min(gen_energies[i]) for i in gen_energies],
+            lw=2,
+            marker="o",
+            markersize=10,
+            label=stoichstring,
+        )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("generation", fontsize=16)
@@ -721,6 +774,7 @@ def plot_energies(
     ax.axhline(y=isomer_energy(), c="r", ls="-")
     ax.set_yscale("log")
     ax.set_xlim(0, None)
+    ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -827,6 +881,58 @@ def plot_fitness_curve(
     plt.close()
 
 
+def define_pairs(
+    pairs_to_predict: abc.Sequence[tuple[abc.Sequence[str]]],
+    ligand_types: dict[str, str],
+) -> dict[str, dict[str, cgx.molecular.Precursor | tuple | int]]:
+    """Define pairs from provided information."""
+    pairs = {}
+    for large, small in pairs_to_predict:
+        name = f"{large}_{small}"
+
+        if ligand_types[large] == "sixbead":
+            large_prec = cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            )
+        elif ligand_types[large] == "twoarm":
+            large_prec = cgx.molecular.TwoC1Arm(bead=cbead_c, abead1=abead_c)
+
+        else:
+            msg = large
+            raise NotImplementedError(msg)
+
+        if ligand_types[small] == "twoarm":
+            small_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
+        elif ligand_types[small] == "stwoarm":
+            small_prec = StericTwoC1Arm(
+                bead=cbead_d, abead1=abead_d, steric_bead=steric_bead
+            )
+        elif ligand_types[small] == "sixbead":
+            small_prec = cgx.molecular.SixBead(
+                bead=c2bead_d,
+                abead1=a2bead_d,
+                abead2=e2bead_d,
+            )
+        else:
+            msg = small
+            raise NotImplementedError(msg)
+
+        pairs[name] = {
+            "large_name": large,
+            "small_name": small,
+            "large": large_prec,
+            "small": small_prec,
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead, abead1=binder_bead
+            ),
+            "vdw_cutoff": 2,
+        }
+
+    return pairs
+
+
 def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 4 studying PW heteroleptic systems."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
@@ -847,7 +953,18 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
 
     plot_fitness_curve(figure_dir)
 
-    stoichiometry_l_l_m = (1, 1, 1)
+    stoichiometries_l_s_m = (
+        (6, 12, 9),
+        (12, 6, 9),
+        (9, 9, 9),
+        (2, 2, 2),
+        (1, 3, 2),
+        (3, 1, 2),
+        (3, 3, 3),
+        (3, 3, 3),
+        (2, 4, 3),
+        (4, 2, 3),
+    )
     ligand_measures = {
         "cs41a": {"ba": 1.5, "aa": 9.5, "bac": 145},
         "cs41b": {"ba": 5.7, "aa": 2.4, "bac": 145},
@@ -864,10 +981,10 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     }
     pairs_to_predict = [
         # large, small.
-        (("cs490", "cs41c"), (9,)),
-        (("cs490", "cs41d"), (9,)),
-        (("cs490", "cs41a"), (9,)),
-        (("cs490", "cs41b"), (9,)),
+        ("cs490", "cs41c"),
+        ("cs490", "cs41d"),
+        ("cs490", "cs41a"),
+        ("cs490", "cs41b"),
     ]
 
     pairs = define_pairs(pairs_to_predict, ligand_types)
@@ -890,6 +1007,15 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "a": ("nb", 10.0, 1.0),
         "b": ("nb", 10.0, 1.0),
         "c": ("nb", 10.0, 1.0),
+    }
+
+    short_scan_config = {
+        "seeds": [4, 12689, 18, 999],
+        "count_to_spam": 2,
+        "mutations": 2,
+        "num_generations": 10,
+        "selection_size": 10,
+        "num_processes": 1,
     }
 
     if run:
@@ -943,14 +1069,19 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 )
             )
 
-            for multiplier in pairs[pair]["multipliers"]:
-                logging.info("doing: pair %s, multi %s", pair, multiplier)
+            for stoichiometry_l_s_m in stoichiometries_l_s_m:
+                stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
+
+                multiplier = stoichiometry_l_s_m[2]
+                logging.info(
+                    "doing: pair %s, stoichstring %s", pair, stoichstring
+                )
                 # Define a connectivity based on a multiplier.
                 iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
-                        tetra_bb: stoichiometry_l_l_m[2] * multiplier,
-                        large_bb: stoichiometry_l_l_m[0] * multiplier,
-                        small_bb: stoichiometry_l_l_m[1] * multiplier,
+                        tetra_bb: stoichiometry_l_s_m[2],
+                        large_bb: stoichiometry_l_s_m[0],
+                        small_bb: stoichiometry_l_s_m[1],
                     },
                     graph_type=f"{1 * multiplier}P{2 * multiplier}",
                     graph_set="rx",
@@ -978,7 +1109,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 )
 
                 chromo_it = cgx.systems_optimisation.ChromosomeGenerator(
-                    prefix=f"{pair}_{multiplier}",
+                    prefix=f"{pair}_{stoichstring}",
                     present_beads=forcefield.get_present_beads(),
                     vdw_bond_cutoff=forcefield.get_vdw_bond_cutoff(),
                 )
@@ -1019,19 +1150,15 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     )
                 )
 
-                seeds = [4]
-                count_to_spam = 5
-                mutations = 5
-                num_generations = 100
-                selection_size = 10
-                num_processes = 1
-                timing_file = data_dir / f"np_{num_processes}.txt"
-                for seed in seeds:
+                timing_file = (
+                    data_dir / f"np_{short_scan_config['num_processes']}.txt"
+                )
+                for seed in short_scan_config["seeds"]:
                     generator = np.random.default_rng(seed)
 
                     initial_population = chromo_it.select_random_population(
                         generator,
-                        size=selection_size,
+                        size=short_scan_config["selection_size"],
                     )
 
                     # Yield this.
@@ -1040,7 +1167,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         chromosomes=initial_population,
                         fitness_calculator=fitness_calculator,
                         structure_calculator=structure_calculator,
-                        num_processes=num_processes,
+                        num_processes=short_scan_config["num_processes"],
                     )
 
                     generation.run_structures()
@@ -1083,7 +1210,9 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     count_unchanged = 0
                     previous_best = best_name
 
-                    for generation_id in range(1, num_generations + 1):
+                    for generation_id in range(
+                        1, short_scan_config["num_generations"] + 1
+                    ):
                         logging.info(
                             "doing generation %s of seed %s",
                             generation_id,
@@ -1094,15 +1223,18 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             "initial size is %s.",
                             generation.get_generation_size(),
                         )
-                        if count_unchanged == count_to_spam:
+                        if (
+                            count_unchanged
+                            == short_scan_config["count_to_spam"]
+                        ):
                             count_unchanged = 0
                             logging.info("doing 2x mutations.")
-                            num_mutate = mutations * 2
+                            num_mutate = short_scan_config["mutations"] * 2
                         else:
                             logging.info("doing mutations.")
-                            num_mutate = mutations * 1
-                        merged_chromosomes = []
+                            num_mutate = short_scan_config["mutations"] * 1
 
+                        merged_chromosomes = []
                         merged_chromosomes.extend(
                             chromo_it.mutate_population(
                                 list_of_chromosomes=generation.chromosomes,
@@ -1212,7 +1344,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             ),
                             fitness_calculator=fitness_calculator,
                             structure_calculator=structure_calculator,
-                            num_processes=num_processes,
+                            num_processes=short_scan_config["num_processes"],
                         )
                         logging.info(
                             "new size is %s.", generation.get_generation_size()
@@ -1260,13 +1392,13 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         # Select the best of the generation for the next
                         # generation.
                         best = generation.select_best(
-                            selection_size=selection_size
+                            selection_size=short_scan_config["selection_size"]
                         )
                         generation = cgx.systems_optimisation.Generation(
                             chromosomes=chromo_it.dedupe_population(best),
                             fitness_calculator=fitness_calculator,
                             structure_calculator=structure_calculator,
-                            num_processes=num_processes,
+                            num_processes=short_scan_config["num_processes"],
                         )
                         logging.info(
                             "final size is %s.",
@@ -1276,8 +1408,10 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         progress_plot(
                             generations=generations,
                             output=figure_dir
-                            / f"fp_{pair}_{multiplier}_{seed}.png",
-                            num_generations=num_generations,
+                            / f"fp_{pair}_{stoichstring}_{seed}.png",
+                            num_generations=short_scan_config[
+                                "num_generations"
+                            ],
                         )
 
                         # Output best structures as images.
@@ -1317,24 +1451,33 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_4.png",
-        pairs=pairs_to_predict,
+        pairs=tuple((i, None) for i in pairs_to_predict),
         structure_dir=structure_dir,
     )
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_3.png",
-        pairs=pairs_to_predict,
+        pairs=tuple((i, None) for i in pairs_to_predict),
     )
-    plot_counters(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_1.png",
-    )
+
     plot_energies(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_2.png",
+    )
+    for stoichiometry_l_s_m in stoichiometries_l_s_m:
+        stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
+        plot_counters(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_1_{stoichstring}.png",
+        )
+    plot_vs_parallels(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_9.png",
     )
     plot_timings(figure_dir, data_dir)
     logging.info(
