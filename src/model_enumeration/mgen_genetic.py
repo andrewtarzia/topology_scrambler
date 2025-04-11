@@ -27,6 +27,7 @@ from model_enumeration.mgen_utilities import precursors_to_forcefield
 from model_enumeration.utilities import (
     contains_parallels,
     eb_str,
+    isomer_energy,
 )
 
 logging.basicConfig(
@@ -202,6 +203,7 @@ def fitness_function(  # noqa: PLR0913
     building_block_config = chromosome.get_vertex_alignments()[0]
 
     name = f"{chromosome.prefix}_{topology_idx}_b{building_block_config.idx}"
+    logging.info("calculating fitness of %s", name)
     entry = database.get_entry(name)
     energy = entry.properties["energy_per_bb"]
     fitness = np.exp(-energy * options["beta"])
@@ -228,6 +230,7 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
     base_name = (
         f"{chromosome.prefix}_{topology_idx}_b{building_block_config.idx}"
     )
+    logging.info("calculating structure of %s", base_name)
     if database.has_molecule(base_name):
         return
 
@@ -611,7 +614,7 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
 
     axx.tick_params(axis="both", which="major", labelsize=16)
     axx.set_xlabel("generation", fontsize=16)
-    axx.set_ylabel("num. added", fontsize=16)
+    axx.set_ylabel("number", fontsize=16)
     axx.legend(fontsize=16)
     axx.set_ylim(0, None)
     axx.set_title(f"tot. gen: {cumul[-1]}", fontsize=16)
@@ -642,6 +645,83 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
     ax.set_yticks([])
     ax.set_ylim(0, (steps[0] + 1.5) * ystep)
     ax.legend(fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_energies(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    gen_entries = {}
+    min_energy = float("inf")
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+        energy = entry.properties["energy_per_bb"]
+        min_energy = min((min_energy, energy))
+
+        if "generation_id" in entry.properties:
+            if entry.properties["generation_id"] not in gen_entries:
+                gen_entries[entry.properties["generation_id"]] = []
+
+            gen_entries[entry.properties["generation_id"]].append(energy)
+
+    ax.plot(
+        [np.min(i) for i in gen_entries.values()],
+        markerfacecolor="#F9A03F",
+        lw=2,
+        label="min.",
+        c="k",
+        marker="o",
+        markersize=10,
+        markeredgecolor="k",
+    )
+    ax.plot(
+        [np.mean(i) for i in gen_entries.values()],
+        markerfacecolor="#086788",
+        lw=2,
+        label="mean",
+        c="k",
+        marker="o",
+        markersize=10,
+        markeredgecolor="k",
+    )
+    ax.plot(
+        [np.max(i) for i in gen_entries.values()],
+        markerfacecolor="#7A8B99",
+        lw=2,
+        label="max.",
+        c="k",
+        marker="o",
+        markersize=10,
+        markeredgecolor="k",
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("generation", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.legend(fontsize=16)
+    ax.axhline(y=min_energy, c="k", ls="--")
+    ax.axhline(y=isomer_energy(), c="r", ls="-")
+    ax.set_yscale("log")
+    ax.set_xlim(0, None)
+
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -996,8 +1076,8 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
 
                     best_name = (
                         f"{best_chromosome.prefix}"
-                        f"_{best_chromosome.name[0]}_"
-                        f"b{best_chromosome.name[1]}"
+                        f"_{best_chromosome.get_topology_information()[0]}_"
+                        f"b{best_chromosome.get_vertex_alignments()[0].idx}"
                     )
 
                     count_unchanged = 0
@@ -1064,7 +1144,11 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             roulette_mutate_population(
                                 chromo_it=chromo_it,
                                 chromosomes={
-                                    (f"{i.prefix}_{i.name[0]}_b{i.name[1]}"): i
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
                                     for i in generation.chromosomes
                                 },
                                 generator=generator,
@@ -1080,7 +1164,11 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             roulette_mutate_population(
                                 chromo_it=chromo_it,
                                 chromosomes={
-                                    (f"{i.prefix}_{i.name[0]}_b{i.name[1]}"): i
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
                                     for i in generation.chromosomes
                                 },
                                 generator=generator,
@@ -1097,7 +1185,11 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             roulette_crossover_population(
                                 chromo_it=chromo_it,
                                 chromosomes={
-                                    (f"{i.prefix}_{i.name[0]}_b{i.name[1]}"): i
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
                                     for i in generation.chromosomes
                                 },
                                 generator=generator,
@@ -1195,8 +1287,8 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
 
                         best_name = (
                             f"{best_chromosome.prefix}"
-                            f"_{best_chromosome.name[0]}_"
-                            f"b{best_chromosome.name[1]}"
+                            f"_{best_chromosome.get_topology_information()[0]}_"
+                            f"b{best_chromosome.get_vertex_alignments()[0].idx}"
                         )
                         if best_name != previous_best:
                             count_unchanged = 0
@@ -1238,6 +1330,11 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_1.png",
+    )
+    plot_energies(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_2.png",
     )
     plot_timings(figure_dir, data_dir)
     logging.info(
