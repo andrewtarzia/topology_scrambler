@@ -13,10 +13,10 @@ import numpy as np
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
+from tables.file import defaultdict
 
 from model_enumeration.mgen_generation import (
     analyse_cage,
-    attempts,
     get_regraphed_molecule,
     get_vertexset_molecule,
     make_summary_plot,
@@ -49,6 +49,36 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 RDLogger.DisableLog("rdApp.*")
+short_attempts = (
+    None,
+    # "regraphed-spring-10",
+    # "regraphed-kamada-10",
+    # "set-kamada-10",
+    # "set-spring-10",
+    # "set-spectral-10",
+)
+
+
+def add_generation_information(
+    database_path: pathlib.Path,
+    generation: cgx.systems_optimisation.Generation,
+    seed: int,
+    generation_id: int,
+) -> None:
+    """Add generation information to the database."""
+    for cs in generation.chromosomes:
+        topology_idx, topology_code = cs.get_topology_information()
+        building_block_config = cs.get_vertex_alignments()[0]
+        name = f"{cs.prefix}_{topology_idx}_b{building_block_config.idx}"
+        entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(name)
+        if "generation_id" not in entry.properties:
+            cgx.utilities.AtomliteDatabase(database_path).add_properties(
+                key=name,
+                property_dict={
+                    "generation_id": generation_id,
+                    "generation_seed": seed,
+                },
+            )
 
 
 def roulette_mutate_population(  # noqa: PLR0913
@@ -139,6 +169,67 @@ def roulette_mutate_population(  # noqa: PLR0913
                 chromosomed_terms=chromo_it.chromosomed_terms,
             )
         )
+
+    return mutated
+
+
+def get_population_neighbours(
+    chromo_it: cgx.systems_optimisation.ChromosomeGenerator,
+    chromosomes: dict[str, cgx.systems_optimisation.Chromosome],
+    gene_range: tuple[int, ...],
+    selection: str,
+) -> list[cgx.systems_optimisation.Chromosome]:
+    """Get all nearest neighbours of provided chromosomes."""
+    # Select chromosomes to mutate.
+    if selection == "all":
+        selected = np.asarray(list(chromosomes.values()))
+
+    else:
+        msg = f"{selection} is not defined."
+        raise RuntimeError(msg)
+
+    mutated = []
+    known_types = set(chromo_it.chromosome_types.values())
+    for chromosome in selected:
+        if "forcefield" in known_types:
+            raise NotImplementedError
+        definer_dict = chromo_it.definer_dict
+
+        gene_dict = {}
+        chromosome_name = [0 for i in range(len(chromo_it.chromosome_map))]
+        # Add known ones to chromosome name.
+        to_modify = []
+        for gene_id in chromo_it.chromosome_map:
+            if gene_id not in gene_range:
+                gene = chromosome.name[gene_id]
+            else:
+                to_modify.append(gene_id)
+                continue
+            gene_value = chromo_it.chromosome_map[gene_id][gene]
+            gene_type = chromo_it.chromosome_types[gene_id]
+            gene_dict[gene_id] = (gene, gene_value, gene_type)
+            chromosome_name[gene_id] = gene
+
+        for gene_id in to_modify:
+            current_gene = chromosome.name[gene_id]
+
+            for option in (current_gene + 1, current_gene - 1):
+                gene_value = chromo_it.chromosome_map[gene_id][option]
+                gene_type = chromo_it.chromosome_types[gene_id]
+                gene_dict[gene_id] = (option, gene_value, gene_type)
+                chromosome_name[gene_id] = option
+
+                mutated.append(
+                    cgx.systems_optimisation.Chromosome(
+                        name=tuple(chromosome_name),
+                        prefix=chromo_it.prefix,
+                        present_beads=chromo_it.present_beads,
+                        vdw_bond_cutoff=chromo_it.vdw_bond_cutoff,
+                        gene_dict=gene_dict,
+                        definer_dict=definer_dict,
+                        chromosomed_terms=chromo_it.chromosomed_terms,
+                    )
+                )
 
     return mutated
 
@@ -318,7 +409,7 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
 
     # Iterate over mashes.
     generated_conformers = []
-    for midx, scale in enumerate(attempts):
+    for midx, scale in enumerate(options["attempts"]):
         name = f"{base_name}_{midx}"
 
         try:
@@ -348,7 +439,7 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
         try:
             potential_names = [
                 f"{base_name}_{nmash_idx}"
-                for nmash_idx in range(len(attempts))
+                for nmash_idx in range(len(options["attempts"]))
             ]
             if scale is None:
                 conformer = cgx.scram.graph_optimise_cage(
@@ -583,14 +674,15 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
                     entry.properties["bb_config_idx"],
                 ]
 
-    ax1.scatter(done_path[0][0], done_path[0][1], c="r", s=50)
-    ax1.plot(
-        [i[0] for i in done_path.values()],
-        [i[1] for i in done_path.values()],
-        c="k",
-        lw=1,
-        zorder=-1,
-    )
+    if len(done_path) > 0:
+        ax1.scatter(done_path[0][0], done_path[0][1], c="r", s=50)
+        ax1.plot(
+            [i[0] for i in done_path.values()],
+            [i[1] for i in done_path.values()],
+            c="k",
+            lw=1,
+            zorder=-1,
+        )
     ax1.tick_params(axis="both", which="major", labelsize=16)
     ax1.set_xlabel("tidx", fontsize=16)
     ax1.set_ylabel("bidx", fontsize=16)
@@ -616,7 +708,10 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
         if gen_id == 0:
             cumul.append(len(gen_list))
         else:
-            cumul.append(cumul[-1] + len(gen_list))
+            try:
+                cumul.append(cumul[-1] + len(gen_list))
+            except IndexError:
+                break
 
     axx.plot(
         nparallels,
@@ -654,7 +749,8 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
     axx.set_ylabel("number", fontsize=16)
     axx.legend(fontsize=16)
     axx.set_ylim(0, None)
-    axx.set_title(f"tot. gen: {cumul[-1]}", fontsize=16)
+    if len(cumul) > 0:
+        axx.set_title(f"tot. gen: {cumul[-1]}", fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -673,6 +769,7 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
 def plot_vs_parallels(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
+    stoichstring: str,
     filename: str,
 ) -> dict:
     """Visualise energies."""
@@ -680,21 +777,29 @@ def plot_vs_parallels(
 
     count_has_parallels = {True: 0, False: 0}
     has_parallels = {True: [], False: []}
-
+    present_tidx = defaultdict(list)
+    present_bidx = defaultdict(list)
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         # Only do base entries.
         if "is_base" not in entry.properties:
             continue
+
+        if entry.properties["stoichstring"] != stoichstring:
+            continue
+
         energy = entry.properties["energy_per_bb"]
         count_has_parallels[entry.properties["contains_parallels"]] += 1
         has_parallels[entry.properties["contains_parallels"]].append(energy)
+        present_tidx[entry.properties["topology_idx"]].append(energy)
+        present_bidx[entry.properties["bb_config_idx"]].append(energy)
 
-    steps = range(len(count_has_parallels) - 1, -1, -1)
+    steps = range(len(count_has_parallels) + 6 - 1, -1, -1)
     xmin = 0
     xmax = max(has_parallels[False] + has_parallels[True])
-    xwidth = 0.5
+    xwidth = 0.2
     ystep = 1
     xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
+
     for i, value in enumerate(has_parallels):
         ax.hist(
             x=has_parallels[value],
@@ -705,8 +810,43 @@ def plot_vs_parallels(
             stacked=True,
             linewidth=1.0,
             edgecolor="k",
-            label=value,
+            label=f"parallels: {value}",
         )
+
+    counted = {i: len(present_tidx[i]) for i in present_tidx}
+    top_3 = sorted(counted, key=counted.get, reverse=True)[:3]
+
+    for i, tidx in enumerate(top_3):
+        j = i + len(has_parallels)
+        ax.hist(
+            x=present_tidx[tidx],
+            bins=xbins,
+            density=True,
+            bottom=steps[j] * ystep,
+            histtype="stepfilled",
+            stacked=True,
+            linewidth=1.0,
+            edgecolor="k",
+            label=f"tidx: {tidx}",
+        )
+
+    counted = {i: len(present_bidx[i]) for i in present_bidx}
+    top_3 = sorted(counted, key=counted.get, reverse=True)[:3]
+
+    for i, bidx in enumerate(top_3):
+        j = i + len(has_parallels) + 3
+        ax.hist(
+            x=present_bidx[bidx],
+            bins=xbins,
+            density=True,
+            bottom=steps[j] * ystep,
+            histtype="stepfilled",
+            stacked=True,
+            linewidth=1.0,
+            edgecolor="k",
+            label=f"bidx: {bidx}",
+        )
+
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel(eb_str(), fontsize=16)
 
@@ -714,6 +854,69 @@ def plot_vs_parallels(
     ax.set_yticks([])
     ax.set_ylim(0, (steps[0] + 1.5) * ystep)
     ax.legend(fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_idx_completion(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    stoichstring: str,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, (ax, ax1) = plt.subplots(ncols=2, sharey=True, figsize=(16, 5))
+
+    present_tidx = defaultdict(int)
+    present_bidx = defaultdict(int)
+    max_tidx = 0
+    max_bidx = 0
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+
+        if entry.properties["stoichstring"] != stoichstring:
+            continue
+
+        present_tidx[entry.properties["topology_idx"]] += 1
+        present_bidx[entry.properties["bb_config_idx"]] += 1
+        max_tidx = max((max_tidx, entry.properties["topology_idx"]))
+        max_bidx = max((max_bidx, entry.properties["bb_config_idx"]))
+
+    top_10 = sorted(present_tidx, key=present_tidx.get, reverse=True)[:10]
+    ax.bar(
+        x=range(len(top_10)),
+        height=[present_tidx[i] for i in top_10],
+        facecolor="tab:blue",
+    )
+    ax.set_xticks(range(len(top_10)))
+    ax.set_xticklabels(list(top_10))
+    top_10 = sorted(present_bidx, key=present_bidx.get, reverse=True)[:10]
+    ax1.bar(
+        x=range(len(top_10)),
+        height=[present_bidx[i] for i in top_10],
+        facecolor="tab:orange",
+    )
+    ax1.set_xticks(range(len(top_10)))
+    ax1.set_xticklabels(list(top_10))
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("tidx", fontsize=16)
+    ax.set_ylabel("count", fontsize=16)
+
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel("bidx", fontsize=16)
+
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -743,27 +946,30 @@ def plot_energies(
         if "is_base" not in entry.properties:
             continue
 
+        if "generation_id" not in entry.properties:
+            continue
+
         energy = entry.properties["energy_per_bb"]
         stoichstring = entry.properties["stoichstring"]
+        gid = entry.properties["generation_id"]
+        gseed = entry.properties["generation_seed"]
         min_energy = min((min_energy, energy))
 
-        if stoichstring not in gen_entries:
-            gen_entries[stoichstring] = {}
+        if (stoichstring, gseed) not in gen_entries:
+            gen_entries[(stoichstring, gseed)] = {}
 
-        if "generation_id" in entry.properties:
-            gid = entry.properties["generation_id"]
-            if gid not in gen_entries[stoichstring]:
-                gen_entries[stoichstring][gid] = []
+        if gid not in gen_entries[(stoichstring, gseed)]:
+            gen_entries[(stoichstring, gseed)][gid] = []
 
-            gen_entries[stoichstring][gid].append(energy)
+        gen_entries[(stoichstring, gseed)][gid].append(energy)
 
-    for stoichstring, gen_energies in gen_entries.items():
+    for (stoichstring, gseed), gen_energies in gen_entries.items():
         ax.plot(
             [np.min(gen_energies[i]) for i in gen_energies],
             lw=2,
             marker="o",
             markersize=10,
-            label=stoichstring,
+            label=f"{stoichstring}:{gseed}",
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -791,53 +997,41 @@ def plot_energies(
 
 
 def progress_plot(
-    generations: list,
+    seeded_generations: dict[int, list],
     output: pathlib.Path,
-    num_generations: int,
 ) -> None:
     """Draw optimisation progress."""
     fig, ax = plt.subplots(figsize=(8, 5))
-    fitnesses = [
-        generation.calculate_fitness_values() for generation in generations
+    cs = [
+        "tab:blue",
+        "tab:orange",
+        "tab:green",
+        "tab:red",
+        "tab:purple",
+        "tab:cyan",
     ]
+    for i, (seed, generations) in enumerate(seeded_generations.items()):
+        fitnesses = [
+            generation.calculate_fitness_values() for generation in generations
+        ]
 
-    ax.plot(
-        [max(i) for i in fitnesses],
-        markerfacecolor="#F9A03F",
-        label="max",
-        lw=2,
-        c="k",
-        marker="o",
-        markersize=10,
-        markeredgecolor="k",
-    )
-    ax.plot(
-        [np.mean(i) for i in fitnesses],
-        markerfacecolor="#086788",
-        lw=2,
-        c="k",
-        marker="o",
-        markersize=10,
-        markeredgecolor="k",
-        label="mean",
-    )
-    ax.plot(
-        [min(i) for i in fitnesses],
-        markerfacecolor="#7A8B99",
-        label="min",
-        lw=2,
-        c="k",
-        marker="o",
-        markersize=10,
-        markeredgecolor="k",
-    )
+        ax.plot(
+            [max(i) for i in fitnesses],
+            label=f"{seed}",
+            lw=2,
+            c=cs[i],
+            marker="o",
+            markersize=8,
+            markeredgecolor="w",
+        )
+        ax.plot([np.mean(i) for i in fitnesses], lw=2, ls="--", c=cs[i])
 
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel("generation", fontsize=16)
-    ax.set_ylabel("fitness", fontsize=16)
-    ax.set_xlim(0, num_generations)
-    ax.set_xticks(range(0, num_generations + 1, 5))
-    ax.legend(fontsize=16)
+        ax.tick_params(axis="both", which="major", labelsize=16)
+        ax.set_xlabel("generation", fontsize=16)
+        ax.set_ylabel("fitness", fontsize=16)
+        ax.set_ylim(1e-10, 1)
+        ax.set_yscale("log")
+        ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -956,14 +1150,20 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     stoichiometries_l_s_m = (
         (6, 12, 9),
         (12, 6, 9),
-        (9, 9, 9),
-        (2, 2, 2),
         (1, 3, 2),
         (3, 1, 2),
-        (3, 3, 3),
-        (3, 3, 3),
         (2, 4, 3),
         (4, 2, 3),
+        (4, 8, 6),
+        (8, 4, 6),
+        (9, 9, 9),
+        (2, 2, 2),
+        (3, 3, 3),
+        (4, 4, 4),
+        (5, 5, 5),
+        (6, 6, 6),
+        (7, 7, 7),
+        (8, 8, 8),
     )
     ligand_measures = {
         "cs41a": {"ba": 1.5, "aa": 9.5, "bac": 145},
@@ -1000,6 +1200,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "ede": ("angle", 180, 1e2),
         # Torsions.
         "bacab": ("tors", "0134", 180, 50, 1),
+        "bedeb": ("tors", "0134", 180, 50, 1),
         # Nonbondeds.
         "m": ("nb", 10.0, 1.0),
         "d": ("nb", 10.0, 1.0),
@@ -1015,6 +1216,15 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         "mutations": 2,
         "num_generations": 10,
         "selection_size": 10,
+        "num_processes": 1,
+    }
+
+    long_scan_config = {
+        "seeds": [142],
+        "count_to_spam": 5,
+        "mutations": 10,
+        "num_generations": 20,
+        "selection_size": 20,
         "num_processes": 1,
     }
 
@@ -1146,6 +1356,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             "bb_configs": possible_bbdicts,
                             "iterator": iterator,
                             "forcefield": forcefield,
+                            "attempts": short_attempts,
                         },
                     )
                 )
@@ -1153,7 +1364,9 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 timing_file = (
                     data_dir / f"np_{short_scan_config['num_processes']}.txt"
                 )
+                seeded_generations = {}
                 for seed in short_scan_config["seeds"]:
+                    seeded_generations[seed] = []
                     generator = np.random.default_rng(seed)
 
                     initial_population = chromo_it.select_random_population(
@@ -1173,43 +1386,25 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     generation.run_structures()
                     _ = generation.calculate_fitness_values()
                     generations.append(generation)
+                    seeded_generations[seed].append(generation)
 
                     # Add generational information.
-                    for cs in generation.chromosomes:
-                        topology_idx, topology_code = (
-                            cs.get_topology_information()
-                        )
-                        building_block_config = cs.get_vertex_alignments()[0]
-                        name = (
-                            f"{cs.prefix}_{topology_idx}_"
-                            f"b{building_block_config.idx}"
-                        )
-                        entry = cgx.utilities.AtomliteDatabase(
-                            database_path
-                        ).get_entry(name)
-                        if "generation_id" not in entry.properties:
-                            cgx.utilities.AtomliteDatabase(
-                                database_path
-                            ).add_properties(
-                                key=name,
-                                property_dict={
-                                    "generation_id": 0,
-                                    "generation_seed": seed,
-                                },
-                            )
+                    add_generation_information(
+                        database_path=database_path,
+                        generation=generation,
+                        seed=seed,
+                        generation_id=0,
+                    )
                     best_chromosome = generation.select_best(selection_size=1)[
                         0
                     ]
 
-                    best_name = (
+                    count_unchanged = 0
+                    previous_best = (
                         f"{best_chromosome.prefix}"
                         f"_{best_chromosome.get_topology_information()[0]}_"
                         f"b{best_chromosome.get_vertex_alignments()[0].idx}"
                     )
-
-                    count_unchanged = 0
-                    previous_best = best_name
-
                     for generation_id in range(
                         1, short_scan_config["num_generations"] + 1
                     ):
@@ -1361,33 +1556,16 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             f.write(f"{str_time},{fit_time}\n")
 
                         # Add generational information.
-                        for cs in generation.chromosomes:
-                            topology_idx, topology_code = (
-                                cs.get_topology_information()
-                            )
-                            building_block_config = cs.get_vertex_alignments()[
-                                0
-                            ]
-                            name = (
-                                f"{cs.prefix}_{topology_idx}_"
-                                f"b{building_block_config.idx}"
-                            )
-                            entry = cgx.utilities.AtomliteDatabase(
-                                database_path
-                            ).get_entry(name)
-                            if "generation_id" not in entry.properties:
-                                cgx.utilities.AtomliteDatabase(
-                                    database_path
-                                ).add_properties(
-                                    key=name,
-                                    property_dict={
-                                        "generation_id": generation_id,
-                                        "generation_seed": seed,
-                                    },
-                                )
+                        add_generation_information(
+                            database_path=database_path,
+                            generation=generation,
+                            seed=seed,
+                            generation_id=generation_id,
+                        )
 
                         # Add final state to generations.
                         generations.append(generation)
+                        seeded_generations[seed].append(generation)
 
                         # Select the best of the generation for the next
                         # generation.
@@ -1406,12 +1584,9 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         )
 
                         progress_plot(
-                            generations=generations,
+                            seeded_generations=seeded_generations,
                             output=figure_dir
-                            / f"fp_{pair}_{stoichstring}_{seed}.png",
-                            num_generations=short_scan_config[
-                                "num_generations"
-                            ],
+                            / f"fp_{pair}_{stoichstring}.png",
                         )
 
                         # Output best structures as images.
@@ -1445,6 +1620,442 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     len(found),
                     chromo_it.get_num_chromosomes(),
                 )
+
+                # Run longer GA from elites.
+                chromosomes = []
+                for generations in seeded_generations.values():
+                    for generation in generations:
+                        chromosomes.extend(generation.chromosomes)
+
+                elite_population = cgx.systems_optimisation.Generation(
+                    chromosomes=chromo_it.dedupe_population(chromosomes),
+                    fitness_calculator=fitness_calculator,
+                    structure_calculator=structure_calculator,
+                    num_processes=long_scan_config["num_processes"],
+                )
+
+                timing_file = (
+                    data_dir / f"np_{long_scan_config['num_processes']}.txt"
+                )
+                for seed in long_scan_config["seeds"]:
+                    seeded_generations[seed] = []
+                    generator = np.random.default_rng(seed)
+
+                    initial_population = elite_population.select_elite(
+                        proportion_threshold=0.25
+                    )
+
+                    logging.info(
+                        "selected elite with f>%s",
+                        round(
+                            elite_population.calculate_elite_fitness(
+                                proportion_threshold=0.25
+                            ),
+                            5,
+                        ),
+                    )
+
+                    # Yield this.
+                    generations = []
+                    generation = cgx.systems_optimisation.Generation(
+                        chromosomes=initial_population,
+                        fitness_calculator=fitness_calculator,
+                        structure_calculator=structure_calculator,
+                        num_processes=long_scan_config["num_processes"],
+                    )
+
+                    generation.run_structures()
+                    _ = generation.calculate_fitness_values()
+                    generations.append(generation)
+                    seeded_generations[seed].append(generation)
+
+                    # Add generational information.
+                    add_generation_information(
+                        database_path=database_path,
+                        generation=generation,
+                        seed=seed,
+                        generation_id=0,
+                    )
+                    best_chromosome = generation.select_best(selection_size=1)[
+                        0
+                    ]
+
+                    count_unchanged = 0
+                    previous_best = (
+                        f"{best_chromosome.prefix}"
+                        f"_{best_chromosome.get_topology_information()[0]}_"
+                        f"b{best_chromosome.get_vertex_alignments()[0].idx}"
+                    )
+                    for generation_id in range(
+                        1, long_scan_config["num_generations"] + 1
+                    ):
+                        logging.info(
+                            "doing generation %s of seed %s",
+                            generation_id,
+                            seed,
+                        )
+
+                        logging.info(
+                            "initial size is %s.",
+                            generation.get_generation_size(),
+                        )
+                        if (
+                            count_unchanged
+                            == long_scan_config["count_to_spam"]
+                        ):
+                            count_unchanged = 0
+                            logging.info("doing 2x mutations.")
+                            num_mutate = long_scan_config["mutations"] * 2
+                        else:
+                            logging.info("doing mutations.")
+                            num_mutate = long_scan_config["mutations"] * 1
+
+                        merged_chromosomes = []
+                        merged_chromosomes.extend(
+                            chromo_it.mutate_population(
+                                list_of_chromosomes=generation.chromosomes,
+                                generator=generator,
+                                gene_range=chromo_it.get_topo_ids(),
+                                selection="random",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+                        merged_chromosomes.extend(
+                            chromo_it.mutate_population(
+                                list_of_chromosomes=generation.chromosomes,
+                                generator=generator,
+                                gene_range=chromo_it.get_va_ids(),
+                                selection="random",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+
+                        merged_chromosomes.extend(
+                            chromo_it.crossover_population(
+                                list_of_chromosomes=generation.chromosomes,
+                                generator=generator,
+                                selection="random",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+
+                        merged_chromosomes.extend(
+                            roulette_mutate_population(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
+                                    for i in generation.chromosomes
+                                },
+                                generator=generator,
+                                gene_range=chromo_it.get_topo_ids(),
+                                selection="roulette",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+                        merged_chromosomes.extend(
+                            roulette_mutate_population(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
+                                    for i in generation.chromosomes
+                                },
+                                generator=generator,
+                                gene_range=chromo_it.get_va_ids(),
+                                selection="roulette",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+
+                        merged_chromosomes.extend(
+                            roulette_crossover_population(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
+                                    for i in generation.chromosomes
+                                },
+                                generator=generator,
+                                selection="roulette",
+                                num_to_select=num_mutate,
+                                database=cgx.utilities.AtomliteDatabase(
+                                    database_path
+                                ),
+                            )
+                        )
+
+                        # Add the best 5 to the new generation.
+                        merged_chromosomes.extend(generation.select_all())
+
+                        generation = cgx.systems_optimisation.Generation(
+                            chromosomes=chromo_it.dedupe_population(
+                                merged_chromosomes
+                            ),
+                            fitness_calculator=fitness_calculator,
+                            structure_calculator=structure_calculator,
+                            num_processes=long_scan_config["num_processes"],
+                        )
+                        logging.info(
+                            "new size is %s.", generation.get_generation_size()
+                        )
+
+                        # Build, optimise and analyse each structure.
+                        st = time.time()
+                        generation.run_structures()
+                        str_time = time.time() - st
+                        st = time.time()
+                        _ = generation.calculate_fitness_values()
+                        fit_time = time.time() - st
+                        with timing_file.open("a") as f:
+                            f.write(f"{str_time},{fit_time}\n")
+
+                        # Add generational information.
+                        add_generation_information(
+                            database_path=database_path,
+                            generation=generation,
+                            seed=seed,
+                            generation_id=generation_id,
+                        )
+
+                        # Add final state to generations.
+                        generations.append(generation)
+                        seeded_generations[seed].append(generation)
+
+                        # Select the best of the generation for the next
+                        # generation.
+                        best = generation.select_best(
+                            selection_size=long_scan_config["selection_size"]
+                        )
+                        generation = cgx.systems_optimisation.Generation(
+                            chromosomes=chromo_it.dedupe_population(best),
+                            fitness_calculator=fitness_calculator,
+                            structure_calculator=structure_calculator,
+                            num_processes=long_scan_config["num_processes"],
+                        )
+                        logging.info(
+                            "final size is %s.",
+                            generation.get_generation_size(),
+                        )
+
+                        progress_plot(
+                            seeded_generations=seeded_generations,
+                            output=figure_dir
+                            / f"fp_{pair}_{stoichstring}.png",
+                        )
+
+                        # Output best structures as images.
+                        best_chromosome = generation.select_best(
+                            selection_size=1
+                        )[0]
+
+                        best_name = (
+                            f"{best_chromosome.prefix}"
+                            f"_{best_chromosome.get_topology_information()[0]}_"
+                            f"b{best_chromosome.get_vertex_alignments()[0].idx}"
+                        )
+                        if best_name != previous_best:
+                            count_unchanged = 0
+                            previous_best = best_name
+                        else:
+                            count_unchanged += 1
+
+                        logging.info(
+                            "top scorer is %s (seed: %s)", best_name, seed
+                        )
+
+                # Run neighbour scan over top candidates.
+                chromosomes = []
+                for generations in seeded_generations.values():
+                    for generation in generations:
+                        chromosomes.extend(generation.chromosomes)
+
+                elite_population = cgx.systems_optimisation.Generation(
+                    chromosomes=chromo_it.dedupe_population(chromosomes),
+                    fitness_calculator=fitness_calculator,
+                    structure_calculator=structure_calculator,
+                    num_processes=long_scan_config["num_processes"],
+                )
+
+                timing_file = (
+                    data_dir / f"np_{long_scan_config['num_processes']}.txt"
+                )
+                n_scan_config = {
+                    "seeds": [6582],
+                    "num_processes": 1,
+                    "num_generations": 20,
+                    "selection_size": 20,
+                }
+                for seed in n_scan_config["seeds"]:
+                    seeded_generations[seed] = []
+
+                    initial_population = elite_population.select_elite(
+                        proportion_threshold=0.25
+                    )
+
+                    logging.info(
+                        "selected elite with f>%s",
+                        round(
+                            elite_population.calculate_elite_fitness(
+                                proportion_threshold=0.25
+                            ),
+                            5,
+                        ),
+                    )
+
+                    # Yield this.
+                    generations = []
+                    generation = cgx.systems_optimisation.Generation(
+                        chromosomes=initial_population,
+                        fitness_calculator=fitness_calculator,
+                        structure_calculator=structure_calculator,
+                        num_processes=n_scan_config["num_processes"],
+                    )
+
+                    generation.run_structures()
+                    _ = generation.calculate_fitness_values()
+                    generations.append(generation)
+                    seeded_generations[seed].append(generation)
+
+                    # Add generational information.
+                    add_generation_information(
+                        database_path=database_path,
+                        generation=generation,
+                        seed=seed,
+                        generation_id=0,
+                    )
+                    best_chromosome = generation.select_best(selection_size=1)[
+                        0
+                    ]
+
+                    for generation_id in range(
+                        1, n_scan_config["num_generations"] + 1
+                    ):
+                        logging.info(
+                            "doing generation %s of seed %s",
+                            generation_id,
+                            seed,
+                        )
+                        logging.info(
+                            "initial size is %s.",
+                            generation.get_generation_size(),
+                        )
+
+                        merged_chromosomes = []
+                        merged_chromosomes.extend(
+                            get_population_neighbours(
+                                chromo_it=chromo_it,
+                                chromosomes={
+                                    (
+                                        f"{i.prefix}"
+                                        f"_{i.get_topology_information()[0]}"
+                                        f"_b{i.get_vertex_alignments()[0].idx}"
+                                    ): i
+                                    for i in generation.chromosomes
+                                },
+                                selection="all",
+                                gene_range=chromo_it.get_va_ids(),
+                            )
+                        )
+
+                        # Add the best 5 to the new generation.
+                        merged_chromosomes.extend(generation.select_all())
+
+                        generation = cgx.systems_optimisation.Generation(
+                            chromosomes=chromo_it.dedupe_population(
+                                merged_chromosomes
+                            ),
+                            fitness_calculator=fitness_calculator,
+                            structure_calculator=structure_calculator,
+                            num_processes=n_scan_config["num_processes"],
+                        )
+                        logging.info(
+                            "new size is %s.", generation.get_generation_size()
+                        )
+
+                        # Build, optimise and analyse each structure.
+                        st = time.time()
+                        generation.run_structures()
+                        str_time = time.time() - st
+                        st = time.time()
+                        _ = generation.calculate_fitness_values()
+                        fit_time = time.time() - st
+                        with timing_file.open("a") as f:
+                            f.write(f"{str_time},{fit_time}\n")
+
+                        # Add generational information.
+                        add_generation_information(
+                            database_path=database_path,
+                            generation=generation,
+                            seed=seed,
+                            generation_id=generation_id,
+                        )
+
+                        # Add final state to generations.
+                        generations.append(generation)
+                        seeded_generations[seed].append(generation)
+
+                        # Select the best of the generation for the next
+                        # generation.
+                        best = generation.select_best(
+                            selection_size=n_scan_config["selection_size"]
+                        )
+                        generation = cgx.systems_optimisation.Generation(
+                            chromosomes=chromo_it.dedupe_population(best),
+                            fitness_calculator=fitness_calculator,
+                            structure_calculator=structure_calculator,
+                            num_processes=n_scan_config["num_processes"],
+                        )
+                        logging.info(
+                            "final size is %s.",
+                            generation.get_generation_size(),
+                        )
+
+                        progress_plot(
+                            seeded_generations=seeded_generations,
+                            output=figure_dir
+                            / f"fp_{pair}_{stoichstring}.png",
+                        )
+
+                        # Output best structures as images.
+                        best_chromosome = generation.select_best(
+                            selection_size=1
+                        )[0]
+
+                        best_name = (
+                            f"{best_chromosome.prefix}"
+                            f"_{best_chromosome.get_topology_information()[0]}_"
+                            f"b{best_chromosome.get_vertex_alignments()[0].idx}"
+                        )
+
+                        logging.info(
+                            "top scorer is %s (seed: %s)", best_name, seed
+                        )
+
             break
 
     make_summary_plot2(
@@ -1466,6 +2077,8 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_2.png",
     )
+
+    plot_timings(figure_dir, data_dir)
     for stoichiometry_l_s_m in stoichiometries_l_s_m:
         stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
         plot_counters(
@@ -1474,12 +2087,19 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
             figure_dir=figure_dir,
             filename=f"mgen_1_{stoichstring}.png",
         )
-    plot_vs_parallels(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_9.png",
-    )
-    plot_timings(figure_dir, data_dir)
+        plot_vs_parallels(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_9_{stoichstring}.png",
+        )
+        plot_idx_completion(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_10_{stoichstring}.png",
+        )
+
     logging.info(
         "first test run clearly showed parallels not worth simulating"
     )
