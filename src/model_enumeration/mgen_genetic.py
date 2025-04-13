@@ -9,7 +9,9 @@ from collections import abc
 
 import cgexplore as cgx
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
+import stk
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
@@ -57,6 +59,288 @@ short_attempts = (
     # "set-spring-10",
     # "set-spectral-10",
 )
+
+
+def quick_graph_optimise_cage(  # noqa: PLR0913, PLR0915
+    molecule: stk.Molecule,
+    name: str,
+    output_dir: pathlib.Path,
+    forcefield: cgx.forcefields.ForceField,
+    platform: str | None,
+    database_path: pathlib.Path,
+) -> cgx.molecular.Conformer:
+    """Optimise a toy model cage."""
+    fina_mol_file = output_dir / f"{name}_wipfinal.mol"
+
+    database = cgx.utilities.AtomliteDatabase(database_path)
+    # Do not rerun if database entry exists.
+    if database.has_molecule(key=name):
+        final_molecule = database.get_molecule(key=name)
+        final_molecule.write(fina_mol_file)
+        return cgx.molecular.Conformer(
+            molecule=final_molecule,
+            energy_decomposition=database.get_property(  # type:ignore[arg-type]
+                key=name,
+                property_key="energy_decomposition",
+                property_type=dict,
+            ),
+        )
+
+    # Do not rerun if final mol exists.
+    if fina_mol_file.exists():
+        ensemble = cgx.molecular.Ensemble(
+            base_molecule=molecule,
+            base_mol_path=output_dir / f"{name}_base.mol",
+            conformer_xyz=output_dir / f"{name}_ensemble.xyz",
+            data_json=output_dir / f"{name}_ensemble.json",
+            overwrite=False,
+        )
+        conformer = ensemble.get_lowest_e_conformer()
+        database.add_molecule(molecule=conformer.molecule, key=name)
+        database.add_properties(
+            key=name,
+            property_dict={
+                "energy_decomposition": conformer.energy_decomposition,  # type:ignore[dict-item]
+                "source": conformer.source,
+                "optimised": True,
+            },
+        )
+        return ensemble.get_lowest_e_conformer()
+
+    st = time.time()
+    assigned_system = forcefield.assign_terms(molecule, name, output_dir)
+    if (output_dir / f"{name}_ensemble.xyz").exists():
+        (output_dir / f"{name}_ensemble.xyz").unlink()
+    ensemble = cgx.molecular.Ensemble(
+        base_molecule=molecule,
+        base_mol_path=output_dir / f"{name}_base.mol",
+        conformer_xyz=output_dir / f"{name}_ensemble.xyz",
+        data_json=output_dir / f"{name}_ensemble.json",
+        overwrite=True,
+    )
+    temp_molecule = cgx.utilities.run_constrained_optimisation(
+        assigned_system=assigned_system,
+        name=name,
+        output_dir=output_dir,
+        bond_ff_scale=10,
+        angle_ff_scale=10,
+        max_iterations=20,
+        platform=platform,
+    )
+    logging.info("t3: %s", time.time() - st)
+
+    st = time.time()
+    conformer = cgx.utilities.run_optimisation(
+        assigned_system=cgx.forcefields.AssignedSystem(
+            molecule=temp_molecule,
+            forcefield_terms=assigned_system.forcefield_terms,
+            system_xml=assigned_system.system_xml,
+            topology_xml=assigned_system.topology_xml,
+            bead_set=assigned_system.bead_set,
+            vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+        ),
+        name=name,
+        file_suffix="opt1",
+        output_dir=output_dir,
+        platform=platform,
+    )
+    ensemble.add_conformer(conformer=conformer, source="opt1")
+    logging.info("t4: %s", time.time() - st)
+
+    st = time.time()
+    stko_graph = stko.Network.init_from_molecule(conformer.molecule)
+    for i, nx_positions in enumerate(
+        (
+            nx.spectral_layout(stko_graph.get_graph(), dim=3),
+            nx.kamada_kawai_layout(stko_graph.get_graph(), dim=3),
+        )
+    ):
+        # We allow these to independantly failed because the nx graphs can
+        # be ridiculous.
+        for j, scaler in enumerate((5, 10, 15)):
+            try:
+                pos_mat = np.array([nx_positions[i] for i in nx_positions])
+                if pos_mat.shape[1] != 3:  # noqa: PLR2004
+                    msg = "built a non 3D graph"
+                    raise RuntimeError(msg)
+
+                test_molecule = conformer.molecule.with_position_matrix(
+                    pos_mat * scaler
+                )
+                conformer = cgx.utilities.run_optimisation(
+                    assigned_system=forcefield.assign_terms(
+                        test_molecule, name, output_dir
+                    ),
+                    name=name,
+                    file_suffix="nopt",
+                    output_dir=output_dir,
+                    platform=platform,
+                )
+
+                ensemble.add_conformer(conformer=conformer, source=f"nx{i}{j}")
+            except OpenMMException:
+                logging.info("failed graph opt of %s", name)
+    logging.info("t6: %s", time.time() - st)
+
+    # Try with graph positions.
+    st = time.time()
+    rng = np.random.default_rng(seed=100)
+    for attempt in range(10):
+        pos_mat = rng.random(size=(conformer.molecule.get_num_atoms(), 3))
+        test_molecule = conformer.molecule.with_position_matrix(pos_mat * 10)
+        conformer = cgx.utilities.run_optimisation(
+            assigned_system=cgx.forcefields.AssignedSystem(
+                molecule=test_molecule,
+                forcefield_terms=assigned_system.forcefield_terms,
+                system_xml=assigned_system.system_xml,
+                topology_xml=assigned_system.topology_xml,
+                bead_set=assigned_system.bead_set,
+                vdw_bond_cutoff=assigned_system.vdw_bond_cutoff,
+            ),
+            name=name,
+            file_suffix=f"ropt{attempt}",
+            output_dir=output_dir,
+            platform=platform,
+        )
+
+        ensemble.add_conformer(conformer=conformer, source="ropt")
+    logging.info("t7: %s - option to remove!", time.time() - st)
+
+    logging.info("Consider a use of rattle on best candidate")
+
+    ensemble.write_conformers_to_file()
+
+    min_energy_conformer = ensemble.get_lowest_e_conformer()
+    min_energy_conformerid = min_energy_conformer.conformer_id
+    min_energy = min_energy_conformer.energy_decomposition["total energy"][0]
+    logging.info(
+        "%s from %s with energy: %s kJ.mol-1",
+        min_energy_conformerid,
+        min_energy_conformer.source,
+        round(min_energy, 2),
+    )
+
+    # Add to atomlite database.
+    database.add_molecule(molecule=min_energy_conformer.molecule, key=name)
+    database.add_properties(
+        key=name,
+        property_dict={
+            "energy_decomposition": min_energy_conformer.energy_decomposition,  # type:ignore[dict-item]
+            "source": min_energy_conformer.source,
+            "optimised": True,
+        },
+    )
+    min_energy_conformer.molecule.write(fina_mol_file)
+
+    return min_energy_conformer
+
+
+def make_opt_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise stage of the optimisation produces the low-E conformer."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    stages = (
+        "opt1",
+        "nx00",
+        "nx10",
+        "nx01",
+        "nx11",
+        "nx02",
+        "nx12",
+        "ropt",
+    )
+
+    sources = {i: 0 for i in stages}
+    mide_sources = {i: 0 for i in stages}
+    lowe_sources = {i: 0 for i in stages}
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+        if entry.properties["stoichstring"] != "9-9-9":
+            continue
+
+        sources[entry.properties["source"]] += 1
+
+        energy = entry.properties["energy_per_bb"]
+        if energy < 10:  # noqa: PLR2004
+            mide_sources[entry.properties["source"]] += 1
+        if energy < 1:
+            lowe_sources[entry.properties["source"]] += 1
+
+    ax.bar(
+        stages,
+        [lowe_sources[i] for i in stages],
+        color="tab:blue",
+        edgecolor="none",
+        label=f"{eb_str()} < 1.0",
+        zorder=1,
+    )
+    ax.bar(
+        stages,
+        [mide_sources[i] for i in stages],
+        color="tab:gray",
+        edgecolor="none",
+        lw=2,
+        label=f"{eb_str()} < 10.0",
+        alpha=0.5,
+        zorder=0,
+    )
+    ax.bar(
+        stages,
+        [sources[i] for i in stages],
+        color="none",
+        edgecolor="k",
+        lw=2,
+        label="all",
+        zorder=2,
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel("count", fontsize=16)  # , color=color)
+    ax.legend(fontsize=16)
+    ax.set_xticks(range(len(stages)))
+    ax.set_xticklabels(stages, rotation=45)
+    ax.set_xlabel("stage", fontsize=16)
+    ax.set_yscale("log")
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def rattle(self, stdev=0.001, seed=None, rng=None):
+    """Randomly displace atoms.
+
+    This code is mimicking what is done in ase.Atoms.rattle().
+    Thank you to them!
+
+    """
+    if seed is not None and rng is not None:
+        raise ValueError("Please do not provide both seed and rng.")
+
+    if rng is None:
+        if seed is None:
+            seed = 42
+        rng = np.random.RandomState(seed)
+    positions = self.arrays["positions"]
+    self.set_positions(
+        positions + rng.normal(scale=stdev, size=positions.shape)
+    )
 
 
 def add_generation_information(
@@ -213,8 +497,20 @@ def get_population_neighbours(
         for gene_id in to_modify:
             current_gene = chromosome.name[gene_id]
 
-            for option in (current_gene + 1, current_gene - 1):
-                gene_value = chromo_it.chromosome_map[gene_id][option]
+            for option in (
+                current_gene + 1,
+                current_gene - 1,
+                current_gene + 2,
+                current_gene - 2,
+                current_gene + 3,
+                current_gene - 3,
+                current_gene + 4,
+                current_gene - 4,
+            ):
+                try:
+                    gene_value = chromo_it.chromosome_map[gene_id][option]
+                except KeyError:
+                    continue
                 gene_type = chromo_it.chromosome_types[gene_id]
                 gene_dict[gene_id] = (option, gene_value, gene_type)
                 chromosome_name[gene_id] = option
@@ -442,7 +738,7 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
                 for nmash_idx in range(len(options["attempts"]))
             ]
             if scale is None:
-                conformer = cgx.scram.graph_optimise_cage(
+                conformer = quick_graph_optimise_cage(
                     molecule=constructed_molecule,
                     name=name,
                     output_dir=calculation_output,
@@ -931,7 +1227,7 @@ def plot_idx_completion(
     plt.close()
 
 
-def plot_energies(
+def plot_energies(  # noqa: C901
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
@@ -939,48 +1235,77 @@ def plot_energies(
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(8, 5))
 
-    gen_entries = {}
-    min_energy = float("inf")
+    seeds = {4: 0, 12689: 10, 18: 20, 999: 30, 142: 40, 6582: 60}
+
+    colors = {}
+    gen_entries = defaultdict(dict)
+    total_min_energy = float("inf")
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         # Only do base entries.
         if "is_base" not in entry.properties:
             continue
 
-        if "generation_id" not in entry.properties:
-            continue
-
+        gid = entry.properties.get("generation_id", 0)
+        gseed = entry.properties.get("generation_seed", 0)
         energy = entry.properties["energy_per_bb"]
         stoichstring = entry.properties["stoichstring"]
-        gid = entry.properties["generation_id"]
-        gseed = entry.properties["generation_seed"]
-        min_energy = min((min_energy, energy))
+        total_min_energy = min((total_min_energy, energy))
 
-        if (stoichstring, gseed) not in gen_entries:
-            gen_entries[(stoichstring, gseed)] = {}
+        if gseed not in gen_entries[stoichstring]:
+            gen_entries[stoichstring][gseed] = defaultdict(dict)
+        if gid not in gen_entries[stoichstring][gseed]:
+            gen_entries[stoichstring][gseed][gid] = []
 
-        if gid not in gen_entries[(stoichstring, gseed)]:
-            gen_entries[(stoichstring, gseed)][gid] = []
+        gen_entries[stoichstring][gseed][gid].append(energy)
 
-        gen_entries[(stoichstring, gseed)][gid].append(energy)
+        if energy < 1:
+            colors[stoichstring] = True
 
-    for (stoichstring, gseed), gen_energies in gen_entries.items():
-        ax.plot(
-            [np.min(gen_energies[i]) for i in gen_energies],
-            lw=2,
-            marker="o",
-            markersize=10,
-            label=f"{stoichstring}:{gseed}",
-        )
+    for stoichstring, byseed in gen_entries.items():
+        xys = []
+        min_energy = float("inf")
+        for seed, offset in seeds.items():
+            if seed not in byseed:
+                continue
+            bygen = byseed[seed]
+
+            for gid in sorted(bygen.keys()):
+                ey = min(bygen[gid])
+                min_energy = min(ey, min_energy)
+                xys.append((gid + offset, min_energy))
+
+        if stoichstring in colors:
+            ax.plot(
+                [i[0] for i in xys],
+                [i[1] for i in xys],
+                lw=2,
+                marker="o",
+                markersize=7,
+                markeredgecolor="w",
+                label=f"{stoichstring}",
+            )
+        else:
+            ax.plot(
+                [i[0] for i in xys],
+                [i[1] for i in xys],
+                lw=2,
+                c="gray",
+                marker="o",
+                markersize=7,
+                markeredgecolor="w",
+                zorder=-1,
+            )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("generation", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.legend(fontsize=16)
-    ax.axhline(y=min_energy, c="k", ls="--")
-    ax.axhline(y=isomer_energy(), c="r", ls="-")
+    ax.axhline(y=total_min_energy, c="k", ls="--")
+    ax.axhspan(0, isomer_energy(), color="tab:grey", alpha=0.2)
     ax.set_yscale("log")
-    ax.set_xlim(0, None)
-    ax.legend(fontsize=16)
+    ax.set_xlim(-1, 20 + 20 + 10 * 4)
+
+    ax.legend(ncols=3, fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -994,6 +1319,7 @@ def plot_energies(
         bbox_inches="tight",
     )
     plt.close()
+    raise SystemExit
 
 
 def progress_plot(
@@ -1010,10 +1336,12 @@ def progress_plot(
         "tab:purple",
         "tab:cyan",
     ]
+    max_fitness = 0
     for i, (seed, generations) in enumerate(seeded_generations.items()):
         fitnesses = [
             generation.calculate_fitness_values() for generation in generations
         ]
+        max_fitness = max((max_fitness, max([max(i) for i in fitnesses])))
 
         ax.plot(
             [max(i) for i in fitnesses],
@@ -1026,12 +1354,13 @@ def progress_plot(
         )
         ax.plot([np.mean(i) for i in fitnesses], lw=2, ls="--", c=cs[i])
 
-        ax.tick_params(axis="both", which="major", labelsize=16)
-        ax.set_xlabel("generation", fontsize=16)
-        ax.set_ylabel("fitness", fontsize=16)
-        ax.set_ylim(1e-10, 1)
-        ax.set_yscale("log")
-        ax.legend(fontsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("generation", fontsize=16)
+    ax.set_ylabel("fitness", fontsize=16)
+    if max_fitness > 1e10:  # noqa: PLR2004
+        ax.set_ylim(1e10, 1)
+    ax.set_yscale("log")
+    ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -1148,22 +1477,22 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     plot_fitness_curve(figure_dir)
 
     stoichiometries_l_s_m = (
-        (6, 12, 9),
-        (12, 6, 9),
+        (2, 2, 2),
         (1, 3, 2),
         (3, 1, 2),
+        (3, 3, 3),
         (2, 4, 3),
         (4, 2, 3),
-        (4, 8, 6),
-        (8, 4, 6),
-        (9, 9, 9),
-        (2, 2, 2),
-        (3, 3, 3),
         (4, 4, 4),
         (5, 5, 5),
         (6, 6, 6),
+        (4, 8, 6),
+        (8, 4, 6),
         (7, 7, 7),
         (8, 8, 8),
+        (6, 12, 9),
+        (12, 6, 9),
+        (9, 9, 9),
     )
     ligand_measures = {
         "cs41a": {"ba": 1.5, "aa": 9.5, "bac": 145},
@@ -1908,24 +2237,18 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     "seeds": [6582],
                     "num_processes": 1,
                     "num_generations": 20,
-                    "selection_size": 20,
+                    "selection_size": 200,
                 }
                 for seed in n_scan_config["seeds"]:
                     seeded_generations[seed] = []
 
                     initial_population = elite_population.select_elite(
-                        proportion_threshold=0.25
+                        proportion_threshold=0.10
                     )
-
-                    logging.info(
-                        "selected elite with f>%s",
-                        round(
-                            elite_population.calculate_elite_fitness(
-                                proportion_threshold=0.25
-                            ),
-                            5,
-                        ),
-                    )
+                    if len(initial_population) == 0:
+                        initial_population = elite_population.select_elite(
+                            proportion_threshold=0.50
+                        )
 
                     # Yield this.
                     generations = []
@@ -1948,9 +2271,6 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                         seed=seed,
                         generation_id=0,
                     )
-                    best_chromosome = generation.select_best(selection_size=1)[
-                        0
-                    ]
 
                     for generation_id in range(
                         1, n_scan_config["num_generations"] + 1
@@ -2056,7 +2376,16 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             "top scorer is %s (seed: %s)", best_name, seed
                         )
 
-            break
+    plot_energies(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_2.png",
+    )
+    make_opt_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_5.png",
+    )
 
     make_summary_plot2(
         database_path=database_path,
@@ -2070,12 +2399,6 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_3.png",
         pairs=tuple((i, None) for i in pairs_to_predict),
-    )
-
-    plot_energies(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_2.png",
     )
 
     plot_timings(figure_dir, data_dir)
