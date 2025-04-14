@@ -844,9 +844,10 @@ def make_summary_plot(
     figure_dir: pathlib.Path,
     filename: str,
     pairs: list[tuple[str, str]],
+    width_height: tuple[float, float] = (7, 10),
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(7, 10))
+    fig, ax = plt.subplots(figsize=width_height)
     energies = {}
 
     xs = []
@@ -4483,7 +4484,7 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 4),
+            "multipliers": (1,),
             "vdw_cutoff": 2,
         },
         "la_st52": {
@@ -4503,7 +4504,7 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 4),
+            "multipliers": (1,),
             "vdw_cutoff": 2,
         },
         "la_c1": {
