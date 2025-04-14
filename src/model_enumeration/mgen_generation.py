@@ -108,6 +108,8 @@ def get_stk_topology_code(
         "2P4": stk.cage.M2L4Lantern,
         "3P6": stk.cage.M3L6,
         "4P8": cgx.topologies.CGM4L8,
+        "6P12": stk.cage.M6L12Cube,
+        "12P24": cgx.topologies.CGM12L24,
     }
 
     if graph_type not in knowns:
