@@ -611,6 +611,7 @@ def fitness_function(  # noqa: PLR0913
         energy = database.get_entry(
             entry.properties["duplicate_of"]
         ).properties["energy_per_bb"]
+
     else:
         energy = entry.properties["energy_per_bb"]
     fitness = np.exp(-energy * options["beta"])
@@ -1256,7 +1257,7 @@ def plot_energies(  # noqa: C901
         if gid not in gen_entries[stoichstring][gseed]:
             gen_entries[stoichstring][gseed][gid] = []
 
-        gen_entries[stoichstring][gseed][gid].append(energy)
+        gen_entries[stoichstring][gseed][gid].append((entry.key, energy))
 
         if energy < 1:
             colors[stoichstring] = True
@@ -1264,15 +1265,20 @@ def plot_energies(  # noqa: C901
     for stoichstring, byseed in gen_entries.items():
         xys = []
         min_energy = float("inf")
+        min_energy_key = None
         for seed, offset in seeds.items():
             if seed not in byseed:
                 continue
             bygen = byseed[seed]
 
             for gid in sorted(bygen.keys()):
-                ey = min(bygen[gid])
-                min_energy = min(ey, min_energy)
+                key, ey = min(bygen[gid], key=lambda i: i[1])
+
+                if ey < min_energy:
+                    min_energy = ey
+                    min_energy_key = key
                 xys.append((gid + offset, min_energy))
+        logging.info("for %s, %s is min energy", stoichstring, min_energy_key)
 
         if stoichstring in colors:
             ax.plot(
@@ -1319,7 +1325,6 @@ def plot_energies(  # noqa: C901
         bbox_inches="tight",
     )
     plt.close()
-    raise SystemExit
 
 
 def progress_plot(
@@ -1327,7 +1332,7 @@ def progress_plot(
     output: pathlib.Path,
 ) -> None:
     """Draw optimisation progress."""
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, (ax, ax1) = plt.subplots(nrows=2, sharex=True, figsize=(8, 5))
     cs = [
         "tab:blue",
         "tab:orange",
@@ -1354,13 +1359,28 @@ def progress_plot(
         )
         ax.plot([np.mean(i) for i in fitnesses], lw=2, ls="--", c=cs[i])
 
+        ax1.plot(
+            [max(i) for i in fitnesses],
+            label=f"{seed}",
+            lw=2,
+            c=cs[i],
+            marker="o",
+            markersize=8,
+            markeredgecolor="w",
+        )
+        ax1.plot([np.mean(i) for i in fitnesses], lw=2, ls="--", c=cs[i])
+
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel("generation", fontsize=16)
     ax.set_ylabel("fitness", fontsize=16)
-    if max_fitness > 1e10:  # noqa: PLR2004
-        ax.set_ylim(1e10, 1)
-    ax.set_yscale("log")
-    ax.legend(fontsize=16)
+    ax.set_ylim(0, 1)
+    ax.legend(ncols=2, fontsize=16)
+
+    ax1.tick_params(axis="both", which="major", labelsize=16)
+    ax1.set_xlabel("generation", fontsize=16)
+    ax1.set_ylabel("fitness", fontsize=16)
+    if max_fitness > 1e-10:  # noqa: PLR2004
+        ax1.set_ylim(1e-10, 1)
+    ax1.set_yscale("log")
 
     fig.tight_layout()
     fig.savefig(
@@ -1477,6 +1497,9 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     plot_fitness_curve(figure_dir)
 
     stoichiometries_l_s_m = (
+        (9, 9, 9),
+        (6, 12, 9),  ## This is the target.
+        (12, 6, 9),
         (2, 2, 2),
         (1, 3, 2),
         (3, 1, 2),
@@ -1490,9 +1513,6 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         (8, 4, 6),
         (7, 7, 7),
         (8, 8, 8),
-        (6, 12, 9),
-        (12, 6, 9),
-        (9, 9, 9),
     )
     ligand_measures = {
         "cs41a": {"ba": 1.5, "aa": 9.5, "bac": 145},
@@ -2381,6 +2401,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_2.png",
     )
+    raise SystemExit
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -2399,6 +2420,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_3.png",
         pairs=tuple((i, None) for i in pairs_to_predict),
+        width_height=(16, 5),
     )
 
     plot_timings(figure_dir, data_dir)
