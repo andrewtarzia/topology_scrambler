@@ -59,6 +59,14 @@ short_attempts = (
     # "set-spring-10",
     # "set-spectral-10",
 )
+seed_cs = {
+    4: "tab:blue",
+    12689: "tab:orange",
+    18: "tab:green",
+    999: "tab:red",
+    142: "tab:purple",
+    6582: "tab:cyan",
+}
 
 
 def quick_graph_optimise_cage(  # noqa: PLR0913, PLR0915
@@ -663,6 +671,9 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
             continue
 
         known_stoichstring = entry.properties["stoichstring"]
+        known_pair = entry.properties["pair"]
+        if f"{l1}_{l2}" != known_pair:
+            continue
         if stoichstring != known_stoichstring:
             continue
 
@@ -1246,23 +1257,26 @@ def plot_energies(  # noqa: C901
         if "is_base" not in entry.properties:
             continue
 
+        pair = entry.properties["pair"]
         gid = entry.properties.get("generation_id", 0)
         gseed = entry.properties.get("generation_seed", 0)
         energy = entry.properties["energy_per_bb"]
         stoichstring = entry.properties["stoichstring"]
         total_min_energy = min((total_min_energy, energy))
 
-        if gseed not in gen_entries[stoichstring]:
-            gen_entries[stoichstring][gseed] = defaultdict(dict)
-        if gid not in gen_entries[stoichstring][gseed]:
-            gen_entries[stoichstring][gseed][gid] = []
+        if gseed not in gen_entries[(pair, stoichstring)]:
+            gen_entries[(pair, stoichstring)][gseed] = defaultdict(dict)
+        if gid not in gen_entries[(pair, stoichstring)][gseed]:
+            gen_entries[(pair, stoichstring)][gseed][gid] = []
 
-        gen_entries[stoichstring][gseed][gid].append((entry.key, energy))
+        gen_entries[(pair, stoichstring)][gseed][gid].append(
+            (entry.key, energy)
+        )
 
         if energy < 1:
-            colors[stoichstring] = True
+            colors[(pair, stoichstring)] = True
 
-    for stoichstring, byseed in gen_entries.items():
+    for (pair, stoichstring), byseed in gen_entries.items():
         xys = []
         min_energy = float("inf")
         min_energy_key = None
@@ -1280,7 +1294,7 @@ def plot_energies(  # noqa: C901
                 xys.append((gid + offset, min_energy))
         logging.info("for %s, %s is min energy", stoichstring, min_energy_key)
 
-        if stoichstring in colors:
+        if (pair, stoichstring) in colors:
             ax.plot(
                 [i[0] for i in xys],
                 [i[1] for i in xys],
@@ -1288,7 +1302,7 @@ def plot_energies(  # noqa: C901
                 marker="o",
                 markersize=7,
                 markeredgecolor="w",
-                label=f"{stoichstring}",
+                label=f"{pair}: {stoichstring}",
             )
         else:
             ax.plot(
@@ -1311,6 +1325,76 @@ def plot_energies(  # noqa: C901
     ax.set_yscale("log")
     ax.set_xlim(-1, 20 + 20 + 10 * 4)
 
+    ax.legend(ncols=3, fontsize=10)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_energy_by_seed(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+    stoichstring: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    seed_data = {u: [] for u in seed_cs}
+
+    max_energy = 0
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+
+        if entry.properties["stoichstring"] != stoichstring:
+            continue
+        if "generation_seed" not in entry.properties:
+            continue
+        gseed = entry.properties["generation_seed"]
+        energy = entry.properties["energy_per_bb"]
+        seed_data[gseed].append(energy)
+        max_energy = max((max_energy, energy))
+
+    steps = range(len(seed_data) - 1, -1, -1)
+    xmin = 0
+    xmax = max_energy
+    xwidth = 0.2
+    ystep = 1
+    xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
+
+    for i, value in enumerate(seed_cs):
+        ax.hist(
+            x=seed_data[value],
+            bins=xbins,
+            density=True,
+            bottom=steps[i] * ystep,
+            histtype="stepfilled",
+            stacked=True,
+            linewidth=1.0,
+            edgecolor="k",
+            facecolor=seed_cs[value],
+            label=f"seed: {value}",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(eb_str(), fontsize=16)
+
+    ax.set_ylabel("frequency", fontsize=16)
+    ax.set_yticks([])
+    ax.set_ylim(0, (steps[0] + 1.5) * ystep)
+    ax.legend(fontsize=16)
     ax.legend(ncols=3, fontsize=16)
 
     fig.tight_layout()
@@ -1333,14 +1417,7 @@ def progress_plot(
 ) -> None:
     """Draw optimisation progress."""
     fig, (ax, ax1) = plt.subplots(nrows=2, sharex=True, figsize=(8, 5))
-    cs = [
-        "tab:blue",
-        "tab:orange",
-        "tab:green",
-        "tab:red",
-        "tab:purple",
-        "tab:cyan",
-    ]
+
     max_fitness = 0
     for i, (seed, generations) in enumerate(seeded_generations.items()):
         fitnesses = [
@@ -1352,23 +1429,30 @@ def progress_plot(
             [max(i) for i in fitnesses],
             label=f"{seed}",
             lw=2,
-            c=cs[i],
+            c=seed_cs[seed],
             marker="o",
             markersize=8,
             markeredgecolor="w",
         )
-        ax.plot([np.mean(i) for i in fitnesses], lw=2, ls="--", c=cs[i])
+        ax.plot(
+            [np.mean(i) for i in fitnesses], lw=2, ls="--", c=seed_cs[seed]
+        )
 
         ax1.plot(
             [max(i) for i in fitnesses],
             label=f"{seed}",
             lw=2,
-            c=cs[i],
+            c=seed_cs[seed],
             marker="o",
             markersize=8,
             markeredgecolor="w",
         )
-        ax1.plot([np.mean(i) for i in fitnesses], lw=2, ls="--", c=cs[i])
+        ax1.plot(
+            [np.mean(i) for i in fitnesses],
+            lw=2,
+            ls="--",
+            c=seed_cs[seed],
+        )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel("fitness", fontsize=16)
@@ -1383,10 +1467,9 @@ def progress_plot(
     ax1.set_yscale("log")
 
     fig.tight_layout()
+    fig.savefig(output, dpi=360, bbox_inches="tight")
     fig.savefig(
-        output,
-        dpi=360,
-        bbox_inches="tight",
+        str(output).replace(".png", ".pdf"), dpi=360, bbox_inches="tight"
     )
     plt.close("all")
 
@@ -1530,8 +1613,8 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     }
     pairs_to_predict = [
         # large, small.
-        ("cs490", "cs41c"),
         ("cs490", "cs41d"),
+        ("cs490", "cs41c"),
         ("cs490", "cs41a"),
         ("cs490", "cs41b"),
     ]
@@ -2401,7 +2484,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_2.png",
     )
-    raise SystemExit
+
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -2444,14 +2527,12 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
             figure_dir=figure_dir,
             filename=f"mgen_10_{stoichstring}.png",
         )
-
-    logging.info(
-        "first test run clearly showed parallels not worth simulating"
-    )
-    logging.info("so started again without them, keeping that data.")
-    logging.info(
-        "what I think is interesting, is having an algo that adapts to that"
-    )
+        plot_energy_by_seed(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_6_{stoichstring}.png",
+        )
 
 
 def main() -> None:

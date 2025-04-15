@@ -232,12 +232,7 @@ def main() -> None:
 
     ensembles = {}
     for ligand, lsmiles in ligands.items():
-        if (
-            "cs3" in ligand
-            or "cs4" in ligand
-            or "cs5" in ligand
-            or "cs6" in ligand
-        ):
+        if "cs3" in ligand or "cs4" in ligand or "cs6" in ligand:
             new_dir = calculation_dir / f"{ligand}_confs"
             new_dir.mkdir(exist_ok=True)
             logging.info("building confs for %s", ligand)
@@ -270,6 +265,7 @@ def main() -> None:
                 crest_path=crest_path,
                 xtb_path=xtb_path,
             )
+            # Only CREST done ligands pass to the plotting below.
             ensembles[ligand] = ensemble
 
     plot_distance_angle(ensembles=ensembles, figure_dir=figure_dir)
