@@ -4524,7 +4524,7 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 4),
+            "multipliers": (1,),
             "vdw_cutoff": 2,
         },
         "la_st5_11": {
