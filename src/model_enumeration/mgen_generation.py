@@ -858,7 +858,13 @@ def make_summary_plot(
         multi = str(entry.properties["multiplier"])
         if multi not in xs:
             xs.append(multi)
-        pair = tuple(entry.key.split("_")[:2])
+
+        pair = tuple(entry.properties["pair"].split("_"))
+        if len(pair) > 3:  # noqa: PLR2004
+            msg = f"is {pair} right? ({entry.properties['pair']})"
+            raise RuntimeError(msg)
+        if len(pair) == 3:  # noqa: PLR2004
+            pair = (pair[0], pair[1] + "_" + pair[2])
 
         tidx = entry.properties["topology_idx"]
         bidx = entry.properties["bb_config_idx"]
@@ -1786,7 +1792,7 @@ def study_6_plot_3(
     plt.close()
 
 
-def make_summary_plot2(
+def make_summary_plot2(  # noqa: C901, PLR0912
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     structure_dir: pathlib.Path,
@@ -1808,9 +1814,15 @@ def make_summary_plot2(
         if "lowest_e_of_mash" not in entry.properties:
             continue
         multi = str(entry.properties["multiplier"])
-        l1 = entry.properties["l1"]
-        l2 = entry.properties["l2"]
-        x = [i[0] for i in pairs].index((l1, l2))
+
+        pair = tuple(entry.properties["pair"].split("_"))
+        if len(pair) > 3:  # noqa: PLR2004
+            msg = f"is {pair} right? ({entry.properties['pair']})"
+            raise RuntimeError(msg)
+        if len(pair) == 3:  # noqa: PLR2004
+            pair = (pair[0], pair[1] + "_" + pair[2])
+
+        x = [i[0] for i in pairs].index(pair)
         x_count[multi][x] += 1
         energy = entry.properties["energy_per_bb"]
 
@@ -2101,6 +2113,124 @@ def sterics_plot(
     ax.set_ylabel(xlbl, fontsize=16)
     ax.legend(ncol=1, fontsize=16)
     ax.set_ylim(0, None)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def binder_vector_angles_plot_unsymm(  # noqa: C901, PLR0915
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> None:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    datas_lge: dict[str, dict[str, list[float]]] = defaultdict(tuple)
+    datas_sma: dict[str, dict[str, list[float]]] = defaultdict(tuple)
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+        multi = str(entry.properties["multiplier"])
+        l1 = entry.properties["l1"]
+        l2 = entry.properties["l2"]
+
+        if "large_binder_binder_angles" not in entry.properties:
+            continue
+        ylge = entry.properties["large_binder_binder_angles"]
+        ysma = entry.properties["small_binder_binder_angles"]
+
+        try:
+            if (
+                entry.properties["energy_per_bb"]
+                < datas_lge[(multi, l1, l2)][1]
+            ):
+                datas_lge[(multi, l1, l2)] = (
+                    ylge,
+                    entry.properties["energy_per_bb"],
+                )
+        except IndexError:
+            datas_lge[(multi, l1, l2)] = (
+                ylge,
+                entry.properties["energy_per_bb"],
+            )
+
+        try:
+            if (
+                entry.properties["energy_per_bb"]
+                < datas_sma[(multi, l1, l2)][1]
+            ):
+                datas_sma[(multi, l1, l2)] = (
+                    ysma,
+                    entry.properties["energy_per_bb"],
+                )
+        except IndexError:
+            datas_sma[(multi, l1, l2)] = (
+                ysma,
+                entry.properties["energy_per_bb"],
+            )
+
+    lsdone = set()
+    for (multi, l1, l2), xdict in datas_sma.items():
+        ydict = datas_lge[(multi, l1, l2)]
+
+        if xdict[1] > 1.0:
+            alpha = 0.3
+            zorder = -1
+            c = "gray"
+            ec = "none"
+            s = 30
+            label = None
+
+        elif xdict[1] > 0.3:  # noqa: PLR2004
+            alpha = 1
+            zorder = 0
+            c = multi_cmap[multi]
+            ec = "none"
+            s = 30
+            label = f"M{multi}"
+            if label in lsdone:
+                label = None
+            lsdone.add(label)
+
+        else:
+            alpha = 1
+            zorder = 1
+            c = multi_cmap[multi]
+            ec = "k"
+            s = 60
+            label = None
+
+        ax.scatter(
+            np.mean(xdict[0]),
+            np.mean(ydict[0]),
+            alpha=alpha,
+            marker="o",
+            c=c,
+            ec=ec,
+            s=s,
+            label=label,
+            zorder=zorder,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("mean small binder angle [$^\\circ$]", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_ylabel("mean large binder angle [$^\\circ$]", fontsize=16)
+    ax.plot((0, 180), (0, 180), c="k", zorder=-1)
+    ax.set_xlim(0, 180)
+    ax.set_ylim(0, 180)
+    ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -4947,7 +5077,7 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_5.png",
     )
-    binder_vector_angles_plot(
+    binder_vector_angles_plot_unsymm(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_7.png",
