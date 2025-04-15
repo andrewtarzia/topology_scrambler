@@ -1613,8 +1613,8 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     }
     pairs_to_predict = [
         # large, small.
-        ("cs490", "cs41d"),
         ("cs490", "cs41c"),
+        ("cs490", "cs41d"),
         ("cs490", "cs41a"),
         ("cs490", "cs41b"),
     ]
