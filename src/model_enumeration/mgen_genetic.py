@@ -1239,7 +1239,7 @@ def plot_idx_completion(
     plt.close()
 
 
-def plot_energies(  # noqa: C901
+def plot_energies(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
@@ -1248,10 +1248,33 @@ def plot_energies(  # noqa: C901
     fig, ax = plt.subplots(figsize=(8, 5))
 
     seeds = {4: 0, 12689: 10, 18: 20, 999: 30, 142: 40, 6582: 60}
-
-    colors = {}
+    stoich_colous = {
+        "9-9-9": "tab:green",
+        "6-12-9": "tab:blue",
+        "12-6-9": "tab:orange",
+        "2-2-2": "gray",
+        "1-3-2": "gray",
+        "3-1-2": "gray",
+        "3-3-3": "gray",
+        "2-4-3": "gray",
+        "4-2-3": "gray",
+        "4-4-4": "gray",
+        "5-5-5": "gray",
+        "6-6-6": "tab:red",
+        "4-8-6": "gray",
+        "8-4-6": "tab:purple",
+        "7-7-7": "tab:cyan",
+        "8-8-8": "tab:pink",
+    }
+    pair_markers = {
+        "cs490_cs41c": "o",
+        "cs490_cs41d": "X",
+        "cs490_cs41a": "D",
+        "cs490_cs41b": "P",
+    }
     gen_entries = defaultdict(dict)
     total_min_energy = float("inf")
+
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         # Only do base entries.
         if "is_base" not in entry.properties:
@@ -1273,9 +1296,6 @@ def plot_energies(  # noqa: C901
             (entry.key, energy)
         )
 
-        if energy < 1:
-            colors[(pair, stoichstring)] = True
-
     for (pair, stoichstring), byseed in gen_entries.items():
         xys = []
         min_energy = float("inf")
@@ -1294,33 +1314,25 @@ def plot_energies(  # noqa: C901
                 xys.append((gid + offset, min_energy))
         logging.info("for %s, %s is min energy", stoichstring, min_energy_key)
 
-        if (pair, stoichstring) in colors:
-            ax.plot(
-                [i[0] for i in xys],
-                [i[1] for i in xys],
-                lw=2,
-                marker="o",
-                markersize=7,
-                markeredgecolor="w",
-                label=f"{pair}: {stoichstring}",
-            )
-        else:
-            ax.plot(
-                [i[0] for i in xys],
-                [i[1] for i in xys],
-                lw=2,
-                c="gray",
-                marker="o",
-                markersize=7,
-                markeredgecolor="w",
-                zorder=-1,
-            )
+        ax.plot(
+            [i[0] for i in xys],
+            [i[1] for i in xys],
+            lw=2,
+            c=stoich_colous[stoichstring],
+            marker=pair_markers[pair],
+            markersize=7,
+            markeredgecolor="w",
+            label=f"{pair}: {stoichstring}"
+            if min([i[1] for i in xys]) < 1
+            else None,
+            zorder=2 if min([i[1] for i in xys]) < 1 else -1,
+        )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel("generation", fontsize=16)
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.legend(fontsize=16)
-    ax.axhline(y=total_min_energy, c="k", ls="--")
+    ax.axhline(y=total_min_energy, c="k", ls="--", zorder=-2)
     ax.axhspan(0, isomer_energy(), color="tab:grey", alpha=0.2)
     ax.set_yscale("log")
     ax.set_xlim(-1, 20 + 20 + 10 * 4)
