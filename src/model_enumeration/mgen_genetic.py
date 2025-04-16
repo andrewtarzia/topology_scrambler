@@ -331,26 +331,6 @@ def make_opt_plot(
     plt.close()
 
 
-def rattle(self, stdev=0.001, seed=None, rng=None):
-    """Randomly displace atoms.
-
-    This code is mimicking what is done in ase.Atoms.rattle().
-    Thank you to them!
-
-    """
-    if seed is not None and rng is not None:
-        raise ValueError("Please do not provide both seed and rng.")
-
-    if rng is None:
-        if seed is None:
-            seed = 42
-        rng = np.random.RandomState(seed)
-    positions = self.arrays["positions"]
-    self.set_positions(
-        positions + rng.normal(scale=stdev, size=positions.shape)
-    )
-
-
 def add_generation_information(
     database_path: pathlib.Path,
     generation: cgx.systems_optimisation.Generation,
