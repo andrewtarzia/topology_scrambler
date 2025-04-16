@@ -839,6 +839,94 @@ def make_topt_plot(
     plt.close()
 
 
+def make_topt_s6_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+    mixtures: dict[str, dict[str, tuple | int]],
+) -> dict:
+    """Visualise energies."""
+    modifiable = ["nb", "bnb", "bac", "ba", "ac"]
+    fig, axs = plt.subplots(
+        ncols=len(modifiable),
+        sharey=True,
+        figsize=(16, 5),
+    )
+    flat_axs = axs.flatten()
+
+    for mix in mixtures:
+        try:
+            mix_target = mixtures[mix]["target"]
+
+        except KeyError:
+            continue
+
+        entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(
+            mix_target
+        )
+
+        if entry.properties["multiplier"] != 1:
+            continue
+
+        if "optimisation_energy_per_bb" not in entry.properties:
+            raise RuntimeError
+
+        term_dict = {
+            term: entry.properties["optimisation_x"][int(i)]
+            for i, term in entry.properties["optimisation_map"].items()
+        }
+
+        ffdict = entry.properties["forcefield_dict"]["v_dict"]
+        init_term_dict = {
+            term: ffdict["_".join(list(term))] for term in term_dict
+        }
+
+        orig = [val for i, val in init_term_dict.items()]
+        new = [val for i, val in term_dict.items()]
+        for i, ax in enumerate(flat_axs):
+            ax.scatter(
+                new[i],
+                entry.properties["optimisation_energy_per_bb"],
+                alpha=1,
+                ec="k",
+                s=80,
+            )
+            ax.plot(
+                (orig[i], new[i]),
+                (
+                    entry.properties["optimisation_energy_per_bb"],
+                    entry.properties["optimisation_energy_per_bb"],
+                ),
+                c="k",
+                alpha=1,
+                lw=1,
+                zorder=-2,
+                marker="s",
+                markersize=3,
+            )
+
+            ax.tick_params(axis="both", which="major", labelsize=16)
+            ax.set_xlabel(modifiable[i], fontsize=16)
+            d = new[i] - orig[i]
+            ax.set_title(rf"avg. $|\Delta|$={round(d, 2)}", fontsize=16)
+            ax.set_yscale("log")
+            if i == 0:
+                ax.set_ylabel(f"opt. {eb_str()}", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def make_summary_plot(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
@@ -1777,6 +1865,56 @@ def study_6_plot_3(
     )
     cbar.ax.tick_params(labelsize=16)
     cbar.set_label(eb_str(), fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study_6_plot_4(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        if "cc3" in entry.key:
+            continue
+
+        e = entry.properties["energy_per_bb"]
+        opte = entry.properties.get("optimisation_energy_per_bb", None)
+        m = entry.properties["multiplier"]
+
+        if opte is not None:
+            ax.scatter(
+                e,
+                opte,
+                c=multi_cmap[str(m)],
+                ec="k",
+                s=120,
+            )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(f"input {eb_str()}", fontsize=16)
+    ax.set_ylabel(f"opt-ff {eb_str()}", fontsize=16)
+    ax.set_xlim(0, 20)
+    ax.set_ylim(0, 20)
+    ax.plot((0, 20), (0, 20), c="k", ls="--", zorder=-2)
+    ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -4087,6 +4225,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l2zr1_1_0_3",
         },
         "l2zr2": {
             "linear": (
@@ -4099,6 +4238,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l2zr2_1_0_0",
         },
         "l2bzr1": {
             "linear": (
@@ -4111,6 +4251,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l2bzr1_1_0_2",
         },
         "l2bzr2": {
             "linear": (
@@ -4123,7 +4264,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l2bzr2_2_4_3",
+            "target": "l2bzr2_1_0_4",
         },
         "l5zr1": {
             "linear": (
@@ -4149,6 +4290,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l5zr2_1_0_4",
         },
         "l5bzr1": {
             "linear": (
@@ -4161,6 +4303,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l5bzr1_1_0_2",
         },
         "l5bzr2": {
             "linear": (
@@ -4173,6 +4316,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l5bzr2_1_0_2",
         },
         "l6zr1": {
             "linear": (
@@ -4185,6 +4329,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l6zr1_1_0_5",
         },
         "l6zr2": {
             "linear": (
@@ -4197,6 +4342,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l6zr2_1_0_3",
         },
         "l6bzr1": {
             "linear": (
@@ -4209,6 +4355,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l6bzr1_1_0_1",
         },
         "l6bzr2": {
             "linear": (
@@ -4221,6 +4368,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l6bzr2_1_0_0",
         },
         "l9zr1": {
             "linear": (
@@ -4246,6 +4394,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l9zr2_1_0_3",
         },
         "l9bzr1": {
             "linear": (
@@ -4258,6 +4407,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l9bzr1_1_0_5",
         },
         "l9bzr2": {
             "linear": (
@@ -4270,6 +4420,7 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
+            "target": "l9bzr2_1_0_0",
         },
         "cc3": {
             "linear": (
@@ -4520,6 +4671,8 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                 continue
 
             if "cc3" in mix:
+                # Do not include the tritopic BB in optimisation, otherwise
+                # another minimum is found by changing those angles.
                 modifiable = ["bac", "ba", "ac"]
             else:
                 modifiable = ["nb", "bnb", "bac", "ba", "ac"]
@@ -4537,6 +4690,12 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                 forcefield=forcefield,
             )
 
+    make_topt_s6_plot(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_10.png",
+        mixtures={i: mixtures[i] for i in mixtures if "cc3" not in i},
+    )
     study_6_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -4551,6 +4710,11 @@ def case_study_6(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_3.png",
+    )
+    study_6_plot_4(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_4.png",
     )
     for mix, mdict in mixtures.items():
         try:
