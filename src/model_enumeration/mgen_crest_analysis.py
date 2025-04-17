@@ -17,6 +17,21 @@ logging.basicConfig(
 )
 
 
+def has_alkynes(lsmiles: str) -> bool:
+    """Check if a molecule has alkynes."""
+    mol = stk.BuildingBlock(
+        lsmiles,
+        functional_groups=(
+            stk.SmartsFunctionalGroupFactory(
+                smarts="[*][C]#[C][*]",
+                bonders=(),
+                deleters=(),
+            )
+        ),
+    )
+    return mol.get_num_functional_groups() > 0
+
+
 def plot_xy(
     xproperty: str,
     ensemble: dict[str:dict],
@@ -231,7 +246,9 @@ def main() -> None:
     }
 
     ensembles = {}
+    have_alkynes = set()
     for ligand, lsmiles in ligands.items():
+        stk.BuildingBlock(lsmiles).write(ligand_dir / f"{ligand}_unopt.mol")
         if "cs3" in ligand or "cs4" in ligand or "cs6" in ligand:
             new_dir = calculation_dir / f"{ligand}_confs"
             new_dir.mkdir(exist_ok=True)
@@ -267,7 +284,9 @@ def main() -> None:
             )
             # Only CREST done ligands pass to the plotting below.
             ensembles[ligand] = ensemble
-
+        if has_alkynes(lsmiles):
+            have_alkynes.add(ligand)
+    logging.info("ligands %s have alkynes", have_alkynes)
     plot_distance_angle(ensembles=ensembles, figure_dir=figure_dir)
 
     for ligand, ensemble in ensembles.items():
