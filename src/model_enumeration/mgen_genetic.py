@@ -2476,7 +2476,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_2.png",
     )
-
+    raise SystemExit
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
