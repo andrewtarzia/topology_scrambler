@@ -5,9 +5,11 @@ import logging
 import pathlib
 import shutil
 import time
-from collections import abc
+from collections import abc, defaultdict
 
+import atomlite
 import cgexplore as cgx
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -15,27 +17,22 @@ import stk
 import stko
 from openmm import OpenMMException
 from rdkit import RDLogger
-from tables.file import defaultdict
 
-from model_enumeration.mgen_generation import (
-    analyse_cage,
-    get_regraphed_molecule,
-    get_vertexset_molecule,
-    make_summary_plot,
-    make_summary_plot2,
-    passes_graph_bb_iso,
-)
 from model_enumeration.mgen_utilities import (
     StericTwoC1Arm,
     a2bead_d,
     abead_c,
     abead_d,
+    analyse_cage,
     binder_bead,
     c2bead_d,
     cbead_c,
     cbead_d,
     e2bead_d,
     ebead_c,
+    get_regraphed_molecule,
+    get_vertexset_molecule,
+    passes_graph_bb_iso,
     precursors_to_forcefield,
     steric_bead,
     tetra_bead,
@@ -44,6 +41,7 @@ from model_enumeration.utilities import (
     contains_parallels,
     eb_str,
     isomer_energy,
+    multi_cmap,
 )
 
 logging.basicConfig(
@@ -67,6 +65,234 @@ seed_cs = {
     142: "tab:purple",
     6582: "tab:cyan",
 }
+
+
+def make_summary_plot(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+    pairs: list[tuple[str, str]],
+    width_height: tuple[float, float] = (7, 10),
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=width_height)
+    energies = {}
+
+    xs = []
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+        multi = str(entry.properties["multiplier"])
+        if multi not in xs:
+            xs.append(multi)
+
+        pair = tuple(entry.properties["pair"].split("_"))
+        if len(pair) > 3:  # noqa: PLR2004
+            msg = f"is {pair} right? ({entry.properties['pair']})"
+            raise RuntimeError(msg)
+        if len(pair) == 3:  # noqa: PLR2004
+            pair = (pair[0], pair[1] + "_" + pair[2])
+
+        tidx = entry.properties["topology_idx"]
+        bidx = entry.properties["bb_config_idx"]
+        midx = entry.properties["mash_idx"]
+        energy = entry.properties["energy_per_bb"]
+
+        if (pair, multi) not in energies:
+            energies[(pair, multi)] = []
+
+        if entry.properties["num_components"] > 1:
+            continue
+        energies[(pair, multi)].append((round(energy, 4), tidx, bidx, midx))
+
+    # create the new map
+    cmap = plt.cm.Blues_r  # define the colormap
+    # extract all colors from the .jet map
+    cmaplist = [cmap(i) for i in range(cmap.N)]
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        "Custom cmap", cmaplist, cmap.N
+    )
+
+    # define the bins and normalize
+    bounds = [0, 0.3, 1.0, 5.0, 10.0]
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    for (pair, multi), evalues in energies.items():
+        sorted_energies = sorted(evalues, key=lambda p: p[0])
+        min_energy = sorted_energies[0]
+
+        x = xs.index(multi)
+        y = [i[0] for i in pairs].index(pair)
+
+        ax.scatter(
+            x,
+            y,
+            c=min_energy[0],
+            alpha=1.0,
+            edgecolor="k",
+            s=200,
+            marker="s",
+            cmap=cmap,
+            norm=norm,
+        )
+        ax.text(
+            x=x + 0.5,
+            y=y,
+            s=f"t:{min_energy[1]},b:{min_energy[2]}",
+            horizontalalignment="center",
+            verticalalignment="center_baseline",
+            color="k",
+            fontsize=10,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("multiplier", fontsize=16)
+    ax.set_xticks(list(range(len(xs))))
+    ax.set_xticklabels(xs)
+    ax.set_yticks(list(range(len(pairs))))
+    ax.set_yticklabels(["_".join(i) for i in [i[0] for i in pairs]])
+
+    for i in list(range(len(xs))):
+        ax.axvline(int(i) + 0.8, c="k", alpha=0.5)
+
+    cbar_ax = fig.add_axes([1.01, 0.2, 0.02, 0.7])
+    cbar = fig.colorbar(
+        mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+        cax=cbar_ax,
+        orientation="vertical",
+    )
+    cbar.ax.tick_params(labelsize=16)
+    cbar.set_label(f"1:1:1 {eb_str()}", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def make_summary_plot2(  # noqa: C901, PLR0912
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    structure_dir: pathlib.Path,
+    filename: str,
+    pairs: list[tuple[str, str]],
+) -> dict:
+    """Visualise energies."""
+    fig, (axx, ax) = plt.subplots(
+        nrows=2,
+        figsize=(16, 6),
+        height_ratios=[1, 3],
+        sharex=True,
+    )
+
+    x_multi_mins = {i: defaultdict(float) for i in multi_cmap}
+    x_count = {i: defaultdict(int) for i in multi_cmap}
+    min_at_all_xs = defaultdict(int)
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+        multi = str(entry.properties["multiplier"])
+
+        pair = tuple(entry.properties["pair"].split("_"))
+        if len(pair) > 3:  # noqa: PLR2004
+            msg = f"is {pair} right? ({entry.properties['pair']})"
+            raise RuntimeError(msg)
+        if len(pair) == 3:  # noqa: PLR2004
+            pair = (pair[0], pair[1] + "_" + pair[2])
+
+        x = [i[0] for i in pairs].index(pair)
+        x_count[multi][x] += 1
+        energy = entry.properties["energy_per_bb"]
+
+        if energy < 1:
+            stk.BuildingBlock.init_from_rdkit_mol(
+                atomlite.json_to_rdkit(entry.molecule)
+            ).write(structure_dir / f"{entry.key}_optc.mol")
+
+        if entry.properties["num_components"] > 1:
+            continue
+
+        if x not in x_multi_mins[multi]:
+            x_multi_mins[multi][x] = energy
+        else:
+            x_multi_mins[multi][x] = min((x_multi_mins[multi][x], energy))
+
+        if x not in min_at_all_xs:
+            min_at_all_xs[x] = energy
+        else:
+            min_at_all_xs[x] = min((min_at_all_xs[x], energy))
+
+    for i in range(len(pairs) - 1):
+        ax.axvline(x=i + 0.5, c="k", alpha=0.2)
+        axx.axvline(x=i + 0.5, c="k", alpha=0.2)
+
+    for multi in multi_cmap:
+        if len(x_multi_mins[multi]) == 0:
+            continue
+        edict = x_multi_mins[multi]
+
+        ax.plot(
+            sorted(edict),
+            [edict[i] for i in sorted(edict)],
+            c="none",
+            markerfacecolor=multi_cmap[multi],
+            mec="k",
+            marker="o",
+            alpha=1,
+            markersize=12,
+        )
+        axx.plot(
+            list(x_count[multi]),
+            [x_count[multi][i] for i in x_count[multi]],
+            c="none",
+            markerfacecolor=multi_cmap[multi],
+            mec="k",
+            marker="o",
+            zorder=2,
+            markersize=12,
+        )
+
+    ax.plot(
+        sorted(min_at_all_xs),
+        [min_at_all_xs[i] for i in sorted(min_at_all_xs)],
+        c="k",
+        alpha=1,
+        zorder=-1,
+    )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xticks(list(range(len(pairs))))
+    ax.set_xticklabels(
+        ["_".join(i) for i in [i[0] for i in pairs]], rotation=90
+    )
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.set_yscale("log")
+    ax.set_xlim(-0.5, len(pairs) - 0.5)
+    ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+
+    axx.tick_params(axis="both", which="major", labelsize=16)
+    axx.set_ylabel("calcs", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
 
 
 def quick_graph_optimise_cage(  # noqa: PLR0913, PLR0915
@@ -1240,10 +1466,10 @@ def plot_energies(
         "4-2-3": "gray",
         "4-4-4": "gray",
         "5-5-5": "gray",
-        "6-6-6": "tab:red",
+        "6-6-6": "gray",
         "4-8-6": "gray",
-        "8-4-6": "tab:purple",
-        "7-7-7": "tab:cyan",
+        "8-4-6": "gray",
+        "7-7-7": "gray",
         "8-8-8": "tab:pink",
     }
     pair_markers = {
@@ -1303,9 +1529,9 @@ def plot_energies(
             markersize=7,
             markeredgecolor="w",
             label=f"{pair}: {stoichstring}"
-            if min([i[1] for i in xys]) < 1
+            if stoich_colous[stoichstring] != "gray"
             else None,
-            zorder=2 if min([i[1] for i in xys]) < 1 else -1,
+            zorder=2 if stoich_colous[stoichstring] != "gray" else -1,
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
