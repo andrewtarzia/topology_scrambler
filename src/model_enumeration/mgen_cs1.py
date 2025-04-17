@@ -282,7 +282,7 @@ def parity_plot(
     plt.close()
 
 
-def make_summary_plot2(  # noqa: C901, PLR0912
+def make_summary_plot2(  # noqa: C901, PLR0912, PLR0915
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     structure_dir: pathlib.Path,
