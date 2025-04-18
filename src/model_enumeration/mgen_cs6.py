@@ -37,6 +37,9 @@ attempts = (
     "set-kamada-10",
     "set-spring-10",
     "set-spectral-10",
+    "set-kamada-20",
+    "set-spring-20",
+    "set-spectral-20",
 )
 
 
@@ -105,8 +108,12 @@ def study_6_plot(
     min_energy = float("inf")
     min_energy_key = None
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        if "lowest_e_of_mash" not in entry.properties:
-            continue
+        logging.info(
+            "E for %s is %s",
+            entry.key,
+            round(entry.properties["energy_per_bb"], 2),
+        )
+        ec = "k" if "lowest_e_of_mash" in entry.properties else "none"
 
         x = xs[entry.properties["multiplier"]]
         multi = entry.properties["multiplier"]
@@ -121,26 +128,22 @@ def study_6_plot(
             y,
             c=multis[multi][0],
             alpha=1,
-            ec="k",
+            ec=ec,
             s=120,
             label=lbl if lbl not in lbls else None,
         )
         lbls.add(lbl)
-        logging.info(
-            "E for %s is %s",
-            entry.key,
-            round(entry.properties["energy_per_bb"], 2),
-        )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_title(
-        f"Minimum Energy is {min_energy_key} with {min_energy:.2f}",
+        f"minimum energy is {min_energy_key} with {min_energy:.2f}",
         fontsize=16,
     )
     ax.set_ylabel(f"OpenFF {eb_str()}", fontsize=16)
     ax.legend(fontsize=16)
     ax.set_xticks([xs[i] for i in xs])
     ax.set_xticklabels(list(xs), fontsize=16)
+    ax.set_ylim(min_energy, min_energy + 100)
 
     fig.tight_layout()
     fig.savefig(
@@ -210,9 +213,39 @@ def atomistic_optimisation(  # noqa: D103
         molecule.write(step3_)
     molecule = molecule.with_structure_from_file(step3_)
 
+    return molecule
+    # Settings.
+    force_field = ForceField("openff_unconstrained-2.2.1.offxml")
+    partial_charges = "espaloma-am1bcc"
     step4_ = output_directory / f"{name}_step4.mol"
     if not step4_.exists():
         logging.info("step 4 for %s", name)
+
+        # Define sequence.
+        optimisation_sequence = stko.OptimizerSequence(
+            # Restricted true to optimised the constructed bonds.
+            stko.OpenMMForceField(
+                force_field=force_field,
+                restricted=True,
+                partial_charges_method=partial_charges,
+            ),
+            # Unrestricted optimisation.
+            stko.OpenMMForceField(
+                # Load the openff-2.2.1 force field appropriate for
+                # vacuum calculations (without constraints)
+                force_field=force_field,
+                restricted=False,
+                partial_charges_method=partial_charges,
+            ),
+        )
+
+        molecule = optimisation_sequence.optimize(molecule)
+        molecule.write(step4_)
+    molecule = molecule.with_structure_from_file(step4_)
+
+    step5_ = output_directory / f"{name}_step5.mol"
+    if not step5_.exists():
+        logging.info("step 5 for %s", name)
 
         def integrator(
             *,
@@ -228,27 +261,11 @@ def atomistic_optimisation(  # noqa: D103
             return integrator
 
         # Settings.
-        force_field = ForceField("openff_unconstrained-2.1.0.offxml")
-        partial_charges = "espaloma-am1bcc"
-        temperature = 700 * openmm.unit.kelvin
+        temperature = 300 * openmm.unit.kelvin
         friction = 10 / openmm.unit.picoseconds
-        time_step = 1 * openmm.unit.femtoseconds
+        time_step = 0.5 * openmm.unit.femtoseconds
         # Define sequence.
         optimisation_sequence = stko.OptimizerSequence(
-            # Restricted true to optimised the constructed bonds.
-            stko.OpenMMForceField(
-                force_field=force_field,
-                restricted=True,
-                partial_charges_method=partial_charges,
-            ),
-            # Unrestricted optimisation.
-            stko.OpenMMForceField(
-                # Load the openff-2.1.0 force field appropriate for
-                # vacuum calculations (without constraints)
-                force_field=force_field,
-                restricted=False,
-                partial_charges_method=partial_charges,
-            ),
             # Molecular dynamics, short for equilibration.
             stko.OpenMMMD(
                 force_field=force_field,
@@ -301,12 +318,12 @@ def atomistic_optimisation(  # noqa: D103
         )
 
         molecule = optimisation_sequence.optimize(molecule)
-        molecule.write(step4_)
+        molecule.write(step5_)
 
-    return molecule.with_structure_from_file(step4_)
+    return molecule.with_structure_from_file(step5_)
 
 
-def case_study_6(run: bool) -> None:  # noqa: PLR0915
+def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
     """Run case study 6."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs6_calculations"
@@ -325,18 +342,18 @@ def case_study_6(run: bool) -> None:  # noqa: PLR0915
     multipliers = (1, 2, 3, 4)
 
     ditopic_building_block = stk.BuildingBlock(
-        smiles="C1(C=C(Br)C(O[H])=C(Br)C=1)C",
-        functional_groups=[stk.BromoFactory()],
+        smiles="C1CC(CC(C1)N)N",
+        functional_groups=[stk.PrimaryAminoFactory()],
     )
     tritopic_building_block = stk.BuildingBlock(
-        smiles="C1(CC(/N=C/Br)CC(/N=C/Br)C1)/N=C/Br",
-        functional_groups=[stk.BromoFactory()],
+        smiles="C1=C(C=C(C=C1C=O)C=O)C=O",
+        functional_groups=[stk.AldehydeFactory()],
     )
     ditopic_building_block.write(ligand_dir / "di_unopt.mol")
     tritopic_building_block.write(ligand_dir / "tri_unopt.mol")
     # Get lowest energy conformer.
     ensemble = bbprep.generators.ETKDG(num_confs=100).generate_conformers(
-        tritopic_building_block
+        ditopic_building_block
     )
     # Iterate over ensemble.
     minimum_score = 1e24
@@ -357,12 +374,13 @@ def case_study_6(run: bool) -> None:  # noqa: PLR0915
                 source=conformer.source,
                 permutation=conformer.permutation,
             )
-    tritopic_building_block = minimum_conformer.molecule
-    tritopic_building_block.write(ligand_dir / "tri_opt.mol")
+    ditopic_building_block = minimum_conformer.molecule
+    ditopic_building_block.write(ligand_dir / "di_opt.mol")
 
     if run:
         for multiplier in multipliers:
             logging.info("doing: multi %s", multiplier)
+
             # Define a connectivity based on a multiplier.
             iterator = cgx.scram.TopologyIterator(
                 building_block_counts={
@@ -380,6 +398,9 @@ def case_study_6(run: bool) -> None:  # noqa: PLR0915
             for idx, topology_code in enumerate(iterator.yield_graphs()):
                 # Filter graphs for 1-loops.
                 if contains_parallels(topology_code):
+                    continue
+
+                if idx not in (25, 4, 3):
                     continue
 
                 generated_conformers = []
@@ -422,7 +443,7 @@ def case_study_6(run: bool) -> None:  # noqa: PLR0915
                     energy_per_bb = (
                         stko.OpenMMEnergy(
                             force_field=ForceField(
-                                "openff_unconstrained-2.1.0.offxml"
+                                "openff_unconstrained-2.2.1.offxml"
                             ),
                             partial_charges_method="espaloma-am1bcc",
                         ).get_energy(molecule)
@@ -483,6 +504,10 @@ def main() -> None:
     args = _parse_args()
 
     case_study_6(args.run)
+    raise SystemExit(
+        "add these bbs to cs2 for this figure, add openMM opt, rm MD"
+        "add second pair of CC3 options"
+    )
 
 
 if __name__ == "__main__":
