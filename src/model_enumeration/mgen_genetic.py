@@ -1309,7 +1309,7 @@ def plot_vs_parallels(
 
     steps = range(len(count_has_parallels) + 6 - 1, -1, -1)
     xmin = 0
-    xmax = max(has_parallels[False] + has_parallels[True])
+    xmax = max(has_parallels[False])
     xwidth = 0.2
     ystep = 1
     xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
@@ -1359,6 +1359,89 @@ def plot_vs_parallels(
             linewidth=1.0,
             edgecolor="k",
             label=f"bidx: {bidx}",
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel(eb_str(), fontsize=16)
+
+    ax.set_ylabel("frequency", fontsize=16)
+    ax.set_yticks([])
+    ax.set_ylim(0, (steps[0] + 1.5) * ystep)
+    ax.legend(fontsize=16)
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_elite_graphs(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    stoichstring: str,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+    present_tidx = defaultdict(list)
+    all_energies = []
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+
+        if "generation_seed" not in entry.properties or entry.properties[
+            "generation_seed"
+        ] in (142, 6582):
+            continue
+
+        if entry.properties["stoichstring"] != stoichstring:
+            continue
+
+        energy = entry.properties["energy_per_bb"]
+        all_energies.append(energy)
+        present_tidx[entry.properties["topology_idx"]].append(energy)
+
+    steps = range(8 - 1, -1, -1)
+    xmin = 0
+    xmax = max(all_energies)
+    xwidth = 0.2
+    ystep = 1
+    xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
+    counted = {i: len(present_tidx[i]) for i in present_tidx}
+    top_3 = sorted(counted, key=counted.get, reverse=True)[:7]
+
+    ax.hist(
+        x=all_energies,
+        bins=xbins,
+        density=True,
+        bottom=steps[0] * ystep,
+        histtype="stepfilled",
+        stacked=True,
+        linewidth=1.0,
+        edgecolor="k",
+        label="all",
+    )
+
+    for i, tidx in enumerate(top_3):
+        ax.hist(
+            x=present_tidx[tidx],
+            bins=xbins,
+            density=True,
+            bottom=steps[i + 1] * ystep,
+            histtype="stepfilled",
+            stacked=True,
+            linewidth=1.0,
+            edgecolor="k",
+            label=f"tidx: {tidx}",
         )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
@@ -1557,6 +1640,113 @@ def plot_energies(
         bbox_inches="tight",
     )
     plt.close()
+
+
+def plot_energies_main(  # noqa: C901, PLR0915
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 2))
+
+    seeds = {4: 0, 12689: 10, 18: 20, 999: 30, 142: 40, 6582: 60}
+    stoich_colous = {
+        "9-9-9": "tab:green",
+        "6-12-9": "tab:blue",
+        "12-6-9": "tab:orange",
+        "8-8-8": "tab:pink",
+    }
+    pair_markers = {
+        "cs490_cs41c": "o",
+    }
+    gen_entries = defaultdict(dict)
+    total_min_energy = float("inf")
+
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        # Only do base entries.
+        if "is_base" not in entry.properties:
+            continue
+
+        pair = entry.properties["pair"]
+        if pair not in pair_markers:
+            continue
+        gid = entry.properties.get("generation_id", 0)
+        gseed = entry.properties.get("generation_seed", 0)
+        energy = entry.properties["energy_per_bb"]
+        stoichstring = entry.properties["stoichstring"]
+        if stoichstring not in stoich_colous:
+            continue
+        total_min_energy = min((total_min_energy, energy))
+
+        if gseed not in gen_entries[(pair, stoichstring)]:
+            gen_entries[(pair, stoichstring)][gseed] = defaultdict(dict)
+        if gid not in gen_entries[(pair, stoichstring)][gseed]:
+            gen_entries[(pair, stoichstring)][gseed][gid] = []
+
+        gen_entries[(pair, stoichstring)][gseed][gid].append(
+            (entry.key, energy)
+        )
+
+    for (pair, stoichstring), byseed in gen_entries.items():
+        xys = []
+        min_energy = float("inf")
+
+        for seed, offset in seeds.items():
+            if seed not in byseed:
+                continue
+            bygen = byseed[seed]
+
+            for gid in sorted(bygen.keys()):
+                key, ey = min(bygen[gid], key=lambda i: i[1])
+
+                min_energy = min(ey, min_energy)
+
+                xys.append((gid + offset, min_energy))
+
+        ax.plot(
+            [i[0] for i in xys],
+            [i[1] for i in xys],
+            lw=2,
+            c=stoich_colous[stoichstring],
+            marker=pair_markers[pair],
+            markersize=7,
+            markeredgecolor="w",
+            label=f"{stoichstring}"
+            if stoich_colous[stoichstring] != "gray"
+            else None,
+            zorder=2 if stoich_colous[stoichstring] != "gray" else -1,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("generation", fontsize=16)
+    ax.set_ylabel(eb_str(), fontsize=16)
+    ax.legend(fontsize=16)
+    ax.axhline(y=total_min_energy, c="k", ls="--", zorder=-2)
+    ax.axhspan(0, isomer_energy(), color="tab:grey", alpha=0.2)
+    ax.set_yscale("log")
+    ax.set_xlim(-1, 20 + 20 + 10 * 4)
+    ax.axvline(x=10, c="k", lw=1, alpha=0.2, zorder=-1)
+    ax.axvline(x=20, c="k", lw=1, alpha=0.2, zorder=-1)
+    ax.axvline(x=30, c="k", lw=1, alpha=0.2, zorder=-1)
+    ax.axvline(x=40, c="k", lw=1, alpha=0.2, zorder=-1)
+    ax.axvline(x=60, c="k", lw=1, alpha=0.2, zorder=-1)
+
+    ax.legend(ncols=1, fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+    raise SystemExit
 
 
 def plot_energy_by_seed(
@@ -2697,12 +2887,55 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             "top scorer is %s (seed: %s)", best_name, seed
                         )
 
+    plot_energies_main(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_2m.png",
+    )
+
+    plot_timings(figure_dir, data_dir)
+    for stoichiometry_l_s_m in stoichiometries_l_s_m:
+        stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
+        logging.info("plotting %s", stoichstring)
+        plot_elite_graphs(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_12_{stoichstring}.png",
+        )
+
+        plot_counters(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_1_{stoichstring}.png",
+        )
+        plot_vs_parallels(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_9_{stoichstring}.png",
+        )
+
+        plot_idx_completion(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_10_{stoichstring}.png",
+        )
+        plot_energy_by_seed(
+            database_path=database_path,
+            stoichstring=stoichstring,
+            figure_dir=figure_dir,
+            filename=f"mgen_6_{stoichstring}.png",
+        )
+
     plot_energies(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_2.png",
     )
-    raise SystemExit
+
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
@@ -2723,34 +2956,6 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         pairs=tuple((i, None) for i in pairs_to_predict),
         width_height=(16, 5),
     )
-
-    plot_timings(figure_dir, data_dir)
-    for stoichiometry_l_s_m in stoichiometries_l_s_m:
-        stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
-        plot_counters(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_1_{stoichstring}.png",
-        )
-        plot_vs_parallels(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_9_{stoichstring}.png",
-        )
-        plot_idx_completion(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_10_{stoichstring}.png",
-        )
-        plot_energy_by_seed(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_6_{stoichstring}.png",
-        )
 
 
 def main() -> None:
