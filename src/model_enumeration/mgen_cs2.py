@@ -49,6 +49,88 @@ attempts = (
 )
 
 
+def make_topt_plot_2(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+    pairs: dict[str, dict[str, tuple | int]],
+    ffopt_targets: dict[str, str],
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    for pair in pairs:
+        if "b" in pair:
+            continue
+        try:
+            mix_target = ffopt_targets[pair]
+
+        except KeyError:
+            continue
+
+        try:
+            entry = cgx.utilities.AtomliteDatabase(database_path).get_entry(
+                mix_target
+            )
+        except RuntimeError:
+            continue
+
+        if "optimisation_energy_per_bb" not in entry.properties:
+            continue
+        d_energy = (
+            entry.properties["optimisation_energy_per_bb"]
+            - entry.properties["energy_per_bb"]
+        )
+        if d_energy > 0:
+            logging.info("%s has energy change > 0", entry.key)
+
+        term_dict = {
+            term: entry.properties["optimisation_x"][int(i)]
+            for i, term in entry.properties["optimisation_map"].items()
+        }
+
+        ffdict = entry.properties["forcefield_dict"]["v_dict"]
+        init_term_dict = {
+            term: ffdict["_".join(list(term))] for term in term_dict
+        }
+
+        orig = [val for i, val in init_term_dict.items()]
+        new = [val for i, val in term_dict.items()]
+
+        c = "tab:blue" if pair[1] in ("1", "2") else "tab:orange"
+
+        ax.scatter(
+            sum(
+                [
+                    abs((j - i) / i) * 100
+                    for i, j in zip(orig, new, strict=True)
+                ]
+            ),
+            d_energy,
+            c=c,
+            alpha=1,
+            ec="k",
+            s=120,
+        )
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xlabel("sum relative change in FF terms", fontsize=16)
+    ax.set_ylabel(rf"$\Delta$ {eb_str()}", fontsize=16)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def make_topt_plot(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
@@ -1363,6 +1445,15 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
         figure_dir=figure_dir,
         filename="mgen_10.png",
         mixtures={i: mixtures[i] for i in mixtures if "cc3" not in i},
+    )
+    make_topt_plot_2(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="mgen_11.png",
+        pairs={i: mixtures[i] for i in mixtures if "cc3" not in i},
+        ffopt_targets={
+            i: mixtures[i]["target"] for i in mixtures if "cc3" not in i
+        },
     )
 
 
