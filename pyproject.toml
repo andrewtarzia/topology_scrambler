@@ -38,6 +38,7 @@ mgen_cs1 = "model_enumeration.mgen_cs1:main"
 mgen_cs2 = "model_enumeration.mgen_cs2:main"
 mgen_cs3 = "model_enumeration.mgen_cs3:main"
 mgen_cs4 = "model_enumeration.mgen_cs4:main"
+mgen_cs6 = "model_enumeration.mgen_cs6:main"
 mgen_star = "model_enumeration.mgen_star:main"
 validation_mnl2n = "model_enumeration.validation_mnl2n:main"
 
