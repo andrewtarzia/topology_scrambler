@@ -154,6 +154,9 @@ def make_topt_plot(
     flat_axs = axs.flatten()
     ds = [[] for i in modifiable]
     for mix in mixtures:
+        if "cc" in mix:
+            continue
+
         try:
             mix_target = mixtures[mix]["target"]
 
@@ -363,6 +366,8 @@ def study_2_plot(
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
+        if "cc" in entry.key:
+            continue
 
         if entry.properties["mix"] not in xs:
             xs[entry.properties["mix"]] = len(xs)
@@ -410,46 +415,77 @@ def study_2_plot(
     plt.close()
 
 
-def study_2_cc3_plot(
+def study_2_cc_plot(
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, (ax) = plt.subplots(ncols=1, figsize=(5, 5))
+    fig, (ax) = plt.subplots(ncols=1, figsize=(16, 5))
 
-    multis = {1: (multi_cmap["1"], -0.2), 2: (multi_cmap["2"], 0.0)}
+    multis = {
+        1: multi_cmap["1"],
+        2: multi_cmap["2"],
+        3: multi_cmap["3"],
+        4: multi_cmap["4"],
+    }
 
     xs = {}
+    lines = [[], []]
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
-        if "cc3" not in entry.key:
+        if "cc" not in entry.key:
             continue
 
-        x = len(xs)
-        xs[x] = entry.key
+        xstr = (entry.key.split("_")[1], entry.key.split("_")[2])
+        if xstr not in xs:
+            xs[xstr] = len(xs)
+
+        x = xs[xstr]
+        m = "o" if "cc3" in entry.key else "s"
+
         multi = entry.properties["multiplier"]
         y = entry.properties["energy_per_bb"]
         logging.info("key %s has E %s", entry.key, y)
-
+        if "cc3" in entry.key:
+            lines[0].append((x, y))
+        elif "cc20" in entry.key:
+            lines[1].append((x, y))
         ax.scatter(
             x,
             y,
-            c=multis[multi][0],
+            c=multis[multi],
             alpha=1,
             ec="k",
             s=80,
+            marker=m,
+            label=None if xstr != ("1", "1") else entry.key.split("_")[0],
         )
+
+    ax.plot(
+        [i[0] for i in lines[0]],
+        [i[1] for i in lines[0]],
+        color="k",
+        zorder=-2,
+    )
+    ax.plot(
+        [i[0] for i in lines[1]],
+        [i[1] for i in lines[1]],
+        color="k",
+        zorder=-2,
+    )
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel(f"{eb_str()}", fontsize=16)
     ax.set_yscale("log")
-    ax.set_xticks(list(xs))
+    ax.set_xticks([xs[i] for i in xs])
     ax.set_xticklabels(
-        [f"{xs[i].split('_')[1]},{xs[i].split('_')[2]}" for i in xs],
+        [f"{i[0]},{i[1]}" for i in xs],
         fontsize=16,
+        rotation=90,
     )
+    ax.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -480,6 +516,8 @@ def study_2_plot_2(
     mix_mins = {}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
+            continue
+        if "cc" in entry.key:
             continue
 
         if entry.properties["mix"] not in xs:
@@ -664,7 +702,7 @@ def study_2_plot_4(
         if "lowest_e_of_mash" not in entry.properties:
             continue
 
-        if "cc3" in entry.key:
+        if "cc" in entry.key:
             continue
 
         e = entry.properties["energy_per_bb"]
@@ -854,7 +892,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
     present_beads = (cbead_d, abead_d, binder_bead, trigonal_bead)
     stoichiometry_t_d = (2, 3)
     vdw_cutoff = 2
-    multipliers = (1, 2)
+    multipliers = (1, 2, 3, 4)
     # Very approximate.
     ligand_measures = {
         "cs6l1": {"ba": 3.8 / 3, "aa": 3.8 / 3, "bac": 180},
@@ -871,6 +909,8 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
         "cs6zr2": {"bnb": 70, "nb": 3.5},
         "cs6cc31": {"bnb": 120, "nb": 2.9},
         "cs6cc32": {"ba": 1.5, "aa": 1.5, "bac": 115},
+        "cs6cc201": {"bnb": 120, "nb": 2.9},
+        "cs6cc202": {"ba": 1.5, "aa": 2.5, "bac": 145},
     }
 
     mixtures = {
@@ -1016,6 +1056,19 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                 ),
             ),
             "target": "cc3_2_4_3",
+        },
+        "cc20": {
+            "linear": (
+                "cs6cc202",
+                cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d),
+            ),
+            "trigonal": (
+                "cs6cc201",
+                cgx.molecular.ThreeC1Arm(
+                    bead=trigonal_bead, abead1=binder_bead
+                ),
+            ),
+            "target": "cc20_4_25_2",
         },
         "l1bzr1": {
             "linear": (
@@ -1222,7 +1275,10 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
             )
 
             for multiplier in multipliers:
+                if multiplier > 2 and "cc" not in mix:  # noqa: PLR2004
+                    continue
                 logging.info("doing: mix %s, multi %s", mix, multiplier)
+
                 # Define a connectivity based on a multiplier.
                 iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
@@ -1383,7 +1439,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
             except KeyError:
                 continue
 
-            if "cc3" in mix:
+            if "cc" in mix:
                 # Do not include the tritopic BB in optimisation, otherwise
                 # another minimum is found by changing those angles.
                 modifiable = ["bac", "ba", "ac"]
@@ -1408,7 +1464,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
         figure_dir=figure_dir,
         filename="mgen_1.png",
     )
-    study_2_cc3_plot(
+    study_2_cc_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_6.png",
@@ -1440,19 +1496,20 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
             )
         except KeyError:
             continue
+
     make_topt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_10.png",
-        mixtures={i: mixtures[i] for i in mixtures if "cc3" not in i},
+        mixtures={i: mixtures[i] for i in mixtures if "cc" not in i},
     )
     make_topt_plot_2(
         database_path=database_path,
         figure_dir=figure_dir,
         filename="mgen_11.png",
-        pairs={i: mixtures[i] for i in mixtures if "cc3" not in i},
+        pairs={i: mixtures[i] for i in mixtures if "cc" not in i},
         ffopt_targets={
-            i: mixtures[i]["target"] for i in mixtures if "cc3" not in i
+            i: mixtures[i]["target"] for i in mixtures if "cc" not in i
         },
     )
 
