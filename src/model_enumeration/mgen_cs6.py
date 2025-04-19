@@ -107,14 +107,12 @@ def study_6_plot(
     lbls = set()
     min_energy = float("inf")
     min_energy_key = None
+    xys = {}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        logging.info(
-            "E for %s is %s",
-            entry.key,
-            round(entry.properties["energy_per_bb"], 2),
-        )
-        ec = "k" if "lowest_e_of_mash" in entry.properties else "none"
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
 
+        ec = "k"
         x = xs[entry.properties["multiplier"]]
         multi = entry.properties["multiplier"]
         y = entry.properties["energy_per_bb"]
@@ -122,28 +120,35 @@ def study_6_plot(
             min_energy = y
             min_energy_key = entry.key
 
+        xys[entry.key] = (x, y, multi, ec)
+
+    for key, (x, y, multi, ec) in xys.items():
+        logging.info(
+            "E for %s is %s",
+            key,
+            round(y - min_energy, 2),
+        )
         lbl = f"$m$ = {multi}"
+        zorder = -1 if ec == "none" else 2
         ax.scatter(
             x,
-            y,
+            y - min_energy,
             c=multis[multi][0],
             alpha=1,
             ec=ec,
             s=120,
             label=lbl if lbl not in lbls else None,
+            zorder=zorder,
         )
         lbls.add(lbl)
 
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_title(
-        f"minimum energy is {min_energy_key} with {min_energy:.2f}",
-        fontsize=16,
-    )
-    ax.set_ylabel(f"OpenFF {eb_str()}", fontsize=16)
+    ax.set_title(f"minimum energy is {min_energy_key}", fontsize=16)
+    ax.set_ylabel(f"rel. GFN2-xTB {eb_str()}", fontsize=16)
     ax.legend(fontsize=16)
     ax.set_xticks([xs[i] for i in xs])
     ax.set_xticklabels(list(xs), fontsize=16)
-    ax.set_ylim(min_energy, min_energy + 100)
+    ax.set_ylim(0, None)
 
     fig.tight_layout()
     fig.savefig(
@@ -213,7 +218,6 @@ def atomistic_optimisation(  # noqa: D103
         molecule.write(step3_)
     molecule = molecule.with_structure_from_file(step3_)
 
-    return molecule
     # Settings.
     force_field = ForceField("openff_unconstrained-2.2.1.offxml")
     partial_charges = "espaloma-am1bcc"
@@ -317,9 +321,14 @@ def atomistic_optimisation(  # noqa: D103
             ),
         )
 
-        molecule = optimisation_sequence.optimize(molecule)
+        molecule = optimisation_sequence.optimize(molecule).with_centroid(
+            (0, 0, 0)
+        )
         molecule.write(step5_)
 
+    molecule.with_structure_from_file(step5_).with_centroid((0, 0, 0)).write(
+        step5_
+    )
     return molecule.with_structure_from_file(step5_)
 
 
@@ -400,9 +409,6 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
                 if contains_parallels(topology_code):
                     continue
 
-                if idx not in (25, 4, 3):
-                    continue
-
                 generated_conformers = []
                 for midx, scale in enumerate(attempts):
                     name = f"p1_{multiplier}_{idx}_{midx}"
@@ -440,14 +446,31 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
                     )
                     molecule.write(structure_dir / f"{name}_optc.mol")
 
-                    energy_per_bb = (
-                        stko.OpenMMEnergy(
-                            force_field=ForceField(
-                                "openff_unconstrained-2.2.1.offxml"
-                            ),
-                            partial_charges_method="espaloma-am1bcc",
+                    ey_file = calculation_dir / f"{name}_xtb.ey"
+                    if not ey_file.exists():
+                        ey = stko.XTBEnergy(
+                            xtb_path="/home/atarzia/miniforge3/envs/meproduction/bin/xtb",
+                            num_cores=4,
+                            output_dir=calculation_dir / f"{name}_xtbey",
                         ).get_energy(molecule)
-                        / iterator.get_num_building_blocks()
+                        # ey =
+                        #  stko.OpenMMEnergy(
+                        # force_field=
+                        # ForceField(
+                        #         "openff_unconstrained-2.2.1.offxml"
+                        #     ),
+                        #     partial_charges_method
+                        # ="espaloma-am1bcc",
+                        # ).get_energy(molecule)
+                        with ey_file.open("w") as f:
+                            f.write(str(ey))
+                    else:
+                        logging.info("loading energy from %s", ey_file.name)
+                        with ey_file.open("r") as f:
+                            ey = float(f.read())
+                    ey_kjmol = ey * 2625.5
+                    energy_per_bb = (
+                        ey_kjmol / iterator.get_num_building_blocks()
                     )
 
                     properties = {
@@ -504,10 +527,6 @@ def main() -> None:
     args = _parse_args()
 
     case_study_6(args.run)
-    raise SystemExit(
-        "add these bbs to cs2 for this figure, add openMM opt, rm MD"
-        "add second pair of CC3 options"
-    )
 
 
 if __name__ == "__main__":
