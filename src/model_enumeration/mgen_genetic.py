@@ -1047,7 +1047,11 @@ def structure_function(  # noqa: C901, PLR0912, PLR0915
         property_dict=database.get_entry(min_energy_name).properties,
     )
     database.add_properties(key=base_name, property_dict={"is_base": True})
-    analyse_cage(database_path=database_path, name=base_name)
+    analyse_cage(
+        database_path=database_path,
+        name=base_name,
+        forcefield=options["forcefield"],
+    )
 
 
 def plot_timings(figure_dir: pathlib.Path, data_dir: pathlib.Path) -> None:
