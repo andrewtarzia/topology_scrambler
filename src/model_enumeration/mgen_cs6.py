@@ -122,6 +122,7 @@ def study_6_plot(
 
         xys[entry.key] = (x, y, multi, ec)
 
+    for_img = []
     for key, (x, y, multi, ec) in xys.items():
         logging.info(
             "E for %s is %s",
@@ -141,6 +142,9 @@ def study_6_plot(
             zorder=zorder,
         )
         lbls.add(lbl)
+        for_img.append(f"{key}_optc.xyz")
+
+    logging.info("structures:\n%s", " ".join(for_img))
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_title(f"minimum energy is {min_energy_key}", fontsize=16)
@@ -321,18 +325,13 @@ def atomistic_optimisation(  # noqa: D103
             ),
         )
 
-        molecule = optimisation_sequence.optimize(molecule).with_centroid(
-            (0, 0, 0)
-        )
+        molecule = optimisation_sequence.optimize(molecule)
         molecule.write(step5_)
 
-    molecule.with_structure_from_file(step5_).with_centroid((0, 0, 0)).write(
-        step5_
-    )
     return molecule.with_structure_from_file(step5_)
 
 
-def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
+def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 6."""
     wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
     calculation_dir = wd / "mgencs6_calculations"
@@ -438,16 +437,24 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
                     )
                     # Optimise and save.
                     logging.info("building %s", name)
-
-                    molecule = atomistic_optimisation(
-                        name=name,
-                        molecule=constructed_molecule,
-                        output_directory=calculation_dir,
-                    )
-                    molecule.write(structure_dir / f"{name}_optc.mol")
+                    optc_file = structure_dir / f"{name}_optc.mol"
+                    if not optc_file.exists():
+                        molecule = atomistic_optimisation(
+                            name=name,
+                            molecule=constructed_molecule,
+                            output_directory=calculation_dir,
+                        )
+                        molecule.write(optc_file)
+                    else:
+                        molecule = (
+                            constructed_molecule.with_structure_from_file(
+                                optc_file
+                            )
+                        )
 
                     ey_file = calculation_dir / f"{name}_xtb.ey"
                     if not ey_file.exists():
+                        logging.info("calculating energy for %s", name)
                         ey = stko.XTBEnergy(
                             xtb_path="/home/atarzia/miniforge3/envs/meproduction/bin/xtb",
                             num_cores=4,
@@ -510,6 +517,9 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
                 min_energy_structure.write(
                     str(structure_dir / f"{min_energy_name}_optc.mol")
                 )
+                min_energy_structure.write(
+                    str(structure_dir / f"{min_energy_name}_optc.xyz")
+                )
                 cgx.utilities.AtomliteDatabase(database_path).add_properties(
                     key=min_energy_name,
                     property_dict={"lowest_e_of_mash": True},
@@ -525,7 +535,6 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0915
 def main() -> None:
     """Run script."""
     args = _parse_args()
-
     case_study_6(args.run)
 
 
