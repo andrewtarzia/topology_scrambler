@@ -1750,7 +1750,6 @@ def plot_energies_main(  # noqa: C901, PLR0915
         bbox_inches="tight",
     )
     plt.close()
-    raise SystemExit
 
 
 def plot_energy_by_seed(
