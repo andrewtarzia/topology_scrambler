@@ -175,7 +175,6 @@ dependencies:
           - stk==2024.10.2.0
           - stko==2024.12.13.1
           - threadpoolctl==3.5.0
-          - topology-scrambler==0.1.dev221+g5553d54.d20250218
           - traitlets==5.14.3
           - vabene==0.0.5
           - wcwidth==0.2.13
