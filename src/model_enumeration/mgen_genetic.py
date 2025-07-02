@@ -1455,6 +1455,7 @@ def plot_elite_graphs(
     ax.set_yticks([])
     ax.set_ylim(0, (steps[0] + 1.5) * ystep)
     ax.legend(fontsize=16)
+    ax.set_xscale("log")
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -1646,13 +1647,13 @@ def plot_energies(
     plt.close()
 
 
-def plot_energies_main(  # noqa: C901, PLR0915
+def plot_energies_main(  # noqa: C901
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(8, 2))
+    fig, ax = plt.subplots(figsize=(8, 4))
 
     seeds = {4: 0, 12689: 10, 18: 20, 999: 30, 142: 40, 6582: 60}
     stoich_colous = {
@@ -1661,9 +1662,7 @@ def plot_energies_main(  # noqa: C901, PLR0915
         "12-6-9": "tab:orange",
         "8-8-8": "tab:pink",
     }
-    pair_markers = {
-        "cs490_cs41c": "o",
-    }
+    pair_markers = {"cs490_cs41c": "o"}
     gen_entries = defaultdict(dict)
     total_min_energy = float("inf")
 
@@ -1714,7 +1713,7 @@ def plot_energies_main(  # noqa: C901, PLR0915
             lw=2,
             c=stoich_colous[stoichstring],
             marker=pair_markers[pair],
-            markersize=7,
+            markersize=6,
             markeredgecolor="w",
             label=f"{stoichstring}"
             if stoich_colous[stoichstring] != "gray"
@@ -1727,7 +1726,6 @@ def plot_energies_main(  # noqa: C901, PLR0915
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.legend(fontsize=16)
     ax.axhline(y=total_min_energy, c="k", ls="--", zorder=-2)
-    ax.axhspan(0, isomer_energy(), color="tab:grey", alpha=0.2)
     ax.set_yscale("log")
     ax.set_xlim(-1, 20 + 20 + 10 * 4)
     ax.axvline(x=10, c="k", lw=1, alpha=0.2, zorder=-1)
