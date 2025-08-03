@@ -64,22 +64,6 @@ Section 2: Torsion environment hunter
 ``environment_hunter`` Does something.
 
 
-Section 3: Structure prediction
--------------------------------
-
-``validation_mnl2n`` Does something.
-``mgen_crest_analysis`` Does something.
-``mgen_generation`` Does something.
-``mgen_scan`` Does something.
-``mgen_steric`` Does something.
-
-Section 4: Graph and database analysis
---------------------------------------
-
-``all_database_analysis`` Does something.
-``analyse_graphs`` Does something.
-``plot_geometrical`` Does something.
-
 
 Acknowledgements
 ================
