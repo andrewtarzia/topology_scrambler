@@ -48,23 +48,8 @@ Projects scripts
 From ``model_enumeration``, you get the following scripts available in the
 command line.
 
-Section 1: Angle hunter
------------------------
 
-``angle_hunter`` Does something.
-
-``plot_li2023_maps`` Does something.
-
-``plot_sudan2021_maps`` Does something.
-
-
-Section 2: Torsion environment hunter
--------------------------------------
-
-``environment_hunter`` Does something.
-
-
-Section 3: Structure prediction
+Section 1: Structure prediction
 -------------------------------
 
 ``validation_mnl2n`` Does something.
@@ -73,7 +58,7 @@ Section 3: Structure prediction
 ``mgen_scan`` Does something.
 ``mgen_steric`` Does something.
 
-Section 4: Graph and database analysis
+Section 2: Graph and database analysis
 --------------------------------------
 
 ``all_database_analysis`` Does something.
