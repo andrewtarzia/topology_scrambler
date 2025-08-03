@@ -4,7 +4,7 @@
 Overview
 ========
 
-A series of case studies showing the first example of toy-model cgx-driven
+A series of case studies showing the first example of toy-model `cgx``-driven
 cage structure prediction using graph enumeration.
 
 This project is built on
@@ -14,15 +14,7 @@ This project is built on
 Installation
 ============
 
-This code can be installed by cloning this repository and either using
-`just <https://github.com/casey/just>`_:
-
-.. code-block:: bash
-
-  just dev
-
-
-or using ``conda``/``mamba`` (this will give the exact environment used in the paper):
+Using ``conda``/``mamba`` (this will give the exact environment used in the paper):
 
 .. code-block:: bash
 
