@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "topology_scrambler"
 maintainers = [{ name = "Andrew Tarzia", email = "andrew.tarzia@gmail.com" }]
-dependencies = ["CGExplore"]
+dependencies = ["cgexplore==2025.2.5.1"]
 requires-python = ">=3.11"
 dynamic = ["version"]
 readme = "README.md"
@@ -24,6 +24,7 @@ dev = [
 ]
 
 [project.scripts]
+write_chemiscope = "model_enumeration.write_chemiscope:main"
 mgen_crest_analysis = "model_enumeration.mgen_crest_analysis:main"
 mgen_genetic = "model_enumeration.mgen_genetic:main"
 mgen_cs1 = "model_enumeration.mgen_cs1:main"
