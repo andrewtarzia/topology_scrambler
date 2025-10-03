@@ -148,7 +148,7 @@ def plot_distance_angle(
 
 def main() -> None:
     """Run script."""
-    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
     ligand_dir = wd / "mgen_aa_ligands"
     ligand_dir.mkdir(exist_ok=True)
     figure_dir = wd / "figures" / "mgen_aa"

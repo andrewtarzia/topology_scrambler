@@ -621,7 +621,7 @@ def deviation_plot(
 
 def case_study_1(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 1 studying Pd(II) heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
     calculation_dir = wd / "mgencs1_calculations"
     calculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "mgencs1_structures"

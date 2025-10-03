@@ -1123,6 +1123,7 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
     stoichstring: str,
     figure_dir: pathlib.Path,
     filename: str,
+    chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
     fig, (axx, ax1) = plt.subplots(ncols=2, figsize=(16, 5))
@@ -1140,6 +1141,9 @@ def plot_counters(  # noqa: C901, PLR0912, PLR0915
         if "is_base" not in entry.properties:
             continue
 
+        pair = entry.properties["pair"]
+        if pair != chosen_pair:
+            continue
         if entry.properties["stoichstring"] != stoichstring:
             continue
 
@@ -1289,6 +1293,7 @@ def plot_vs_parallels(
     figure_dir: pathlib.Path,
     stoichstring: str,
     filename: str,
+    chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -1302,6 +1307,9 @@ def plot_vs_parallels(
         if "is_base" not in entry.properties:
             continue
 
+        pair = entry.properties["pair"]
+        if pair != chosen_pair:
+            continue
         if entry.properties["stoichstring"] != stoichstring:
             continue
 
@@ -1391,6 +1399,7 @@ def plot_elite_graphs(
     figure_dir: pathlib.Path,
     stoichstring: str,
     filename: str,
+    chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(5, 4))
@@ -1400,6 +1409,10 @@ def plot_elite_graphs(
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         # Only do base entries.
         if "is_base" not in entry.properties:
+            continue
+
+        pair = entry.properties["pair"]
+        if pair != chosen_pair:
             continue
 
         if "generation_seed" not in entry.properties or entry.properties[
@@ -1475,6 +1488,7 @@ def plot_idx_completion(
     figure_dir: pathlib.Path,
     stoichstring: str,
     filename: str,
+    chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
     fig, (ax, ax1) = plt.subplots(ncols=2, sharey=True, figsize=(16, 5))
@@ -1488,6 +1502,9 @@ def plot_idx_completion(
         if "is_base" not in entry.properties:
             continue
 
+        pair = entry.properties["pair"]
+        if pair != chosen_pair:
+            continue
         if entry.properties["stoichstring"] != stoichstring:
             continue
 
@@ -1651,6 +1668,7 @@ def plot_energies_main(  # noqa: C901
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
+    chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -1662,7 +1680,7 @@ def plot_energies_main(  # noqa: C901
         "12-6-9": "tab:orange",
         "8-8-8": "tab:pink",
     }
-    pair_markers = {"cs490_cs41c": "o"}
+
     gen_entries = defaultdict(dict)
     total_min_energy = float("inf")
 
@@ -1672,7 +1690,7 @@ def plot_energies_main(  # noqa: C901
             continue
 
         pair = entry.properties["pair"]
-        if pair not in pair_markers:
+        if pair != chosen_pair:
             continue
         gid = entry.properties.get("generation_id", 0)
         gseed = entry.properties.get("generation_seed", 0)
@@ -1691,7 +1709,7 @@ def plot_energies_main(  # noqa: C901
             (entry.key, energy)
         )
 
-    for (pair, stoichstring), byseed in gen_entries.items():
+    for (_, stoichstring), byseed in gen_entries.items():
         xys = []
         min_energy = float("inf")
 
@@ -1712,7 +1730,7 @@ def plot_energies_main(  # noqa: C901
             [i[1] for i in xys],
             lw=2,
             c=stoich_colous[stoichstring],
-            marker=pair_markers[pair],
+            marker="o",
             markersize=6,
             markeredgecolor="w",
             label=f"{stoichstring}"
@@ -1755,6 +1773,7 @@ def plot_energy_by_seed(
     figure_dir: pathlib.Path,
     filename: str,
     stoichstring: str,
+    chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -1767,6 +1786,9 @@ def plot_energy_by_seed(
         if "is_base" not in entry.properties:
             continue
 
+        pair = entry.properties["pair"]
+        if pair != chosen_pair:
+            continue
         if entry.properties["stoichstring"] != stoichstring:
             continue
         if "generation_seed" not in entry.properties:
@@ -1970,7 +1992,7 @@ def define_pairs(
 
 def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 4 studying PW heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/workingspace/model_enum_data/")
+    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
 
     calculation_dir = wd / "genetic4_calculations"
     calculation_dir.mkdir(exist_ok=True)
@@ -2888,48 +2910,54 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             "top scorer is %s (seed: %s)", best_name, seed
                         )
 
-    plot_energies_main(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_2m.png",
-    )
-
-    plot_timings(figure_dir, data_dir)
-    for stoichiometry_l_s_m in stoichiometries_l_s_m:
-        stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
-        logging.info("plotting %s", stoichstring)
-        plot_elite_graphs(
+    for pair in pairs:
+        plot_energies_main(
             database_path=database_path,
-            stoichstring=stoichstring,
             figure_dir=figure_dir,
-            filename=f"mgen_12_{stoichstring}.png",
+            filename=f"mgen_2m_{pair}.png",
+            chosen_pair=pair,
         )
 
-        plot_counters(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_1_{stoichstring}.png",
-        )
-        plot_vs_parallels(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_9_{stoichstring}.png",
-        )
+        for stoichiometry_l_s_m in stoichiometries_l_s_m:
+            stoichstring = "-".join([str(i) for i in stoichiometry_l_s_m])
+            logging.info("plotting %s", stoichstring)
+            plot_elite_graphs(
+                database_path=database_path,
+                stoichstring=stoichstring,
+                figure_dir=figure_dir,
+                filename=f"mgen_12_{stoichstring}_{pair}.png",
+                chosen_pair=pair,
+            )
 
-        plot_idx_completion(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_10_{stoichstring}.png",
-        )
-        plot_energy_by_seed(
-            database_path=database_path,
-            stoichstring=stoichstring,
-            figure_dir=figure_dir,
-            filename=f"mgen_6_{stoichstring}.png",
-        )
+            plot_counters(
+                database_path=database_path,
+                stoichstring=stoichstring,
+                figure_dir=figure_dir,
+                filename=f"mgen_1_{stoichstring}_{pair}.png",
+                chosen_pair=pair,
+            )
+            plot_vs_parallels(
+                database_path=database_path,
+                stoichstring=stoichstring,
+                figure_dir=figure_dir,
+                filename=f"mgen_9_{stoichstring}_{pair}.png",
+                chosen_pair=pair,
+            )
+
+            plot_idx_completion(
+                database_path=database_path,
+                stoichstring=stoichstring,
+                figure_dir=figure_dir,
+                filename=f"mgen_10_{stoichstring}_{pair}.png",
+                chosen_pair=pair,
+            )
+            plot_energy_by_seed(
+                database_path=database_path,
+                stoichstring=stoichstring,
+                figure_dir=figure_dir,
+                filename=f"mgen_6_{stoichstring}_{pair}.png",
+                chosen_pair=pair,
+            )
 
     plot_energies(
         database_path=database_path,
@@ -2957,6 +2985,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         pairs=tuple((i, None) for i in pairs_to_predict),
         width_height=(16, 5),
     )
+    plot_timings(figure_dir, data_dir)
 
 
 def main() -> None:
