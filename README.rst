@@ -18,7 +18,6 @@ Using ``conda``/``mamba`` (this will give the exact environment used in the pape
 
 .. code-block:: bash
 
-  conda env create -f environment.yml
   mamba env create -f environment.yml
 
 This will install the ``model_enumeration`` in a development state allowing
@@ -36,11 +35,6 @@ This will not install other dependencies available through conda:
 
 CREST must be downloaded from `crest <https://crest-lab.github.io/crest-docs/page/documentation/keywords.html>`_
 
-Important
----------
-
-In each script, you will have to update the environment variables, namely
-the paths where the data is written to and where some software is.
 
 Projects scripts
 ================
@@ -48,23 +42,45 @@ Projects scripts
 From ``model_enumeration``, you get the following scripts available in the
 command line.
 
+.. important::
 
-Section 1: Structure prediction
--------------------------------
+    In each script, you will have to update the environment variables, namely
+    the paths where the data is written to and where some software is.
 
-``validation_mnl2n`` Does something.
-``mgen_crest_analysis`` Does something.
-``mgen_generation`` Does something.
-``mgen_scan`` Does something.
-``mgen_steric`` Does something.
+Each script should be self-contained and run and produce the output used in the
+manuscript. Not all scripts were used in the final version, and will be
+inspirations for recipes and examples in ``cgx``.
 
-Section 2: Graph and database analysis
---------------------------------------
+`mgen_crest_analysis.py`::
+    Does something.
 
-``all_database_analysis`` Does something.
-``analyse_graphs`` Does something.
-``plot_geometrical`` Does something.
+`mgen_cs1.py`::
+    Does something.
 
+`mgen_cs2.py`::
+    Does something.
+
+`mgen_cs3.py`::
+    Does something.
+
+`mgen_cs4.py`::
+    Does something.
+
+`mgen_cs6.py`::
+    Does something.
+
+`mgen_genetic.py`::
+    Does something.
+
+`mgen_star.py`::
+    Reproduces the minimal model prediction of starship structures.
+
+`validation_mnl2n.py`::
+    Does something.
+
+`write_chemiscope.py`::
+    Produces the dataset visualisation using chemiscope of the output of
+    the atomistic case study and genetic algorithm case study.
 
 Acknowledgements
 ================
