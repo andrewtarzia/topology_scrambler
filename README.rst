@@ -11,6 +11,13 @@ This project is built on
 `cgx <https://cgexplore.readthedocs.io/en/latest/>`_ and
 `stk <https://stk.readthedocs.io/en/stable/>`_.
 
+Important:
+
+    This repository holds the code for completing the associated manuscript.
+    However, in the near future, I will merge important features into ``cgx``
+    and make improvements to stability and usability. I recommend using the
+    latest version of ``cgx`` for the best experience.
+
 Installation
 ============
 
