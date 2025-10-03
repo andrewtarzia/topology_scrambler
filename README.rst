@@ -43,41 +43,42 @@ From ``model_enumeration``, you get the following scripts available in the
 command line.
 
 .. important::
-    In each script, you will have to update the environment variables, namely
-    the paths where the data is written to and where some software is.
+
+  In each script, you will have to update the environment variables, namely
+  the paths where the data is written to and where some software is.
 
 Each script should be self-contained and run and produce the output used in the
 manuscript. Not all scripts were used in the final version, and will be
 inspirations for recipes and examples in ``cgx``.
 
-`mgen_crest_analysis.py`::
+``mgen_crest_analysis``
     Does something.
 
-`mgen_cs1.py`::
+``mgen_cs1``
     Does something.
 
-`mgen_cs2.py`::
+``mgen_cs2``
     Does something.
 
-`mgen_cs3.py`::
+``mgen_cs3``
     Does something.
 
-`mgen_cs4.py`::
+``mgen_cs4``
     Does something.
 
-`mgen_cs6.py`::
+``mgen_cs6``
     Does something.
 
-`mgen_genetic.py`::
+``mgen_genetic``
     Does something.
 
-`mgen_star.py`::
+``mgen_star``
     Reproduces the minimal model prediction of starship structures.
 
-`validation_mnl2n.py`::
+``validation_mnl2n``
     Does something.
 
-`write_chemiscope.py`::
+``write_chemiscope``
     Produces the dataset visualisation using chemiscope of the output of
     the atomistic case study and genetic algorithm case study.
 
