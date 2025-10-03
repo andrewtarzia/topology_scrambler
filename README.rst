@@ -42,9 +42,10 @@ Projects scripts
 From ``model_enumeration``, you get the following scripts available in the
 command line.
 
-.. warning::
-  In each script, you will have to update the environment variables, namely
-  the paths where the data is written to and where some software is.
+Important:
+
+    In each script, you will have to update the environment variables, namely
+    the paths where the data is written to and where some software is.
 
 Each script should be self-contained and run and produce the output used in the
 manuscript. Not all scripts were used in the final version, and will be
