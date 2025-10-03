@@ -26,6 +26,12 @@ you to edit the source code, and will install the required dependencies
 `openmmtools <https://openmmtools.readthedocs.io/en/stable/gettingstarted.html>`_
 using ``mamba``.
 
+Then use ``just`` to setup the environment:
+
+.. code-block:: bash
+
+  just dev
+
 This will not install other dependencies available through conda:
 
 .. code-block:: bash
@@ -47,36 +53,47 @@ Important:
     In each script, you will have to update the environment variables, namely
     the paths where the data is written to and where some software is.
 
-Each script should be self-contained and run and produce the output used in the
-manuscript. Not all scripts were used in the final version, and will be
-inspirations for recipes and examples in ``cgx``.
+Each script should be self-contained and once you have installed the
+environment with ``just dev``, you should have them as executables. They can
+then be run and produce the output used in the manuscript.
+Not all scripts were used in the final version, and will be inspirations for
+recipes and examples in ``cgx``.
 
 ``mgen_crest_analysis``
-    Does something.
+    This script performs conformer analysis of atomistic building blocks to
+    collate the minimal model forcefield parameters.
 
 ``mgen_cs1``
-    Does something.
+    This script was unused in the final manuscript and aims to reproduce the
+    prediction of cis-M2L4 heteroleptic cage structures.
 
 ``mgen_cs2``
-    Does something.
+    This script introduces the parameter optimisation of the minimal model
+    forcefield parameters and applies it to the prediction of ditopic +
+    tritopic cage structures. Not all aspects were used in the final
+    manuscript.
 
 ``mgen_cs3``
-    Does something.
+    This script builds the homoleptic and heteroleptic structures from four
+    components, predicting the stirrup structures.
 
 ``mgen_cs4``
-    Does something.
+    This script was not used in the final manuscript but predicts the
+    structures of heteroleptic M6L6L6 metal-organic cages.
 
 ``mgen_cs6``
-    Does something.
+    Atomistic structure prediction shown at the end of the final manuscript.
 
 ``mgen_genetic``
-    Does something.
+    Genetic algorithm-based structure prediction of M9 heteroleptic cage
+    structures.
 
 ``mgen_star``
     Reproduces the minimal model prediction of starship structures.
 
 ``validation_mnl2n``
-    Does something.
+    Not mentioned in the manuscript, this script reproduces the relationship
+    between preferred MnL2n cages and the bite angle.
 
 ``write_chemiscope``
     Produces the dataset visualisation using chemiscope of the output of
