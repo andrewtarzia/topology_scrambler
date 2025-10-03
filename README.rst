@@ -43,7 +43,6 @@ From ``model_enumeration``, you get the following scripts available in the
 command line.
 
 .. important::
-
     In each script, you will have to update the environment variables, namely
     the paths where the data is written to and where some software is.
 
