@@ -13,6 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:  # noqa: C901
@@ -35,12 +36,14 @@ def main() -> None:  # noqa: C901
             raise FileNotFoundError(msg)
         db = cgx.utilities.AtomliteDatabase(db_path)
         num_entries = db.get_num_entries()
-        logging.info(
+        logger.info(
             "processing database %s with %s entries", db_name, num_entries
         )
 
         for entry in db.get_entries():
             if "energy_per_bb" not in entry.properties:
+                continue
+            if "lowest_e_of_mash" not in entry.properties:
                 continue
             energy = entry.properties["energy_per_bb"]
             structures.append(
@@ -56,7 +59,7 @@ def main() -> None:  # noqa: C901
     properties["rel. E_b / kjmol-1"] = [
         (i - min_energy) for i in properties["E_b / kjmol-1"]
     ]
-    logging.info("saving %s entries", len(structures))
+    logger.info("saving %s entries", len(structures))
     chemiscope.write_input(
         path=str(figure_dir / "mgen_cs6.json.gz"),
         frames=structures,
@@ -74,7 +77,7 @@ def main() -> None:  # noqa: C901
                 "y": {
                     "property": "rel. E_b / kjmol-1",
                     "min": 0,
-                    "max": 100,
+                    "max": 25,
                 }
             },
             x="num_bbs",
@@ -96,7 +99,7 @@ def main() -> None:  # noqa: C901
             raise FileNotFoundError(msg)
         db = cgx.utilities.AtomliteDatabase(db_path)
         num_entries = db.get_num_entries()
-        logging.info(
+        logger.info(
             "processing database %s with %s entries", db_name, num_entries
         )
 
@@ -119,7 +122,7 @@ def main() -> None:  # noqa: C901
             properties["num_bbs"].append(int(entry.properties["num_bbs"]))
             properties["stoichstring"].append(entry.properties["stoichstring"])
 
-    logging.info("saving %s entries", len(structures))
+    logger.info("saving %s entries", len(structures))
     shape_dict = chemiscope.convert_stk_bonds_as_shapes(
         frames=structures,
         bond_color="#00000",
