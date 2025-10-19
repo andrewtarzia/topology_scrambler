@@ -16,7 +16,12 @@ Important:
     This repository holds the code for completing the associated manuscript.
     However, in the near future, I will merge important features into ``cgx``
     and make improvements to stability and usability. I recommend using the
-    latest version of ``cgx`` for the best experience.
+    latest version of ``cgx`` for the best experience. However, to reproduce
+    this code exactly, use ``cgexplore==2025.2.5.1``.
+
+    The recipes at `cgx <https://cgexplore.readthedocs.io/en/latest/>`_
+    reproduce many of these examples, but with the latest interface and
+    improvements.
 
 Installation
 ============
