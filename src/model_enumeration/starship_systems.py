@@ -3,10 +3,13 @@
 import argparse
 import itertools as it
 import logging
+import os
 import pathlib
 import shutil
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -494,22 +497,25 @@ def binder_vector_angles_plot_unsymm(  # noqa: C901, PLR0915
     plt.close()
 
 
-def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
     """Run starship case study studying Pd(II) heteroleptic systems."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
-    calculation_dir = wd / "mgenstar_calculations"
+    run = _parse_args().run
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+
+    run_prefix = "starships"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgenstar_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgenstar_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgenstar_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgenstar_cg"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgenstar.db"
+    database_path = data_dir / f"{run_prefix}.db"
 
     ligand_measures = {
         "la": {
@@ -625,6 +631,106 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 abead1=binder_bead,
             ),
             "multipliers": (1, 2, 3),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_243": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (2, 4, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_153": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (1, 5, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_513": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (5, 1, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_132": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (1, 3, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_312": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (3, 1, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
             "vdw_cutoff": 2,
         },
     }
@@ -992,28 +1098,21 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="starship_1.png",
         pairs=pairs_to_predict,
     )
     make_summary_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_4.png",
+        filename="starship_2.png",
         pairs=pairs_to_predict,
         structure_dir=structure_dir,
     )
     binder_vector_angles_plot_unsymm(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_7.png",
+        filename="starship_3.png",
     )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-
-    case_study_starships(args.run)
 
 
 if __name__ == "__main__":
