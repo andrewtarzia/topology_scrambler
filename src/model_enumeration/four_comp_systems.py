@@ -296,9 +296,7 @@ def _parse_args() -> argparse.Namespace:
 
 def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 3 studying Pd(II) heteroleptic systems."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
     calculation_dir = wd / "mgencs3_calculations"
     calculation_dir.mkdir(exist_ok=True)
     ffcalculation_dir = calculation_dir / "ff_scan"
@@ -309,10 +307,11 @@ def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     ligand_dir.mkdir(exist_ok=True)
     data_dir = wd / "mgencs3_data"
     data_dir.mkdir(exist_ok=True)
+    (wd / "figures").mkdir(exist_ok=True)
     figure_dir = wd / "figures" / "mgen_cs3"
     figure_dir.mkdir(exist_ok=True)
     database_path = data_dir / "mgencs3.db"
-
+    raise SystemExit
     stoichiometries = ((2, 2, 1, 1), (2, 2, 0, 2), (2, 2, 2, 0))
     vdw_cutoff = 2
     present_beads = (
