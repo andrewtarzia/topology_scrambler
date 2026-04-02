@@ -333,7 +333,9 @@ def atomistic_optimisation(  # noqa: D103
 
 def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 6."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
+    wd = pathlib.Path(
+        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
+    )
     calculation_dir = wd / "mgencs6_calculations"
     calculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "mgencs6_structures"
@@ -456,7 +458,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     if not ey_file.exists():
                         logging.info("calculating energy for %s", name)
                         ey = stko.XTBEnergy(
-                            xtb_path="/home/atarzia/miniforge3/envs/meproduction/bin/xtb",
+                            xtb_path="/home/tarziaa/miniforge3/envs/meproduction/bin/xtb",
                             num_cores=4,
                             output_dir=calculation_dir / f"{name}_xtbey",
                         ).get_energy(molecule)

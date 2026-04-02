@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:  # noqa: C901
     """Run script."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
+    wd = pathlib.Path(
+        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
+    )
     figure_dir = wd / "figures" / "all_database_analysis"
     figure_dir.mkdir(exist_ok=True)
 

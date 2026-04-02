@@ -510,11 +510,11 @@ def _parse_args() -> argparse.Namespace:
 
 def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 4 studying Rh heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
+    wd = pathlib.Path(
+        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
+    )
     calculation_dir = wd / "mgencs4_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    ffcalculation_dir = calculation_dir / "ff_scan"
-    ffcalculation_dir.mkdir(exist_ok=True)
     structure_dir = wd / "mgencs4_structures"
     structure_dir.mkdir(exist_ok=True)
     ligand_dir = wd / "mgencs4_ligands"

@@ -1992,7 +1992,9 @@ def define_pairs(
 
 def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 4 studying PW heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
+    wd = pathlib.Path(
+        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
+    )
 
     calculation_dir = wd / "genetic4_calculations"
     calculation_dir.mkdir(exist_ok=True)

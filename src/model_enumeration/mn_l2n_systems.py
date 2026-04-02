@@ -501,7 +501,9 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
 
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
+    wd = pathlib.Path(
+        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
+    )
     figure_dir = wd / "figures"
     if not args.nodoubles:
         calculation_dir = wd / "ivalidation_calculations"
