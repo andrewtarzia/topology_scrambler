@@ -31,8 +31,8 @@ tri_di_systems = "model_enumeration.tri_di_systems:main"
 atomistic_systems = "model_enumeration.atomistic_systems:main"
 starship_systems = "model_enumeration.starship_systems:main"
 write_chemiscope = "model_enumeration.write_chemiscope:main"
+four_comp_systems = "model_enumeration.four_comp_systems:main"
 pd_het_systems = "model_enumeration.unreported.pd_het_systems:main"
-four_comp_systems = "model_enumeration.unreported.four_comp_systems:main"
 rh_isomer_systems = "model_enumeration.unreported.rh_isomer_systems:main"
 
 

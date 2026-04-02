@@ -1,8 +1,12 @@
 """Perform crest analysis on ligand."""
 
 import logging
+import os
 import pathlib
 from collections import Counter
+
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 
 import bbprep
 import cgexplore as cgx
@@ -146,54 +150,47 @@ def plot_distance_angle(
     plt.close()
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """Run script."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
-    ligand_dir = wd / "mgen_aa_ligands"
-    ligand_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgen_aa"
-    figure_dir.mkdir(exist_ok=True)
-    calculation_dir = wd / "mgen_aa_calculations"
-    calculation_dir.mkdir(exist_ok=True)
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    run_prefix = "ligand_param"
     crest_path = pathlib.Path("/home/tarziaa/software/crest_301/crest")
     xtb_path = pathlib.Path(
         "/home/tarziaa/miniforge3/envs/meproduction/bin/xtb"
     )
+    calculation_dir = wd / f"{run_prefix}_calculations"
+    calculation_dir.mkdir(exist_ok=True)
+    ligand_dir = wd / f"{run_prefix}_ligands"
+    ligand_dir.mkdir(exist_ok=True)
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
+    figure_dir.mkdir(exist_ok=True)
 
     ligands = {
-        # Case study 3.
-        "cs3_l1": "C1=CC(=CC(=C1)C(=O)O)/C=C/C2=CC(=CC=C2)C(=O)O",
-        "cs3_l2": "C1=CC(=CC(=C1)N=NC2=CC=CC(=C2)C(=O)O)C(=O)O",
-        "cs3_l1p": "C1=CC(=CC(=C1)C(=O)O)C(=O)O",
-        "cs3_l6p": "C1=CC(=CC2=C1C=CC(=C2)C(=O)O)C(=O)O",
-        # Case study 4.
-        "cs4_1": "C1=CC(=NC(=C1)C2=CC=C(C=C2)C(=O)O)C3=CC=C(C=C3)C(=O)O",
-        "cs4_90": "C1=CC2=C(C=C1C(=O)O)C3=C(N2)C=CC(=C3)C(=O)O",
-        # Case study 5.
-        "cs5_lin": "C1=CN=CC=C1C2=CC=NC=C2",
-        "cs5_mxy": (
+        # cu18.
+        "cu18_1": "C1=CC(=NC(=C1)C2=CC=C(C=C2)C(=O)O)C3=CC=C(C=C3)C(=O)O",
+        "cu18_90": "C1=CC2=C(C=C1C(=O)O)C3=C(N2)C=CC(=C3)C(=O)O",
+        # four_comp.
+        "four_comp_lin": "C1=CN=CC=C1C2=CC=NC=C2",
+        "four_comp_mxy": (
             "C1=CC(=CC(=C1)CN2C=CC(=N2)C3=CC=NC=C3)CN4C=CC(=N4)C5=CC=NC=C5"
         ),
-        "cs5_pxy": (
+        "four_comp_pxy": (
             "C1=CC(=CC=C1CN2C=C(C=N2)C3=CC=NC=C3)CN4C=C(C=N4)C5=CC=NC=C5"
         ),
-        # Case study 6, only non sterics.
-        "cs6_l1": "C(=CC(=O)O)C(=O)O",
-        "cs6_l2": "C1=CC(=CC=C1C(=O)O)C(=O)O",
-        "cs6_l5": "C1=CC2=C(C=CC(=C2)C(=O)O)C=C1C(=O)O",
-        "cs6_l6": "C1=C(SC(=C1)C=CC(=O)O)C=CC(=O)O",
-        "cs6_l9": "C1=CC(=CC=C1C2=CC=C(C=C2)C(=O)O)C3=CC=C(C=C3)C(=O)O",
-        "cs6_cc31": "C1=C(C=C(C=C1C=O)C=O)C=O",
-        "cs6_cc32": "C1CCC(C(C1)N)N",
+        # tri_di.
+        "tri_di_l1": "C(=CC(=O)O)C(=O)O",
+        "tri_di_l2": "C1=CC(=CC=C1C(=O)O)C(=O)O",
+        "tri_di_l5": "C1=CC2=C(C=CC(=C2)C(=O)O)C=C1C(=O)O",
+        "tri_di_l6": "C1=C(SC(=C1)C=CC(=O)O)C=CC(=O)O",
+        "tri_di_l9": "C1=CC(=CC=C1C2=CC=C(C=C2)C(=O)O)C3=CC=C(C=C3)C(=O)O",
     }
 
     ensembles = {}
     have_alkynes = set()
     for ligand, lsmiles in ligands.items():
         stk.BuildingBlock(lsmiles).write(ligand_dir / f"{ligand}_unopt.mol")
-        if "cs3" in ligand or "cs4" in ligand or "cs6" in ligand:
+        if "tri_di" in ligand or "four_comp" in ligand or "cu18" in ligand:
             new_dir = calculation_dir / f"{ligand}_confs"
             new_dir.mkdir(exist_ok=True)
             logging.info("building confs for %s", ligand)
@@ -230,6 +227,7 @@ def main() -> None:
             ensembles[ligand] = ensemble
         if has_alkynes(lsmiles):
             have_alkynes.add(ligand)
+
     logging.info("ligands %s have alkynes", have_alkynes)
     plot_distance_angle(ensembles=ensembles, figure_dir=figure_dir)
 
