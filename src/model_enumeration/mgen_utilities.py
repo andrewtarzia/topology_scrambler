@@ -1,10 +1,13 @@
 """Utilities module."""
 
 import logging
+import os
 import pathlib
 from collections import abc
 from copy import deepcopy
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib.pyplot as plt
