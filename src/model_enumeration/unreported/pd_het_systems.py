@@ -3,10 +3,13 @@
 import argparse
 import itertools as it
 import logging
+import os
 import pathlib
 import shutil
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -619,22 +622,24 @@ def deviation_plot(
     plt.close()
 
 
-def case_study_1(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run case study 1 studying Pd(II) heteroleptic systems."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
-    calculation_dir = wd / "mgencs1_calculations"
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
+    """Run starship case study studying Pd(II) heteroleptic systems."""
+    run = _parse_args().run
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    run_prefix = "pd_het"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgencs1_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgencs1_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgencs1_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgencs1"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgencs1.db"
+    database_path = data_dir / f"{run_prefix}.db"
 
     stoichiometry_l_l_m = (1, 1, 1)
     ligand_measures = {
@@ -1187,43 +1192,36 @@ def case_study_1(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="pd_het_1.png",
         pairs=pairs_to_predict,
     )
     make_summary_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_4.png",
+        filename="pd_het_2.png",
         pairs=pairs_to_predict,
         structure_dir=structure_dir,
     )
     parity_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_8.png",
+        filename="pd_het_3.png",
     )
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_5.png",
+        filename="pd_het_4.png",
     )
     binder_vector_angles_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_7.png",
+        filename="pd_het_5.png",
     )
     deviation_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_9.png",
+        filename="pd_het_6.png",
     )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-
-    case_study_1(args.run)
 
 
 if __name__ == "__main__":
