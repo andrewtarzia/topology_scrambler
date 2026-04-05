@@ -1,7 +1,10 @@
 """Script to generate and optimise CG models."""
 
+import os
 import pathlib
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import cgexplore as cgx
 import stko
 
