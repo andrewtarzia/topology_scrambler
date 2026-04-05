@@ -1,7 +1,10 @@
 """Utilities module."""
 
+import os
 from collections import abc, defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import cgexplore as cgx
 import matplotlib as mpl
 import numpy as np
