@@ -88,8 +88,8 @@ def study_5_plot(
             + possible_pos[int(entry.properties["mix"][-1]) - 1],
             entry.properties["energy_per_bb"],
             c=tmap[entry.properties["mix"]],
-            alpha=0.5,
-            ec="none",
+            alpha=1.0,
+            ec="k",
             s=60,
             marker="o",
         )
@@ -118,7 +118,6 @@ def study_5_plot(
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel(f"{eb_str()}", fontsize=16)
-    ax.set_yscale("log")
 
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
     ax.legend(fontsize=16)
