@@ -593,7 +593,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     graph_set="rx_nodoubles" if args.nodoubles else "rx",
                 )
 
-                logging.info("doing: ligand %s, multi %s", lig, multiplier)
+                logging.info(
+                    "doing: ligand %s, multi %s with %s graphs",
+                    lig,
+                    multiplier,
+                    iterator.count_graphs(),
+                )
+
                 for idx, topology_code in enumerate(iterator.yield_graphs()):
                     if max_num is not None and idx > max_num:
                         break
