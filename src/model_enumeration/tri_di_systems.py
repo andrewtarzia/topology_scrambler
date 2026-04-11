@@ -2,10 +2,13 @@
 
 import argparse
 import logging
+import os
 import pathlib
 import shutil
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -872,24 +875,29 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
     """Run case study 2 studying Tri + Di homoleptic systems."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
-    calculation_dir = wd / "mgencs2_calculations"
+    args = _parse_args()
+    run = args.run
+    opt_ff = args.opt_ff
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+
+    run_prefix = "tri_di"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
     ffcalculation_dir = calculation_dir / "ff_scan"
     ffcalculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgencs2_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgencs2_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgencs2_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgen_cs2"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgencs2.db"
+    database_path = data_dir / f"{run_prefix}.db"
 
     present_beads = (cbead_d, abead_d, binder_bead, trigonal_bead)
     stoichiometry_t_d = (2, 3)
@@ -927,7 +935,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l1zr1_1_0_3",
+            "target": "l1zr1_1_0_1",
         },
         "l1zr2": {
             "linear": (
@@ -940,7 +948,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l1zr2_1_0_2",
+            "target": "l1zr2_1_0_3",
         },
         "l2zr1": {
             "linear": (
@@ -966,7 +974,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l2zr2_1_0_3",
+            "target": "l2zr2_1_0_5",
         },
         "l5zr1": {
             "linear": (
@@ -979,7 +987,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l5zr1_1_0_2",
+            "target": "l5zr1_1_0_4",
         },
         "l5zr2": {
             "linear": (
@@ -1005,7 +1013,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l6zr1_1_0_2",
+            "target": "l6zr1_1_0_5",
         },
         "l6zr2": {
             "linear": (
@@ -1018,7 +1026,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l6zr2_1_0_2",
+            "target": "l6zr2_1_0_4",
         },
         "l9zr1": {
             "linear": (
@@ -1044,7 +1052,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l9zr2_1_0_3",
+            "target": "l9zr2_1_0_0",
         },
         "cc3": {
             "linear": (
@@ -1057,7 +1065,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "cc3_2_4_3",
+            "target": "cc3_2_4_5",
         },
         "cc20": {
             "linear": (
@@ -1083,7 +1091,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                     bead=trigonal_bead, abead1=binder_bead
                 ),
             ),
-            "target": "l1bzr1_1_0_4",
+            "target": "l1bzr1_1_0_2",
         },
         "l1bzr2": {
             "linear": (
@@ -1464,27 +1472,27 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
     study_2_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_1.png",
+        filename="tri_di_1.png",
     )
     study_2_cc_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_6.png",
+        filename="tri_di_2.png",
     )
     study_2_plot_2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_2.png",
+        filename="tri_di_3.png",
     )
     study_2_plot_3(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="tri_di_4.png",
     )
     study_2_plot_4(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_4.png",
+        filename="tri_di_5.png",
     )
     for mix, mdict in mixtures.items():
         try:
@@ -1493,7 +1501,7 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
                 database_path=database_path,
                 target=mix,
                 figure_dir=figure_dir,
-                filename=f"mgen_5_{mix}.png",
+                filename=f"tri_di_6_{mix}.png",
                 key_target=mix_target,
             )
         except KeyError:
@@ -1502,24 +1510,18 @@ def case_study_2(run: bool, opt_ff: bool) -> None:  # noqa: C901, PLR0912, PLR09
     make_topt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_10.png",
+        filename="tri_di_7.png",
         mixtures={i: mixtures[i] for i in mixtures if "cc" not in i},
     )
     make_topt_plot_2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_11.png",
+        filename="tri_di_8.png",
         pairs={i: mixtures[i] for i in mixtures if "cc" not in i},
         ffopt_targets={
             i: mixtures[i]["target"] for i in mixtures if "cc" not in i
         },
     )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-    case_study_2(args.run, args.opt_ff)
 
 
 if __name__ == "__main__":
