@@ -5,6 +5,9 @@ import logging
 import pathlib
 from collections import abc, defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
+
 import bbprep
 import cgexplore as cgx
 import matplotlib.pyplot as plt
@@ -172,6 +175,7 @@ def atomistic_optimisation(  # noqa: D103
     name: str,
     molecule: stk.Molecule,
     output_directory: pathlib.Path,
+    xtb_path: pathlib.Path,
 ) -> stk.Molecule:
     step1_ = output_directory / f"{name}_step1.mol"
     if not step1_.exists():
@@ -224,7 +228,7 @@ def atomistic_optimisation(  # noqa: D103
 
     # Settings.
     force_field = ForceField("openff_unconstrained-2.2.1.offxml")
-    partial_charges = "espaloma-am1bcc"
+    partial_charges = "mmff94"
     step4_ = output_directory / f"{name}_step4.mol"
     if not step4_.exists():
         logging.info("step 4 for %s", name)
@@ -327,26 +331,56 @@ def atomistic_optimisation(  # noqa: D103
 
         molecule = optimisation_sequence.optimize(molecule)
         molecule.write(step5_)
+    molecule = molecule.with_structure_from_file(step5_)
 
-    return molecule.with_structure_from_file(step5_)
+    step6_ = output_directory / f"{name}_step6.mol"
+    if not step6_.exists():
+        logging.info("step 6 for %s", name)
+
+        # Define sequence.
+        optimisation_sequence = stko.OptimizerSequence(
+            stko.XTB(
+                xtb_path=xtb_path,
+                output_dir=output_directory / f"{name}_step6",
+                gfn_version=2,
+                num_cores=6,
+                charge=0,
+                opt_level="normal",
+                num_unpaired_electrons=0,
+                max_runs=1,
+                calculate_hessian=False,
+                unlimited_memory=True,
+            ),
+        )
+
+        molecule = optimisation_sequence.optimize(molecule)
+        molecule.write(step6_)
+
+    return molecule.with_structure_from_file(step6_)
 
 
-def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run case study 6."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
-    calculation_dir = wd / "mgencs6_calculations"
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
+    """Run atomistic case study systems."""
+    run = _parse_args().run
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    run_prefix = "atomistic"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgencs6_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgencs6_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgencs6_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgencs6"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgencs6.db"
+    database_path = data_dir / f"{run_prefix}.db"
+
+    xtb_path = pathlib.Path(
+        "/home/tarziaa/miniforge3/envs/meproduction/bin/xtb"
+    )
 
     stoichiometry_t_d = (2, 3)
     multipliers = (1, 2, 3, 4)
@@ -361,6 +395,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     )
     ditopic_building_block.write(ligand_dir / "di_unopt.mol")
     tritopic_building_block.write(ligand_dir / "tri_unopt.mol")
+
     # Get lowest energy conformer.
     ensemble = bbprep.generators.ETKDG(num_confs=100).generate_conformers(
         ditopic_building_block
@@ -387,9 +422,38 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     ditopic_building_block = minimum_conformer.molecule
     ditopic_building_block.write(ligand_dir / "di_opt.mol")
 
+    bromo_ditopic_building_block = stk.BuildingBlock(
+        smiles="Br/C=N/[C@H]1CCC[C@H](C1)/N=C/Br",
+        functional_groups=[stk.BromoFactory()],
+    )
+    bromo_tritopic_building_block = stk.BuildingBlock(
+        smiles="Brc1cc(Br)cc(Br)c1",
+        functional_groups=[stk.BromoFactory()],
+    )
+    bromo_ditopic_building_block.write(ligand_dir / "br_di_unopt.mol")
+    bromo_tritopic_building_block.write(ligand_dir / "br_tri_unopt.mol")
+
+    bromo_ditopic_building_block = stko.MMFF().optimize(
+        bromo_ditopic_building_block
+    )
+    bromo_ditopic_building_block.write(ligand_dir / "br_di_opt.mol")
+
+    pairs = {
+        "p1": {"di": ditopic_building_block, "tri": tritopic_building_block},
+        "p2": {
+            "di": bromo_ditopic_building_block,
+            "tri": bromo_tritopic_building_block,
+        },
+    }
+
     if run:
-        for multiplier in multipliers:
-            logging.info("doing: multi %s", multiplier)
+        for (pair, pdict), multiplier in it.product(
+            pairs.items(), multipliers
+        ):
+            logging.info("doing: pair %s with multi %s", pair, multiplier)
+
+            tritopic_building_block = pdict["tri"]
+            ditopic_building_block = pdict["di"]
 
             # Define a connectivity based on a multiplier.
             iterator = cgx.scram.TopologyIterator(
@@ -412,7 +476,7 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
 
                 generated_conformers = []
                 for midx, scale in enumerate(attempts):
-                    name = f"p1_{multiplier}_{idx}_{midx}"
+                    name = f"{pair}_{multiplier}_{idx}_{midx}"
 
                     try:
                         if isinstance(scale, str) and "regraphed" in scale:
@@ -458,25 +522,18 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     if not ey_file.exists():
                         logging.info("calculating energy for %s", name)
                         ey = stko.XTBEnergy(
-                            xtb_path="/home/tarziaa/miniforge3/envs/meproduction/bin/xtb",
+                            xtb_path=xtb_path,
                             num_cores=4,
                             output_dir=calculation_dir / f"{name}_xtbey",
                         ).get_energy(molecule)
-                        # ey =
-                        #  stko.OpenMMEnergy(
-                        # force_field=
-                        # ForceField(
-                        #         "openff_unconstrained-2.2.1.offxml"
-                        #     ),
-                        #     partial_charges_method
-                        # ="espaloma-am1bcc",
-                        # ).get_energy(molecule)
+
                         with ey_file.open("w") as f:
                             f.write(str(ey))
                     else:
                         logging.info("loading energy from %s", ey_file.name)
                         with ey_file.open("r") as f:
                             ey = float(f.read())
+
                     ey_kjmol = ey * 2625.5
                     energy_per_bb = (
                         ey_kjmol / iterator.get_num_building_blocks()
@@ -522,9 +579,49 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 min_energy_structure.write(
                     str(structure_dir / f"{min_energy_name}_optc.xyz")
                 )
+
+                if pair == "p1":
+                    # DFT on the minimum energy of the different runs.
+                    dft_ey_file = calculation_dir / f"{min_energy_name}_dft.ey"
+                    if not dft_ey_file.exists():
+                        logging.info(
+                            "calculating r2SCAN-3c energy for %s",
+                            min_energy_name,
+                        )
+                        ey = stko.OrcaEnergy(
+                            orca_path=pathlib.Path(
+                                "/home/tarziaa/orca_6_1_1/orca"
+                            ),
+                            topline="! r2SCAN-3c SP TightSCF",
+                            basename=f"{min_energy_name}_dftey",
+                            num_cores=4,
+                            output_dir=calculation_dir
+                            / f"{min_energy_name}_dftey",
+                        ).get_energy(min_energy_structure)
+
+                        with dft_ey_file.open("w") as f:
+                            f.write(str(ey))
+                    else:
+                        logging.info(
+                            "loading energy from %s", dft_ey_file.name
+                        )
+                        with dft_ey_file.open("r") as f:
+                            ey = float(f.read())
+
+                    ey_kjmol = ey * 2625.5
+                    dft_energy_per_bb = (
+                        ey_kjmol / iterator.get_num_building_blocks()
+                    )
+
+                else:
+                    dft_energy_per_bb = None
+
                 cgx.utilities.AtomliteDatabase(database_path).add_properties(
                     key=min_energy_name,
-                    property_dict={"lowest_e_of_mash": True},
+                    property_dict={
+                        "lowest_e_of_mash": True,
+                        "dft_energy_per_bb": dft_energy_per_bb,
+                    },
                 )
 
     study_6_plot(
@@ -532,12 +629,6 @@ def case_study_6(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         figure_dir=figure_dir,
         filename="mgen_1.png",
     )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-    case_study_6(args.run)
 
 
 if __name__ == "__main__":
