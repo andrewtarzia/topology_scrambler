@@ -1,7 +1,9 @@
 """Script to generate and optimise CG models."""
 
 import argparse
+import itertools as it
 import logging
+import os
 import pathlib
 from collections import abc, defaultdict
 
@@ -22,11 +24,7 @@ from model_enumeration.mgen_utilities import (
     get_regraphed_molecule,
     get_vertexset_molecule,
 )
-from model_enumeration.utilities import (
-    contains_parallels,
-    eb_str,
-    multi_cmap,
-)
+from model_enumeration.utilities import contains_parallels, eb_str, multi_cmap
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,7 +95,7 @@ def study_6_plot(
     filename: str,
 ) -> dict:
     """Visualise energies."""
-    fig, (ax) = plt.subplots(ncols=1, figsize=(8, 5))
+    fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=True, figsize=(16, 5))
 
     multis = {
         1: (multi_cmap["1"], -0.2),
@@ -105,38 +103,43 @@ def study_6_plot(
         3: (multi_cmap["3"], 0.2),
         4: (multi_cmap["4"], 0.2),
     }
+    axmap = {"p1": ax1, "p2": ax2}
 
     xs = {i: j for j, i in enumerate(multis)}
     lbls = set()
-    min_energy = float("inf")
-    min_energy_key = None
+    min_energies = {i: float("inf") for i in axmap}
+    min_energy_keys = {i: None for i in axmap}
     xys = {}
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
 
+        lig, *_ = entry.key.split("_")
+
         ec = "k"
         x = xs[entry.properties["multiplier"]]
         multi = entry.properties["multiplier"]
         y = entry.properties["energy_per_bb"]
-        if y < min_energy:
-            min_energy = y
-            min_energy_key = entry.key
+        if y < min_energies[lig]:
+            min_energies[lig] = y
+            min_energy_keys[lig] = entry.key
 
-        xys[entry.key] = (x, y, multi, ec)
+        xys[entry.key] = (x, y, multi, ec, lig)
 
     for_img = []
-    for key, (x, y, multi, ec) in xys.items():
+    within_5 = []
+    for key, (x, y, multi, ec, lig) in xys.items():
+        ax = axmap[lig]
         logging.info(
             "E for %s is %s",
             key,
-            round(y - min_energy, 2),
+            round(y - min_energies[lig], 2),
         )
         lbl = f"$m$ = {multi}"
         zorder = -1 if ec == "none" else 2
         ax.scatter(
             x,
-            y - min_energy,
+            y - min_energies[lig],
             c=multis[multi][0],
             alpha=1,
             ec=ec,
@@ -146,16 +149,211 @@ def study_6_plot(
         )
         lbls.add(lbl)
         for_img.append(f"{key}_optc.xyz")
+        if y - min_energies[lig] < 5:  # noqa: PLR2004
+            within_5.append(f"{key}_optc.xyz")
+        if "_25_" in key:
+            logging.info(
+                "target, E for %s is %s", key, round(y - min_energies[lig], 2)
+            )
 
     logging.info("structures:\n%s", " ".join(for_img))
+    logging.info("within 5 kJmol-1:\n%s", " ".join(within_5))
 
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_title(f"minimum energy is {min_energy_key}", fontsize=16)
-    ax.set_ylabel(f"rel. GFN2-xTB {eb_str()}", fontsize=16)
-    ax.legend(fontsize=16)
-    ax.set_xticks([xs[i] for i in xs])
-    ax.set_xticklabels(list(xs), fontsize=16)
-    ax.set_ylim(0, None)
+    for lig, ax in axmap.items():
+        ax.tick_params(axis="both", which="major", labelsize=16)
+        ax.set_title(f"minimum energy is {min_energy_keys[lig]}", fontsize=16)
+        ax.set_ylabel(f"rel. GFN2-xTB {eb_str()}", fontsize=16)
+        ax.legend(fontsize=16)
+        ax.set_xticks([xs[i] for i in xs])
+        ax.set_xticklabels(list(xs), fontsize=16)
+        ax.set_ylim(0, None)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def study_6_plot_with_dft(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+
+    multis = {
+        1: (multi_cmap["1"], -0.2),
+        2: (multi_cmap["2"], 0.0),
+        3: (multi_cmap["3"], 0.2),
+        4: (multi_cmap["4"], 0.2),
+    }
+    axmap = {"p1": ax1}
+
+    xs = {i: j for j, i in enumerate(multis)}
+    lbls = set()
+    min_energies = {i: float("inf") for i in axmap}
+    min_energy_keys = {i: None for i in axmap}
+    xys = {}
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        lig, *_ = entry.key.split("_")
+
+        if lig not in axmap:
+            continue
+
+        ec = "k"
+        x = xs[entry.properties["multiplier"]]
+        multi = entry.properties["multiplier"]
+        y = entry.properties["dft_energy_per_bb"]
+        if y < min_energies[lig]:
+            min_energies[lig] = y
+            min_energy_keys[lig] = entry.key
+
+        xys[entry.key] = (x, y, multi, ec, lig)
+
+    for_img = []
+    within_5 = []
+    for key, (x, y, multi, ec, lig) in xys.items():
+        ax = axmap[lig]
+        logging.info(
+            "E for %s is %s",
+            key,
+            round(y - min_energies[lig], 2),
+        )
+        lbl = f"$m$ = {multi}"
+        zorder = -1 if ec == "none" else 2
+        ax.scatter(
+            x,
+            y - min_energies[lig],
+            c=multis[multi][0],
+            alpha=1,
+            ec=ec,
+            s=120,
+            label=lbl if lbl not in lbls else None,
+            zorder=zorder,
+        )
+        lbls.add(lbl)
+        for_img.append(f"{key}_optc.xyz")
+        if y - min_energies[lig] < 5:  # noqa: PLR2004
+            within_5.append(f"{key}_optc.xyz")
+        if "_25_" in key:
+            logging.info(
+                "target, E for %s is %s", key, round(y - min_energies[lig], 2)
+            )
+
+    logging.info("structures:\n%s", " ".join(for_img))
+    logging.info("within 5 kJmol-1:\n%s", " ".join(within_5))
+
+    for lig, ax in axmap.items():
+        ax.tick_params(axis="both", which="major", labelsize=16)
+        ax.set_title(f"minimum energy is {min_energy_keys[lig]}", fontsize=16)
+        ax.set_ylabel(f"rel. GFN2-xTB {eb_str()}", fontsize=16)
+        ax.legend(fontsize=16)
+        ax.set_xticks([xs[i] for i in xs])
+        ax.set_xticklabels(list(xs), fontsize=16)
+        ax.set_ylim(0, None)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def dft_parity(
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+) -> dict:
+    """Visualise energies."""
+    fig, ax1 = plt.subplots(figsize=(5, 5))
+
+    multis = {
+        1: (multi_cmap["1"], -0.2),
+        2: (multi_cmap["2"], 0.0),
+        3: (multi_cmap["3"], 0.2),
+        4: (multi_cmap["4"], 0.2),
+    }
+    axmap = {"p1": ax1}
+
+    lbls = set()
+    min_energies = {i: float("inf") for i in axmap}
+    min_energy_keys = {i: None for i in axmap}
+    dft_min_energies = {i: float("inf") for i in axmap}
+    dft_min_energy_keys = {i: None for i in axmap}
+    xys = {}
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        lig, *_ = entry.key.split("_")
+        if lig not in axmap:
+            continue
+
+        ec = "k"
+        x = entry.properties["energy_per_bb"]
+        if x < min_energies[lig]:
+            min_energies[lig] = x
+            min_energy_keys[lig] = entry.key
+        multi = entry.properties["multiplier"]
+        y = entry.properties["dft_energy_per_bb"]
+        if y < dft_min_energies[lig]:
+            dft_min_energies[lig] = y
+            dft_min_energy_keys[lig] = entry.key
+
+        xys[entry.key] = (x, y, multi, ec, lig)
+
+    for key, (x, y, multi, ec, lig) in xys.items():
+        ax = axmap[lig]
+
+        lbl = f"$m$ = {multi}"
+        zorder = -1 if ec == "none" else 2
+        ax.scatter(
+            x - min_energies[lig],
+            y - dft_min_energies[lig],
+            c=multis[multi][0],
+            alpha=1,
+            ec=ec,
+            s=50,
+            label=lbl if lbl not in lbls else None,
+            zorder=zorder,
+        )
+        lbls.add(lbl)
+
+        if "_25_" in key:
+            logging.info(
+                "target, E for %s is %s vs. %s",
+                key,
+                round(x - min_energies[lig], 2),
+                round(y - dft_min_energies[lig], 2),
+            )
+
+    for lig, ax in axmap.items():
+        ax.tick_params(axis="both", which="major", labelsize=16)
+        ax.set_xlabel(f"rel. GFN2-xTB {eb_str()}", fontsize=16)
+        ax.set_ylabel(f"rel. r2SCAN-3c {eb_str()}", fontsize=16)
+        ax.legend(fontsize=16)
+        ax.set_xlim(0, 30)
+        ax.set_ylim(0, 30)
+        ax.plot((0, 100), (0, 100), c="k", zorder=-2)
 
     fig.tight_layout()
     fig.savefig(
@@ -509,6 +707,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                             name=name,
                             molecule=constructed_molecule,
                             output_directory=calculation_dir,
+                            xtb_path=xtb_path,
                         )
                         molecule.write(optc_file)
                     else:
@@ -545,6 +744,7 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                         "multiplier": multiplier,
                         "topology_idx": idx,
                         "mash_idx": midx,
+                        "pair": pair,
                         "topology_code_vmap": tuple(
                             (int(i[0]), int(i[1]))
                             for i in topology_code.vertex_map
@@ -627,7 +827,17 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
     study_6_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_1.png",
+        filename="atomistic_1.png",
+    )
+    study_6_plot_with_dft(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="atomistic_2.png",
+    )
+    dft_parity(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="atomistic_3.png",
     )
 
 
