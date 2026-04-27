@@ -2,11 +2,14 @@
 
 import argparse
 import logging
+import os
 import pathlib
 import shutil
 import time
 from collections import abc, defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -19,7 +22,6 @@ from openmm import OpenMMException
 from rdkit import RDLogger
 
 from model_enumeration.mgen_utilities import (
-    StericTwoC1Arm,
     a2bead_d,
     abead_c,
     abead_d,
@@ -34,7 +36,6 @@ from model_enumeration.mgen_utilities import (
     get_vertexset_molecule,
     passes_graph_bb_iso,
     precursors_to_forcefield,
-    steric_bead,
     tetra_bead,
 )
 from model_enumeration.utilities import (
@@ -1402,7 +1403,7 @@ def plot_elite_graphs(
     chosen_pair: str,
 ) -> dict:
     """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 4))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
     present_tidx = defaultdict(list)
     all_energies = []
@@ -1415,11 +1416,6 @@ def plot_elite_graphs(
         if pair != chosen_pair:
             continue
 
-        if "generation_seed" not in entry.properties or entry.properties[
-            "generation_seed"
-        ] in (142, 6582):
-            continue
-
         if entry.properties["stoichstring"] != stoichstring:
             continue
 
@@ -1427,15 +1423,15 @@ def plot_elite_graphs(
         all_energies.append(energy)
         present_tidx[entry.properties["topology_idx"]].append(energy)
 
-    steps = range(8 - 1, -1, -1)
+    steps = range(4 - 1, -1, -1)
+    counted = {i: len(present_tidx[i]) for i in present_tidx}
+    top_3 = sorted(counted, key=counted.get, reverse=True)[:3]
+
     xmin = 0
     xmax = max(all_energies)
-    xwidth = 0.2
+    xwidth = 0.1
     ystep = 1
     xbins = np.arange(xmin - xwidth, xmax + xwidth, xwidth)
-    counted = {i: len(present_tidx[i]) for i in present_tidx}
-    top_3 = sorted(counted, key=counted.get, reverse=True)[:7]
-
     ax.hist(
         x=all_energies,
         bins=xbins,
@@ -1446,6 +1442,12 @@ def plot_elite_graphs(
         linewidth=1.0,
         edgecolor="k",
         label="all",
+    )
+    ax.plot(
+        (min(all_energies), min(all_energies)),
+        (steps[0] * ystep, ystep + (steps[0] * ystep)),
+        zorder=-2,
+        c="k",
     )
 
     for i, tidx in enumerate(top_3):
@@ -1461,14 +1463,21 @@ def plot_elite_graphs(
             label=f"tidx: {tidx}",
         )
 
+        ax.plot(
+            (min(present_tidx[tidx]), min(present_tidx[tidx])),
+            (steps[i + 1] * ystep, steps[i] * ystep),
+            zorder=-2,
+            c="k",
+        )
+
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xlabel(eb_str(), fontsize=16)
-
     ax.set_ylabel("frequency", fontsize=16)
     ax.set_yticks([])
     ax.set_ylim(0, (steps[0] + 1.5) * ystep)
     ax.legend(fontsize=16)
     ax.set_xscale("log")
+
     fig.tight_layout()
     fig.savefig(
         figure_dir / filename,
@@ -1664,7 +1673,7 @@ def plot_energies(
     plt.close()
 
 
-def plot_energies_main(  # noqa: C901
+def plot_energies_main(  # noqa: C901, PLR0915
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     filename: str,
@@ -1712,6 +1721,7 @@ def plot_energies_main(  # noqa: C901
     for (_, stoichstring), byseed in gen_entries.items():
         xys = []
         min_energy = float("inf")
+        min_key = None
 
         for seed, offset in seeds.items():
             if seed not in byseed:
@@ -1722,8 +1732,14 @@ def plot_energies_main(  # noqa: C901
                 key, ey = min(bygen[gid], key=lambda i: i[1])
 
                 min_energy = min(ey, min_energy)
+                min_key = key if ey == min_energy else min_key
+                xys.append((gid + offset, min_energy, key))
 
-                xys.append((gid + offset, min_energy))
+        logging.info(
+            "min of all generations is %s with Eb=%s",
+            min_key,
+            round(min_energy, 2),
+        )
 
         ax.plot(
             [i[0] for i in xys],
@@ -1962,10 +1978,7 @@ def define_pairs(
 
         if ligand_types[small] == "twoarm":
             small_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
-        elif ligand_types[small] == "stwoarm":
-            small_prec = StericTwoC1Arm(
-                bead=cbead_d, abead1=abead_d, steric_bead=steric_bead
-            )
+
         elif ligand_types[small] == "sixbead":
             small_prec = cgx.molecular.SixBead(
                 bead=c2bead_d,
@@ -1990,26 +2003,24 @@ def define_pairs(
     return pairs
 
 
-def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run case study 4 studying PW heteroleptic systems."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
+    """Run case study studying PW heteroleptic systems."""
+    run = _parse_args().run
 
-    calculation_dir = wd / "genetic4_calculations"
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    run_prefix = "cu18"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    ffcalculation_dir = calculation_dir / "ff_scan"
-    ffcalculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "genetic4_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "genetic4_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "genetic4_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "genetic4"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "genetic4.db"
-
+    database_path = data_dir / f"{run_prefix}.db"
     plot_fitness_curve(figure_dir)
 
     stoichiometries_l_s_m = (
@@ -2194,6 +2205,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 )
                 chromo_it.add_gene(
                     iteration=possible_bbdicts,
+                    # This gene type is out of date now.
                     gene_type="vertex_alignment",
                 )
 
@@ -2916,7 +2928,7 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
         plot_energies_main(
             database_path=database_path,
             figure_dir=figure_dir,
-            filename=f"mgen_2m_{pair}.png",
+            filename=f"cu18_2m_{pair}.png",
             chosen_pair=pair,
         )
 
@@ -2927,22 +2939,23 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 database_path=database_path,
                 stoichstring=stoichstring,
                 figure_dir=figure_dir,
-                filename=f"mgen_12_{stoichstring}_{pair}.png",
+                filename=f"cu18_12_{stoichstring}_{pair}.png",
                 chosen_pair=pair,
             )
+            continue
 
             plot_counters(
                 database_path=database_path,
                 stoichstring=stoichstring,
                 figure_dir=figure_dir,
-                filename=f"mgen_1_{stoichstring}_{pair}.png",
+                filename=f"cu18_1_{stoichstring}_{pair}.png",
                 chosen_pair=pair,
             )
             plot_vs_parallels(
                 database_path=database_path,
                 stoichstring=stoichstring,
                 figure_dir=figure_dir,
-                filename=f"mgen_9_{stoichstring}_{pair}.png",
+                filename=f"cu18_9_{stoichstring}_{pair}.png",
                 chosen_pair=pair,
             )
 
@@ -2950,51 +2963,44 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 database_path=database_path,
                 stoichstring=stoichstring,
                 figure_dir=figure_dir,
-                filename=f"mgen_10_{stoichstring}_{pair}.png",
+                filename=f"cu18_10_{stoichstring}_{pair}.png",
                 chosen_pair=pair,
             )
             plot_energy_by_seed(
                 database_path=database_path,
                 stoichstring=stoichstring,
                 figure_dir=figure_dir,
-                filename=f"mgen_6_{stoichstring}_{pair}.png",
+                filename=f"cu18_6_{stoichstring}_{pair}.png",
                 chosen_pair=pair,
             )
 
     plot_energies(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_2.png",
+        filename="cu18_2.png",
     )
 
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_5.png",
+        filename="cu18_5.png",
     )
 
     make_summary_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_4.png",
+        filename="cu18_4.png",
         pairs=tuple((i, None) for i in pairs_to_predict),
         structure_dir=structure_dir,
     )
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="cu18_3.png",
         pairs=tuple((i, None) for i in pairs_to_predict),
         width_height=(16, 5),
     )
     plot_timings(figure_dir, data_dir)
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-
-    case_study_4(args.run)
 
 
 if __name__ == "__main__":
