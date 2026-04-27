@@ -1,9 +1,12 @@
 """Script to generate and optimise CG models."""
 
 import logging
+import os
 import pathlib
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import chemiscope
@@ -16,19 +19,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:  # noqa: C901
-    """Run script."""
-    wd = pathlib.Path(
-        "/home/tarziaa/workingspace/tscram_production/model_enum_data/"
-    )
+def atomistic_data() -> None:
+    """Make chemiscope output."""
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    (wd / "figures").mkdir(exist_ok=True)
     figure_dir = wd / "figures" / "all_database_analysis"
     figure_dir.mkdir(exist_ok=True)
 
-    data_restrictors = {
-        "genetic4": "cs490_cs41d",
-    }
-
-    database_paths = {"mgencs6": wd / "mgencs6_data" / "mgencs6.db"}
+    database_paths = {"atomistic": wd / "atomistic_data" / "atomistic.db"}
 
     properties = defaultdict(list)
     structures = []
@@ -43,11 +41,15 @@ def main() -> None:  # noqa: C901
         )
 
         for entry in db.get_entries():
-            if "energy_per_bb" not in entry.properties:
+            if "dft_energy_per_bb" not in entry.properties:
                 continue
             if "lowest_e_of_mash" not in entry.properties:
                 continue
-            energy = entry.properties["energy_per_bb"]
+
+            if "p1" not in entry.key:
+                continue
+
+            energy = entry.properties["dft_energy_per_bb"]
             structures.append(
                 stk.BuildingBlock.init_from_rdkit_mol(
                     atomlite.json_to_rdkit(entry.molecule)
@@ -58,18 +60,19 @@ def main() -> None:  # noqa: C901
             properties["num_bbs"].append(int(entry.properties["num_bbs"]))
 
     min_energy = min(properties["E_b / kjmol-1"])
-    properties["rel. E_b / kjmol-1"] = [
+    properties["rel. r2SCAN-3c E_b / kjmol-1"] = [
         (i - min_energy) for i in properties["E_b / kjmol-1"]
     ]
     logger.info("saving %s entries", len(structures))
     chemiscope.write_input(
-        path=str(figure_dir / "mgen_cs6.json.gz"),
+        path=str(figure_dir / "atomistic.json.gz"),
         frames=structures,
         properties=properties,
         meta={
-            "name": "Selected structures with E<1 from atomistic case study",
+            "name": "Selected structures with Eb<1 kJmol-1 from atomistic"
+            " case study.",
             "description": (
-                "Atomistic models from blind structure prediction"
+                "Atomistic models from blind structure prediction."
             ),
             "authors": ["Andrew Tarzia"],
             "references": ["TBD"],
@@ -77,7 +80,7 @@ def main() -> None:  # noqa: C901
         settings=chemiscope.quick_settings(
             map_settings={
                 "y": {
-                    "property": "rel. E_b / kjmol-1",
+                    "property": "rel. r2SCAN-3c E_b / kjmol-1",
                     "min": 0,
                     "max": 25,
                 }
@@ -91,7 +94,16 @@ def main() -> None:  # noqa: C901
         ),
     )
 
-    database_paths = {"genetic4": wd / "genetic4_data" / "genetic4.db"}
+
+def cu18_data() -> None:
+    """Make chemiscope output."""
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / "all_database_analysis"
+    figure_dir.mkdir(exist_ok=True)
+
+    data_restrictors = {"cu18": "cs490_cs41d"}
+    database_paths = {"cu18": wd / "cu18_data" / "cu18.db"}
 
     properties = defaultdict(list)
     structures = []
@@ -132,11 +144,12 @@ def main() -> None:  # noqa: C901
     )
     shape_string = ",".join(shape_dict.keys())
     chemiscope.write_input(
-        path=str(figure_dir / "genetic4.json.gz"),
+        path=str(figure_dir / "cu18.json.gz"),
         frames=structures,
         properties=properties,
         meta={
-            "name": "Selected structures with E<1 from genetic case study",
+            "name": "Selected structures with Eb<1 kJmol-1 from Cu18 case"
+            " study with `cs490_cs41d` buidling block pair.",
             "description": ("Minimal models from blind structure prediction"),
             "authors": ["Andrew Tarzia"],
             "references": ["TBD"],
@@ -153,6 +166,12 @@ def main() -> None:  # noqa: C901
             },
         ),
     )
+
+
+def main() -> None:
+    """Run script."""
+    atomistic_data()
+    cu18_data()
 
 
 if __name__ == "__main__":
