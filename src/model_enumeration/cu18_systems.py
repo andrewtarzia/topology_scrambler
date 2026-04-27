@@ -2942,7 +2942,6 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
                 filename=f"cu18_12_{stoichstring}_{pair}.png",
                 chosen_pair=pair,
             )
-            continue
 
             plot_counters(
                 database_path=database_path,
