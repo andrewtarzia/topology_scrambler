@@ -3,10 +3,13 @@
 import argparse
 import itertools as it
 import logging
+import os
 import pathlib
 import shutil
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -20,6 +23,7 @@ from rdkit import RDLogger
 from model_enumeration.mgen_utilities import (
     abead_c,
     abead_d,
+    analyse_cage,
     binder_bead,
     cbead_c,
     cbead_d,
@@ -53,88 +57,6 @@ attempts = (
     "set-spring-10",
     "set-spectral-10",
 )
-
-
-def analyse_cage(database_path: pathlib.Path, name: str) -> None:
-    """Analyse toy model cage."""
-    database = cgx.utilities.AtomliteDatabase(database_path)
-    properties = database.get_entry(key=name).properties
-    final_molecule = database.get_molecule(name)
-
-    database.add_properties(key=name, property_dict={"lowest_e_of_mash": True})
-
-    if "large_binder_binder_angles" not in properties:
-        ss_dists = (
-            stko.molecule_analysis.GeometryAnalyser().get_metal_distances(
-                molecule=final_molecule,
-                metal_atom_nos=(16,),
-            )
-        )
-        if len(ss_dists) != 0:
-            min_ss_value = min(ss_dists.values())
-            max_ss_value = max(ss_dists.values())
-
-            database.add_properties(
-                key=name,
-                property_dict={
-                    "min_ss_dist": min_ss_value,
-                    "max_ss_dist": max_ss_value,
-                },
-            )
-
-        # Get the bg angles.
-        ligands = stko.molecule_analysis.DecomposeMOC().decompose(
-            molecule=final_molecule,
-            metal_atom_nos=(46, 6),
-        )
-
-        small_binder_binder_angles = []
-        large_binder_binder_angles = []
-        potential_smiles = [
-            "[Pb]~[Ga]",  # Large.
-            "[Pb]~[Fe]",  # Large.
-            "[Pb]~[Ba]",  # Small.
-            "[Pb]~[Mn]",  # Small.
-            "[Pb]~[Mn]",  # Tritopic.
-        ]
-        for lig in ligands:
-            for smiles in potential_smiles:
-                as_building_block = stk.BuildingBlock.init_from_molecule(
-                    lig,
-                    stk.SmartsFunctionalGroupFactory(
-                        smarts=smiles, bonders=(0,), deleters=(1,)
-                    ),
-                )
-                if as_building_block.get_num_functional_groups() == 2:  # noqa: PLR2004
-                    large = smiles in ("[Pb]~[Ga]", "[Pb]~[Fe]")
-                    break
-
-            vectors = [
-                as_building_block.get_centroid(atom_ids=fg.get_bonder_ids())
-                - as_building_block.get_centroid(atom_ids=fg.get_deleter_ids())
-                for fg in as_building_block.get_functional_groups()
-            ]
-            normed = [i / np.linalg.norm(i) for i in vectors]
-            angle = np.degrees(
-                stko.vector_angle(vector1=normed[0], vector2=normed[1])
-            )
-            if large:
-                large_binder_binder_angles.append(angle)
-            else:
-                small_binder_binder_angles.append(angle)
-
-        database.add_properties(
-            key=name,
-            property_dict={
-                "large_binder_binder_angles": large_binder_binder_angles,
-                "small_binder_binder_angles": small_binder_binder_angles,
-                "min_distance": (
-                    cgx.analysis.GeomMeasure().calculate_min_distance(
-                        database.get_molecule(key=name)
-                    )["min_distance"]
-                ),
-            },
-        )
 
 
 def make_summary_plot(
@@ -248,7 +170,7 @@ def make_summary_plot(
     plt.close()
 
 
-def make_summary_plot2(  # noqa: C901, PLR0912
+def make_summary_plot2(  # noqa: C901
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     structure_dir: pathlib.Path,
@@ -263,20 +185,47 @@ def make_summary_plot2(  # noqa: C901, PLR0912
         sharex=True,
     )
 
+    name_converter = {
+        ("la", "st52"): "L1-l\n4:2:3",
+        ("la", "st52_11"): "L1-l\n1:1:1",
+        ("la", "st52_243"): "L1-l\n2:4:3",
+        ("la", "st52_153"): "L1-l\n1:5:3",
+        ("la", "st52_513"): "L1-l\n5:1:3",
+        ("la", "st52_132"): "L1-l\n1:3:2",
+        ("la", "st52_312"): "L1-l\n3:1:2",
+        ("la", "st5_11"): "L1-s\n1:1:1",
+        ("la", "st5"): "L1-s\n4:2:3",
+        ("la", "st5_243"): "L1-s\n2:4:3",
+        ("la", "st5_153"): "L1-s\n1:5:3",
+        ("la", "st5_513"): "L1-s\n5:1:3",
+        ("la", "st5_132"): "L1-s\n1:3:2",
+        ("la", "st5_312"): "L1-s\n3:1:2",
+        ("la", "c1"): "L1b\n4:2:3",
+        ("la", "c1_11"): "L1b\n1:1:1",
+        ("la", "c1_243"): "L1b\n2:4:3",
+        ("la", "c1_153"): "L1b\n1:5:3",
+        ("la", "c1_513"): "L1b\n5:1:3",
+        ("la", "c1_132"): "L1b\n1:3:2",
+        ("la", "c1_312"): "L1b\n3:1:2",
+    }
+
     x_multi_mins = {i: defaultdict(float) for i in multi_cmap}
     x_count = {i: defaultdict(int) for i in multi_cmap}
-    min_at_all_xs = defaultdict(int)
     for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
         if "lowest_e_of_mash" not in entry.properties:
             continue
         multi = str(entry.properties["multiplier"])
 
         pair = tuple(entry.properties["pair"].split("_"))
+
         if len(pair) > 3:  # noqa: PLR2004
             msg = f"is {pair} right? ({entry.properties['pair']})"
             raise RuntimeError(msg)
         if len(pair) == 3:  # noqa: PLR2004
             pair = (pair[0], pair[1] + "_" + pair[2])
+
+        if pair not in name_converter:
+            continue
 
         x = [i[0] for i in pairs].index(pair)
         x_count[multi][x] += 1
@@ -294,11 +243,6 @@ def make_summary_plot2(  # noqa: C901, PLR0912
             x_multi_mins[multi][x] = energy
         else:
             x_multi_mins[multi][x] = min((x_multi_mins[multi][x], energy))
-
-        if x not in min_at_all_xs:
-            min_at_all_xs[x] = energy
-        else:
-            min_at_all_xs[x] = min((min_at_all_xs[x], energy))
 
     for i in range(len(pairs) - 1):
         ax.axvline(x=i + 0.5, c="k", alpha=0.2)
@@ -318,6 +262,7 @@ def make_summary_plot2(  # noqa: C901, PLR0912
             marker="o",
             alpha=1,
             markersize=12,
+            label=f"$m=${multi}",
         )
         axx.plot(
             list(x_count[multi]),
@@ -330,23 +275,21 @@ def make_summary_plot2(  # noqa: C901, PLR0912
             markersize=12,
         )
 
-    ax.plot(
-        sorted(min_at_all_xs),
-        [min_at_all_xs[i] for i in sorted(min_at_all_xs)],
-        c="k",
-        alpha=1,
-        zorder=-1,
-    )
-
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xticks(list(range(len(pairs))))
+    ax.set_xticks(list(range(len(name_converter))))
     ax.set_xticklabels(
-        ["_".join(i) for i in [i[0] for i in pairs]], rotation=90
+        [
+            name_converter[j]
+            for j in [i[0] for i in pairs]
+            if j in name_converter
+        ],
     )
     ax.set_ylabel(eb_str(), fontsize=16)
     ax.set_yscale("log")
     ax.set_xlim(-0.5, len(pairs) - 0.5)
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+
+    ax.legend(fontsize=16)
 
     axx.tick_params(axis="both", which="major", labelsize=16)
     axx.set_ylabel("calcs", fontsize=16)
@@ -376,138 +319,25 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def binder_vector_angles_plot_unsymm(  # noqa: C901, PLR0915
-    database_path: pathlib.Path,
-    figure_dir: pathlib.Path,
-    filename: str,
-) -> None:
-    """Visualise energies."""
-    fig, ax = plt.subplots(figsize=(5, 5))
-
-    datas_lge: dict[str, dict[str, list[float]]] = defaultdict(tuple)
-    datas_sma: dict[str, dict[str, list[float]]] = defaultdict(tuple)
-    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
-        if "lowest_e_of_mash" not in entry.properties:
-            continue
-        multi = str(entry.properties["multiplier"])
-        l1 = entry.properties["l1"]
-        l2 = entry.properties["l2"]
-
-        if "large_binder_binder_angles" not in entry.properties:
-            continue
-        ylge = entry.properties["large_binder_binder_angles"]
-        ysma = entry.properties["small_binder_binder_angles"]
-
-        try:
-            if (
-                entry.properties["energy_per_bb"]
-                < datas_lge[(multi, l1, l2)][1]
-            ):
-                datas_lge[(multi, l1, l2)] = (
-                    ylge,
-                    entry.properties["energy_per_bb"],
-                )
-        except IndexError:
-            datas_lge[(multi, l1, l2)] = (
-                ylge,
-                entry.properties["energy_per_bb"],
-            )
-
-        try:
-            if (
-                entry.properties["energy_per_bb"]
-                < datas_sma[(multi, l1, l2)][1]
-            ):
-                datas_sma[(multi, l1, l2)] = (
-                    ysma,
-                    entry.properties["energy_per_bb"],
-                )
-        except IndexError:
-            datas_sma[(multi, l1, l2)] = (
-                ysma,
-                entry.properties["energy_per_bb"],
-            )
-
-    lsdone = set()
-    for (multi, l1, l2), xdict in datas_sma.items():
-        ydict = datas_lge[(multi, l1, l2)]
-
-        if xdict[1] > 1.0:
-            alpha = 0.3
-            zorder = -1
-            c = "gray"
-            ec = "none"
-            s = 30
-            label = None
-
-        elif xdict[1] > 0.3:  # noqa: PLR2004
-            alpha = 1
-            zorder = 0
-            c = multi_cmap[multi]
-            ec = "none"
-            s = 30
-            label = f"M{multi}"
-            if label in lsdone:
-                label = None
-            lsdone.add(label)
-
-        else:
-            alpha = 1
-            zorder = 1
-            c = multi_cmap[multi]
-            ec = "k"
-            s = 60
-            label = None
-
-        ax.scatter(
-            np.mean(xdict[0]),
-            np.mean(ydict[0]),
-            alpha=alpha,
-            marker="o",
-            c=c,
-            ec=ec,
-            s=s,
-            label=label,
-            zorder=zorder,
-        )
-
-    ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xlabel("mean small binder angle [$^\\circ$]", fontsize=16)
-    ax.set_ylabel(eb_str(), fontsize=16)
-    ax.set_ylabel("mean large binder angle [$^\\circ$]", fontsize=16)
-    ax.plot((0, 180), (0, 180), c="k", zorder=-1)
-    ax.set_xlim(0, 180)
-    ax.set_ylim(0, 180)
-    ax.legend(fontsize=16)
-
-    fig.tight_layout()
-    fig.savefig(
-        figure_dir / filename,
-        dpi=360,
-        bbox_inches="tight",
-    )
-    fig.savefig(
-        figure_dir / filename.replace(".png", ".pdf"),
-        dpi=360,
-        bbox_inches="tight",
-    )
-    plt.close()
-
-
-def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
     """Run starship case study studying Pd(II) heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
-    calculation_dir = wd / "mgenstar_calculations"
+    run = _parse_args().run
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+
+    run_prefix = "starships"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgenstar_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgenstar_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgenstar_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgenstar_cg"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgenstar.db"
+    database_path = data_dir / f"{run_prefix}.db"
 
     ligand_measures = {
         "la": {
@@ -525,10 +355,190 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     }
 
     pairs = {
+        "la_st5_11": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_132": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (1, 3, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_312": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (3, 1, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
         "la_st5": {
             "large_name": "la",
             "small_name": "st5",
             "stoichiometry_L_L_M": (4, 2, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_243": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (2, 4, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_153": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (1, 5, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st5_513": {
+            "large_name": "la",
+            "small_name": "st5",
+            "stoichiometry_L_L_M": (5, 1, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st52_11": {
+            "large_name": "la",
+            "small_name": "st52",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3),
+            "vdw_cutoff": 2,
+        },
+        "la_st52_132": {
+            "large_name": "la",
+            "small_name": "st52",
+            "stoichiometry_L_L_M": (1, 3, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st52_312": {
+            "large_name": "la",
+            "small_name": "st52",
+            "stoichiometry_L_L_M": (3, 1, 2),
             "large": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
@@ -565,6 +575,126 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
             "multipliers": (1,),
             "vdw_cutoff": 2,
         },
+        "la_st52_243": {
+            "large_name": "la",
+            "small_name": "st52",
+            "stoichiometry_L_L_M": (2, 4, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st52_153": {
+            "large_name": "la",
+            "small_name": "st52",
+            "stoichiometry_L_L_M": (1, 5, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_st52_513": {
+            "large_name": "la",
+            "small_name": "st52",
+            "stoichiometry_L_L_M": (5, 1, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_c1_11": {
+            "large_name": "la",
+            "small_name": "c1",
+            "stoichiometry_L_L_M": (1, 1, 1),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1, 2, 3),
+            "vdw_cutoff": 2,
+        },
+        "la_c1_132": {
+            "large_name": "la",
+            "small_name": "c1",
+            "stoichiometry_L_L_M": (1, 3, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_c1_312": {
+            "large_name": "la",
+            "small_name": "c1",
+            "stoichiometry_L_L_M": (3, 1, 2),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
         "la_c1": {
             "large_name": "la",
             "small_name": "c1",
@@ -585,10 +715,10 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
             "multipliers": (1,),
             "vdw_cutoff": 2,
         },
-        "la_st5_11": {
+        "la_c1_243": {
             "large_name": "la",
-            "small_name": "st5",
-            "stoichiometry_L_L_M": (1, 1, 1),
+            "small_name": "c1",
+            "stoichiometry_L_L_M": (2, 4, 3),
             "large": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
@@ -602,13 +732,13 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3),
+            "multipliers": (1,),
             "vdw_cutoff": 2,
         },
-        "la_st52_11": {
+        "la_c1_153": {
             "large_name": "la",
-            "small_name": "st52",
-            "stoichiometry_L_L_M": (1, 1, 1),
+            "small_name": "c1",
+            "stoichiometry_L_L_M": (1, 5, 3),
             "large": cgx.molecular.SixBead(
                 bead=cbead_c,
                 abead1=abead_c,
@@ -622,7 +752,27 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                 bead=tetra_bead,
                 abead1=binder_bead,
             ),
-            "multipliers": (1, 2, 3),
+            "multipliers": (1,),
+            "vdw_cutoff": 2,
+        },
+        "la_c1_513": {
+            "large_name": "la",
+            "small_name": "c1",
+            "stoichiometry_L_L_M": (5, 1, 3),
+            "large": cgx.molecular.SixBead(
+                bead=cbead_c,
+                abead1=abead_c,
+                abead2=ebead_c,
+            ),
+            "small": cgx.molecular.TwoC1Arm(
+                bead=cbead_d,
+                abead1=abead_d,
+            ),
+            "tetra": cgx.molecular.FourC1Arm(
+                bead=tetra_bead,
+                abead1=binder_bead,
+            ),
+            "multipliers": (1,),
             "vdw_cutoff": 2,
         },
     }
@@ -821,6 +971,7 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                             analyse_cage(
                                 database_path=database_path,
                                 name=name,
+                                forcefield=forcefield,
                             )
                             conformer.molecule.with_centroid((0, 0, 0)).write(
                                 str(structure_dir / f"{name}_optc.mol")
@@ -985,33 +1136,22 @@ def case_study_starships(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
                     analyse_cage(
                         database_path=database_path,
                         name=min_energy_name,
+                        forcefield=forcefield,
                     )
 
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="starship_1.png",
         pairs=pairs_to_predict,
     )
     make_summary_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_4.png",
+        filename="starship_2.png",
         pairs=pairs_to_predict,
         structure_dir=structure_dir,
     )
-    binder_vector_angles_plot_unsymm(
-        database_path=database_path,
-        figure_dir=figure_dir,
-        filename="mgen_7.png",
-    )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-
-    case_study_starships(args.run)
 
 
 if __name__ == "__main__":

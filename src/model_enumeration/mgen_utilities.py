@@ -1,10 +1,13 @@
 """Utilities module."""
 
 import logging
+import os
 import pathlib
 from collections import abc
 from copy import deepcopy
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib.pyplot as plt
@@ -202,14 +205,6 @@ def ff_opt_plot(
         bbox_inches="tight",
     )
     plt.close()
-
-
-def get_lowest_energy_entry(
-    entries: abc.Sequence[atomlite.Entry],
-) -> atomlite.Entry:
-    """Get the lowest energy_per_bb entry."""
-    sorted_list = sorted(entries, key=lambda x: x[1])
-    return sorted_list[0][0].key
 
 
 def target_optimisation(  # noqa: C901, PLR0913, PLR0915
@@ -921,10 +916,7 @@ def define_pairs(
 
         if ligand_types[small] == "twoarm":
             small_prec = cgx.molecular.TwoC1Arm(bead=cbead_d, abead1=abead_d)
-        elif ligand_types[small] == "stwoarm":
-            small_prec = StericTwoC1Arm(
-                bead=cbead_d, abead1=abead_d, steric_bead=steric_bead
-            )
+
         elif ligand_types[small] == "sixbead":
             small_prec = cgx.molecular.SixBead(
                 bead=c2bead_d,
@@ -947,73 +939,6 @@ def define_pairs(
             "vdw_cutoff": 2,
         }
     return pairs
-
-
-ligand_name_conversion = {
-    "lf": "t1",
-    "ls2": "r6",
-    "ls3": "r7",
-    "ls4": "r8",
-    "ls5": "r9",
-    "ls7": "r10",
-    "ls8": "r11",
-    "ls10": "r12",
-    # Diverging-tarzia_2024.
-    "l1": "r3",
-    "l2": "r4",
-    "l3": "r5",
-    # Converging-tarzia_2024.
-    "la": "m2",
-    "lb": "m3",
-    "lc": "m4",
-    "ld": "m5",
-    # Experimental.
-    "e10": "t2",
-    "e11": "t3",
-    "e12": "t4",
-    "e13": "t5",
-    "e14": "t6",
-    "e16": "r1",
-    "e17": "m1",
-    "e18": "r2",
-}
-
-
-class StericTwoC1Arm(cgx.molecular.Precursor):
-    """A `TwoC1Arm` Precursor."""
-
-    def __init__(
-        self,
-        bead: cgx.molecular.CgBead,
-        abead1: cgx.molecular.CgBead,
-        steric_bead: cgx.molecular.CgBead,
-    ) -> None:
-        """Initialize a precursor."""
-        self._bead = bead
-        self._abead1 = abead1
-        self._name = (
-            f"s2C1{bead.bead_type}{abead1.bead_type}{steric_bead.bead_type}"
-        )
-        self._bead_set = {
-            bead.bead_type: bead,
-            abead1.bead_type: abead1,
-            steric_bead.bead_type: steric_bead,
-        }
-
-        new_fgs = stk.SmartsFunctionalGroupFactory(
-            smarts=f"[{abead1.element_string}][{bead.element_string}]",
-            bonders=(0,),
-            deleters=(),
-            placers=(0, 1),
-        )
-        self._building_block = stk.BuildingBlock(
-            smiles=f"[{abead1.element_string}][{bead.element_string}]"
-            f"([{steric_bead.element_string}])[{abead1.element_string}]",
-            functional_groups=new_fgs,
-            position_matrix=np.array(
-                [[-3, 0, 0], [0, 0, 0], [0, 1, 0], [3, 0, 0]]
-            ),
-        )
 
 
 # Small ligands.
@@ -1129,7 +1054,7 @@ constant_definer_dict = {
 }
 
 
-def precursors_to_forcefield(  # noqa: C901, PLR0913, PLR0915
+def precursors_to_forcefield(  # noqa: PLR0913
     pair: str,
     large: cgx.molecular.Precursor,
     small: cgx.molecular.Precursor,
@@ -1190,17 +1115,6 @@ def precursors_to_forcefield(  # noqa: C901, PLR0913, PLR0915
         definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
         definer_dict["bac"] = ("angle", small_meas["bac"], 1e2)
 
-    elif isinstance(small, StericTwoC1Arm):
-        beads = small.get_bead_set()
-        if "a" not in beads or "c" not in beads or "s" not in beads:
-            raise RuntimeError
-
-        definer_dict["ba"] = ("bond", small_meas["ba"] / cg_scale, 1e5)
-        ac = small_meas["aa"] / 2
-        definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
-        definer_dict["bac"] = ("angle", small_meas["bac"], 1e2)
-        definer_dict["s"] = ("nb", 10.0, small_meas["s"])
-
     elif isinstance(small, cgx.molecular.SixBead):
         beads = small.get_bead_set()
         if "z" not in beads or "r" not in beads or "f" not in beads:
@@ -1231,7 +1145,7 @@ def precursors_to_forcefield(  # noqa: C901, PLR0913, PLR0915
     )
 
 
-def precursors_to_definer_dict(  # noqa: C901, PLR0915
+def precursors_to_definer_dict(
     large: cgx.molecular.Precursor,
     small: cgx.molecular.Precursor,
     large_meas: dict[str, float],
@@ -1289,17 +1203,6 @@ def precursors_to_definer_dict(  # noqa: C901, PLR0915
         ac = small_meas["aa"] / 2
         definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
         definer_dict["bac"] = ("angle", small_meas["bac"], 1e2)
-
-    elif isinstance(small, StericTwoC1Arm):
-        beads = small.get_bead_set()
-        if "a" not in beads or "c" not in beads or "s" not in beads:
-            raise RuntimeError
-
-        definer_dict["ba"] = ("bond", small_meas["ba"] / cg_scale, 1e5)
-        ac = small_meas["aa"] / 2
-        definer_dict["ac"] = ("bond", ac / cg_scale, 1e5)
-        definer_dict["bac"] = ("angle", small_meas["bac"], 1e2)
-        definer_dict["s"] = ("nb", 10.0, small_meas["s"])
 
     elif isinstance(small, cgx.molecular.SixBead):
         beads = small.get_bead_set()

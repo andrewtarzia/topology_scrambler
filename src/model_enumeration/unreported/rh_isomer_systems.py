@@ -3,10 +3,13 @@
 import argparse
 import itertools as it
 import logging
+import os
 import pathlib
 import shutil
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -352,6 +355,7 @@ def study_4_plot_2(
         list(counts_low.values()),
         align="center",
         fc="tab:orange",
+        label=f"{eb_str(no_unit=True)}<0.3",
     )
     ax2.bar_label(bar, fmt="%.f", fontsize=16)
     ax2.bar(
@@ -360,11 +364,13 @@ def study_4_plot_2(
         align="center",
         fc="none",
         ec="k",
+        label=f"{eb_str(no_unit=True)}<1.0",
     )
 
     ax2.tick_params(axis="both", which="major", labelsize=16)
     ax2.set_ylabel("count", fontsize=16)
     ax2.set_xticks(range(len(counts)), list(counts.keys()))
+    ax2.legend(fontsize=16)
 
     fig.tight_layout()
     fig.savefig(
@@ -380,7 +386,7 @@ def study_4_plot_2(
     plt.close()
 
 
-def make_summary_plot2(  # noqa: C901, PLR0912
+def make_summary_plot2(  # noqa: C901, PLR0912, PLR0915
     database_path: pathlib.Path,
     figure_dir: pathlib.Path,
     structure_dir: pathlib.Path,
@@ -450,6 +456,7 @@ def make_summary_plot2(  # noqa: C901, PLR0912
             marker="o",
             alpha=1,
             markersize=12,
+            label=f"$m=${multi}",
         )
         axx.plot(
             list(x_count[multi]),
@@ -479,6 +486,7 @@ def make_summary_plot2(  # noqa: C901, PLR0912
     ax.set_yscale("log")
     ax.set_xlim(-0.5, len(pairs) - 0.5)
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
+    ax.legend(fontsize=16)
 
     axx.tick_params(axis="both", which="major", labelsize=16)
     axx.set_ylabel("calcs", fontsize=16)
@@ -508,22 +516,24 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run case study 4 studying Rh heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
-    calculation_dir = wd / "mgencs4_calculations"
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
+    """Run starship case study studying Rh heteroleptic systems."""
+    run = _parse_args().run
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    run_prefix = "rh_isomer"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    ffcalculation_dir = calculation_dir / "ff_scan"
-    ffcalculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgencs4_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgencs4_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgencs4_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgen_cs4"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgencs4.db"
+    database_path = data_dir / f"{run_prefix}.db"
 
     stoichiometry_l_l_m = (1, 1, 1)
     ligand_measures = {
@@ -807,39 +817,32 @@ def case_study_4(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     study_4_plot_5(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_5.png",
+        filename="rh_isomer_1.png",
     )
     study_4_plot_2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_2.png",
+        filename="rh_isomer_2.png",
     )
 
     make_summary_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="rh_isomer_3.png",
         pairs=pairs_to_predict,
     )
     make_summary_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_4.png",
+        filename="rh_isomer_4.png",
         pairs=pairs_to_predict,
         structure_dir=structure_dir,
     )
     study_4_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_1.png",
+        filename="rh_isomer_5.png",
     )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-
-    case_study_4(args.run)
 
 
 if __name__ == "__main__":

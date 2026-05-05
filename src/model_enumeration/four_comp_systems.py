@@ -3,9 +3,12 @@
 import argparse
 import itertools as it
 import logging
+import os
 import pathlib
 import shutil
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import cgexplore as cgx
 import matplotlib.pyplot as plt
 import stko
@@ -29,10 +32,7 @@ from model_enumeration.mgen_utilities import (
     steric_bead,
     tetra_bead,
 )
-from model_enumeration.utilities import (
-    eb_str,
-    isomer_energy,
-)
+from model_enumeration.utilities import eb_str, isomer_energy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,8 +88,8 @@ def study_5_plot(
             + possible_pos[int(entry.properties["mix"][-1]) - 1],
             entry.properties["energy_per_bb"],
             c=tmap[entry.properties["mix"]],
-            alpha=0.5,
-            ec="none",
+            alpha=1.0,
+            ec="k",
             s=60,
             marker="o",
         )
@@ -118,7 +118,6 @@ def study_5_plot(
 
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_ylabel(f"{eb_str()}", fontsize=16)
-    ax.set_yscale("log")
 
     ax.axhspan(ymin=0, ymax=isomer_energy(), facecolor="k", alpha=0.05)
     ax.legend(fontsize=16)
@@ -294,22 +293,24 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
-    """Run case study 3 studying Pd(II) heteroleptic systems."""
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
-    calculation_dir = wd / "mgencs3_calculations"
+def main() -> None:  # noqa: C901, PLR0912, PLR0915
+    """Run starship case study studying Pd heteroleptic systems."""
+    run = _parse_args().run
+
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    run_prefix = "four_comp"
+    calculation_dir = wd / f"{run_prefix}_calculations"
     calculation_dir.mkdir(exist_ok=True)
-    ffcalculation_dir = calculation_dir / "ff_scan"
-    ffcalculation_dir.mkdir(exist_ok=True)
-    structure_dir = wd / "mgencs3_structures"
+    structure_dir = wd / f"{run_prefix}_structures"
     structure_dir.mkdir(exist_ok=True)
-    ligand_dir = wd / "mgencs3_ligands"
+    ligand_dir = wd / f"{run_prefix}_ligands"
     ligand_dir.mkdir(exist_ok=True)
-    data_dir = wd / "mgencs3_data"
+    data_dir = wd / f"{run_prefix}_data"
     data_dir.mkdir(exist_ok=True)
-    figure_dir = wd / "figures" / "mgen_cs3"
+    (wd / "figures").mkdir(exist_ok=True)
+    figure_dir = wd / "figures" / f"{run_prefix}"
     figure_dir.mkdir(exist_ok=True)
-    database_path = data_dir / "mgencs3.db"
+    database_path = data_dir / f"{run_prefix}.db"
 
     stoichiometries = ((2, 2, 1, 1), (2, 2, 0, 2), (2, 2, 2, 0))
     vdw_cutoff = 2
@@ -741,24 +742,18 @@ def case_study_3(run: bool) -> None:  # noqa: C901, PLR0912, PLR0915
     study_5_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_1.png",
+        filename="four_comp_1.png",
     )
     study_5_plot2(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_2.png",
+        filename="four_comp_2.png",
     )
     study_5_plot3(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="mgen_3.png",
+        filename="four_comp_3.png",
     )
-
-
-def main() -> None:
-    """Run script."""
-    args = _parse_args()
-    case_study_3(args.run)
 
 
 if __name__ == "__main__":

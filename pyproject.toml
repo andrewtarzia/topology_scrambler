@@ -24,16 +24,16 @@ dev = [
 ]
 
 [project.scripts]
+mn_l2n_systems = "model_enumeration.mn_l2n_systems:main"
+ligand_prep = "model_enumeration.ligand_prep:main"
+cu18_systems = "model_enumeration.cu18_systems:main"
+tri_di_systems = "model_enumeration.tri_di_systems:main"
+atomistic_systems = "model_enumeration.atomistic_systems:main"
+starship_systems = "model_enumeration.starship_systems:main"
 write_chemiscope = "model_enumeration.write_chemiscope:main"
-mgen_crest_analysis = "model_enumeration.mgen_crest_analysis:main"
-mgen_genetic = "model_enumeration.mgen_genetic:main"
-mgen_cs1 = "model_enumeration.mgen_cs1:main"
-mgen_cs2 = "model_enumeration.mgen_cs2:main"
-mgen_cs3 = "model_enumeration.mgen_cs3:main"
-mgen_cs4 = "model_enumeration.mgen_cs4:main"
-mgen_cs6 = "model_enumeration.mgen_cs6:main"
-mgen_star = "model_enumeration.mgen_star:main"
-validation_mnl2n = "model_enumeration.validation_mnl2n:main"
+four_comp_systems = "model_enumeration.four_comp_systems:main"
+pd_het_systems = "model_enumeration.unreported.pd_het_systems:main"
+rh_isomer_systems = "model_enumeration.unreported.rh_isomer_systems:main"
 
 
 [project.urls]

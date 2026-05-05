@@ -44,14 +44,8 @@ Then use ``just`` to setup the environment:
 
   just dev
 
-This will not install other dependencies available through conda:
-
-.. code-block:: bash
-
-  # for xtb
-  mamba install xtb
-
-CREST must be downloaded from `crest <https://crest-lab.github.io/crest-docs/page/documentation/keywords.html>`_
+CREST must be downloaded from
+`crest <https://crest-lab.github.io/crest-docs/page/documentation/keywords.html>`_
 
 
 Projects scripts
@@ -71,45 +65,45 @@ then be run and produce the output used in the manuscript.
 Not all scripts were used in the final version, and will be inspirations for
 recipes and examples in ``cgx``.
 
-``mgen_crest_analysis``
+``ligand_prep``
     This script performs conformer analysis of atomistic building blocks to
     collate the minimal model forcefield parameters.
 
-``mgen_cs1``
-    This script was unused in the final manuscript and aims to reproduce the
-    prediction of cis-M2L4 heteroleptic cage structures.
-
-``mgen_cs2``
+``tri_di_systems``
     This script introduces the parameter optimisation of the minimal model
     forcefield parameters and applies it to the prediction of ditopic +
     tritopic cage structures. Not all aspects were used in the final
     manuscript.
 
-``mgen_cs3``
-    This script builds the homoleptic and heteroleptic structures from four
-    components, predicting the stirrup structures.
-
-``mgen_cs4``
-    This script was not used in the final manuscript but predicts the
-    structures of heteroleptic M6L6L6 metal-organic cages.
-
-``mgen_cs6``
+``atomistic_systems``
     Atomistic structure prediction shown at the end of the final manuscript.
 
-``mgen_genetic``
+``cu18_systems``
     Genetic algorithm-based structure prediction of M9 heteroleptic cage
     structures.
 
-``mgen_star``
+``starship_systems``
     Reproduces the minimal model prediction of starship structures.
 
-``validation_mnl2n``
+``mn_l2n_systems``
     Not mentioned in the manuscript, this script reproduces the relationship
     between preferred MnL2n cages and the bite angle.
 
 ``write_chemiscope``
     Produces the dataset visualisation using chemiscope of the output of
     the atomistic case study and genetic algorithm case study.
+
+``pd_het_systems`` (unreported)
+    This script was unused in the final manuscript and aims to reproduce the
+    prediction of cis-M2L4 heteroleptic cage structures.
+
+``four_comp_systems`` (unreported)
+    This script builds the homoleptic and heteroleptic structures from four
+    components, predicting the stirrup structures.
+
+``rh_isomer_systems`` (unreported)
+    This script was not used in the final manuscript but predicts the
+    structures of heteroleptic M6L6L6 metal-organic cages.
 
 Acknowledgements
 ================

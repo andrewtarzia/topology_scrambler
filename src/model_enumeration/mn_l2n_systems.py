@@ -3,11 +3,14 @@
 import argparse
 import itertools as it
 import logging
+import os
 import pathlib
 import time
 import warnings
 from collections import defaultdict
 
+# A fix for something with threads.
+os.environ["OMP_NUM_THREADS"] = "6"
 import atomlite
 import cgexplore as cgx
 import matplotlib as mpl
@@ -47,7 +50,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--nodoubles",
         action="store_true",
-        help="set to only study no double-walleds",
+        help="set to only study no double-walls",
     )
 
     return parser.parse_args()
@@ -501,25 +504,18 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
     """Run script."""
     args = _parse_args()
 
-    wd = pathlib.Path("/home/atarzia/onbear/tarziaa-cgx1/model_enum_data/")
-    figure_dir = wd / "figures"
-    if not args.nodoubles:
-        calculation_dir = wd / "ivalidation_calculations"
-        structure_dir = wd / "ivalidation_structures"
-        ligand_dir = wd / "ivalidation_ligands"
-        data_dir = wd / "ivalidation_data"
-        database_path = data_dir / "ivalidation_run.db"
-        timing_file = data_dir / "ivalidation_times.csv"
-        max_num = 10000
+    wd = pathlib.Path("/home/tarziaa/workingspace/tscram_production/")
+    (wd / "figures").mkdir(exist_ok=True)
+    run_prefix = "mnl2n_d" if args.nodoubles else "mnl2n_i"
+    figure_dir = wd / "figures" / run_prefix
 
-    else:
-        calculation_dir = wd / "dvalidation_calculations"
-        structure_dir = wd / "dvalidation_structures"
-        ligand_dir = wd / "dvalidation_ligands"
-        data_dir = wd / "dvalidation_data"
-        database_path = data_dir / "dvalidation_run.db"
-        timing_file = data_dir / "dvalidation_times.csv"
-        max_num = 10000
+    calculation_dir = wd / f"{run_prefix}_calculations"
+    structure_dir = wd / f"{run_prefix}_structures"
+    ligand_dir = wd / f"{run_prefix}_ligands"
+    data_dir = wd / f"{run_prefix}_data"
+    database_path = data_dir / f"{run_prefix}_run.db"
+    timing_file = data_dir / f"{run_prefix}_times.csv"
+    max_num = 10000
 
     calculation_dir.mkdir(exist_ok=True)
     structure_dir.mkdir(exist_ok=True)
@@ -588,8 +584,6 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
             tetra_bb = tetra_bb.clone()
 
             for multiplier in ligands[lig]["multipliers"]:
-                if int(lig) < 90 and multiplier > 8:  # noqa: PLR2004
-                    continue
                 iterator = cgx.scram.TopologyIterator(
                     building_block_counts={
                         tetra_bb: stoichimetry_l_m[1] * multiplier,
@@ -599,7 +593,13 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                     graph_set="rx_nodoubles" if args.nodoubles else "rx",
                 )
 
-                logging.info("doing: ligand %s, multi %s", lig, multiplier)
+                logging.info(
+                    "doing: ligand %s, multi %s with %s graphs",
+                    lig,
+                    multiplier,
+                    iterator.count_graphs(),
+                )
+
                 for idx, topology_code in enumerate(iterator.yield_graphs()):
                     if max_num is not None and idx > max_num:
                         break
@@ -706,48 +706,36 @@ def main() -> None:  # noqa: PLR0915, C901, PLR0912
                 make_plot(
                     database_path=database_path,
                     figure_dir=figure_dir,
-                    filename="validationd_1.png"
-                    if args.nodoubles
-                    else "validationi_1.png",
+                    filename=f"{run_prefix}_1.png",
                 )
 
     make_summary_plot(
         database_path=database_path,
         structure_dir=structure_dir,
         figure_dir=figure_dir,
-        filename="validationd_2.png"
-        if args.nodoubles
-        else "validationi_2.png",
+        filename=f"{run_prefix}_2.png",
     )
     make_timings_plot(
         timing_file=timing_file,
         figure_dir=figure_dir,
-        filename="validationd_times.png"
-        if args.nodoubles
-        else "validation_times.png",
+        filename=f"{run_prefix}_times.png",
     )
     make_main_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="validationd_1c.png"
-        if args.nodoubles
-        else "validationi_1c.png",
+        filename=f"{run_prefix}_1c.png",
     )
 
     make_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="validationd_1.png"
-        if args.nodoubles
-        else "validationi_1.png",
+        filename=f"{run_prefix}_1.png",
     )
 
     make_opt_plot(
         database_path=database_path,
         figure_dir=figure_dir,
-        filename="validationd_5.png"
-        if args.nodoubles
-        else "validationi_5.png",
+        filename=f"{run_prefix}_5.png",
     )
 
 
