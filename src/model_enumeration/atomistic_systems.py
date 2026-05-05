@@ -346,7 +346,7 @@ def dft_parity(
                 round(y - dft_min_energies[lig], 2),
             )
 
-    for lig, ax in axmap.items():
+    for ax in axmap.values():
         ax.tick_params(axis="both", which="major", labelsize=16)
         ax.set_xlabel(f"rel. GFN2-xTB {eb_str()}", fontsize=16)
         ax.set_ylabel(f"rel. r2SCAN-3c {eb_str()}", fontsize=16)
@@ -354,6 +354,182 @@ def dft_parity(
         ax.set_xlim(0, 30)
         ax.set_ylim(0, 30)
         ax.plot((0, 100), (0, 100), c="k", zorder=-2)
+
+    fig.tight_layout()
+    fig.savefig(
+        figure_dir / filename,
+        dpi=360,
+        bbox_inches="tight",
+    )
+    fig.savefig(
+        figure_dir / filename.replace(".png", ".pdf"),
+        dpi=360,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def dft_topopt_parity(  # noqa: PLR0915
+    database_path: pathlib.Path,
+    figure_dir: pathlib.Path,
+    filename: str,
+    calculation_dir: pathlib.Path,
+) -> dict:
+    """Visualise energies."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    multis = {
+        1: (multi_cmap["1"], -0.2),
+        2: (multi_cmap["2"], 0.0),
+        3: (multi_cmap["3"], 0.2),
+        4: (multi_cmap["4"], 0.2),
+    }
+    xpos = {
+        "xtb": 0,
+        "dft": 1,
+        "dftopt": 2,
+    }
+    rng = np.random.default_rng(12)
+
+    lbls = set()
+    min_energies = {"p1": float("inf")}
+    min_energy_keys = {"p1": None}
+    dft_min_energies = {"p1": float("inf")}
+    dft_min_energy_keys = {"p1": None}
+    xys = {}
+    within_5 = []
+    len_xtb_structures = 0
+    len_dft_structures = 0
+    for entry in cgx.utilities.AtomliteDatabase(database_path).get_entries():
+        if "lowest_e_of_mash" not in entry.properties:
+            continue
+
+        lig, *_ = entry.key.split("_")
+        if lig != "p1":
+            continue
+
+        multi = entry.properties["multiplier"]
+        ec = "k" if "_4_25_" in entry.key else "none"
+
+        x = entry.properties["energy_per_bb"]
+        len_xtb_structures += 1
+        if x < min_energies[lig]:
+            min_energies[lig] = x
+            min_energy_keys[lig] = entry.key
+
+        y = entry.properties["dft_energy_per_bb"]
+        len_dft_structures += 1
+        if y < dft_min_energies[lig]:
+            dft_min_energies[lig] = y
+            dft_min_energy_keys[lig] = entry.key
+
+        xys[entry.key] = (x, y, multi, ec)
+
+    within_5 = [
+        i
+        for i, j in xys.items()
+        if j[1] - dft_min_energies["p1"] <= 5  # noqa: PLR2004
+    ]
+    len_dftopt_structures = len(within_5)
+
+    logging.info("runinng %s DFT optimisations", len(within_5))
+
+    dftopt_energies = {}
+    for key in within_5:
+        # DFT on the minimum energy of the different runs.
+        dft_ey_file = calculation_dir / f"{key}_dftopt.ey"
+        if not dft_ey_file.exists():
+            logging.info("optimising %s with r2SCAN-3c", key)
+            ey = stko.OrcaEnergy(
+                orca_path=pathlib.Path("/home/tarziaa/orca_6_1_1/orca"),
+                topline="! r2SCAN-3c Opt TightSCF",
+                basename=f"{key}_dftoptey",
+                num_cores=6,
+                output_dir=calculation_dir / f"{key}_dftoptey",
+                discard_output=False,
+            ).get_energy(
+                cgx.utilities.AtomliteDatabase(database_path).get_molecule(key)
+            )
+
+            with dft_ey_file.open("w") as f:
+                f.write(str(ey))
+        else:
+            logging.info("loading energy from %s", dft_ey_file.name)
+            with dft_ey_file.open("r") as f:
+                ey = float(f.read())
+
+        ey_kjmol = ey * 2625.5
+        dftopt_energy_per_bb = (
+            ey_kjmol
+            / cgx.utilities.AtomliteDatabase(database_path)
+            .get_entry(key)
+            .properties["num_bbs"]
+        )
+        dftopt_energies[key] = dftopt_energy_per_bb
+
+    for key, (x, y, multi, ec) in xys.items():
+        lbl = f"$m$ = {multi}"
+        zorder = -1 if ec == "none" else 2
+
+        line = f"{key} & "
+
+        ax.scatter(
+            xpos["xtb"] + (rng.random() - 0.5) * 0.2,
+            x - min_energies["p1"],
+            c=multis[multi][0],
+            alpha=1,
+            ec=ec,
+            s=50,
+            label=lbl if lbl not in lbls else None,
+            zorder=zorder,
+        )
+        lbls.add(lbl)
+        line += f"{round(x - min_energies['p1'], 2)} & "
+
+        ax.scatter(
+            xpos["dft"] + (rng.random() - 0.5) * 0.2,
+            y - dft_min_energies["p1"],
+            c=multis[multi][0],
+            alpha=1,
+            ec=ec,
+            s=50,
+            label=lbl if lbl not in lbls else None,
+            zorder=zorder,
+        )
+        line += f"{round(y - dft_min_energies['p1'], 2)} & "
+
+        if key in within_5:
+            ax.scatter(
+                xpos["dftopt"] + (rng.random() - 0.5) * 0.2,
+                dftopt_energies[key] - min(dftopt_energies.values()),
+                c=multis[multi][0],
+                alpha=1,
+                ec=ec,
+                s=50,
+                label=lbl if lbl not in lbls else None,
+                zorder=zorder,
+            )
+            ey = dftopt_energies[key] - min(dftopt_energies.values())
+            line += f"{round(ey, 2)}"
+
+        logging.info(line)
+
+    ax.text(x=0, y=25, s=f"{len_xtb_structures}", c="k", fontsize=16)
+    ax.text(x=1, y=25, s=f"{len_dft_structures}", c="k", fontsize=16)
+    ax.text(x=2, y=25, s=f"{len_dftopt_structures}", c="k", fontsize=16)
+
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_ylabel(f"rel. {eb_str()}", fontsize=16)
+    ax.legend(fontsize=16)
+    ax.set_ylim(0, 30)
+    ax.set_xticks([0, 1, 2])
+    ax.set_xticklabels(
+        [
+            "GFN2-xTB/\nGFN2-xTB",
+            "GFN2-xTB/\nr2SCAN-3c",
+            "r2SCAN-3c/\nr2SCAN-3c",
+        ]
+    )
 
     fig.tight_layout()
     fig.savefig(
@@ -941,6 +1117,12 @@ def main() -> None:  # noqa: C901, PLR0912, PLR0915
         database_path=database_path,
         figure_dir=figure_dir,
         filename="atomistic_3.png",
+    )
+    dft_topopt_parity(
+        database_path=database_path,
+        figure_dir=figure_dir,
+        filename="atomistic_5.png",
+        calculation_dir=calculation_dir,
     )
 
 
